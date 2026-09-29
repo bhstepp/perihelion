@@ -1,0 +1,21 @@
+{
+  "name": "perihelion",
+  "version": "1.0.0",
+  "description": "A gravity-slingshot puzzle game for iPhone Safari, drawn as a 19th-century astronomical engraving. One self-contained HTML file.",
+  "private": true,
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tools/physics-test.js && node tools/levels-bake.js --verify",
+    "test:flow": "node tools/feel-test.js",
+    "qa": "node tools/qa-run.js",
+    "perf": "node tools/perf.js",
+    "bake": "node tools/levels-bake.js",
+    "icons": "node tools/make-icons.js",
+    "serve": "python3 -m http.server 8080"
+  },
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "playwright": "^1.56.0",
+    "sharp": "^0.34.0"
+  }
+}

@@ -1,0 +1,56 @@
+<canvas id="game" aria-label="Perihelion playfield"></canvas>
+<div id="safe-probe" aria-hidden="true"></div>
+<div id="ui">
+
+  <section id="scr-title" class="screen on" aria-label="Title">
+    <header class="t-head">
+      <div class="rule"></div>
+      <h1 class="t-name">Perihelion</h1>
+      <div class="rule"></div>
+      <p class="t-sub">A Celestial Atlas of Slingshot Trajectories</p>
+      <p class="t-ed">Plates I&ndash;XXX &middot; Engraved MMXXVI</p>
+    </header>
+    <nav class="t-menu">
+      <button class="btn primary" data-act="begin">Begin the Atlas</button>
+      <button class="btn" data-act="endless">Endless Survey</button>
+      <p class="t-best note" id="t-best"></p>
+      <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+    </nav>
+  </section>
+
+  <section id="scr-select" class="screen" aria-label="The Atlas">
+    <header class="s-head">
+      <button class="txtbtn s-back" data-act="title">&lsaquo; Title</button>
+      <h2 class="s-title">The Atlas</h2>
+      <div class="rule narrow"></div>
+      <p class="tally" id="tally"></p>
+    </header>
+    <div class="scroll" id="s-scroll">
+      <div class="grid" id="grid"></div>
+      <p class="colophon note">Each plate admits three launches. Seal it in one for three stars.</p>
+    </div>
+  </section>
+
+  <div id="play-ui" class="layer" aria-label="Plate controls">
+    <div class="hud-zone" id="zone-l"><button class="btn hud-btn" data-act="reset">Reset</button></div>
+    <div class="hud-zone right" id="zone-r"><button class="btn hud-btn" data-act="menu">Menu</button></div>
+    <p class="margin-note" id="hint">Pull back anywhere<br>and release to launch.</p>
+    <p class="margin-note" id="note"></p>
+    <div class="card" id="card" role="dialog" aria-live="polite"></div>
+  </div>
+
+  <div id="sheet" class="overlay" role="dialog" aria-label="Paused">
+    <div class="panel" id="sheet-panel">
+      <p class="kicker" id="sheet-kicker">Plate I</p>
+      <h3 class="c-title">Paused</h3>
+      <p class="note">Tap anywhere to resume.</p>
+      <div class="c-btns">
+        <button class="btn primary" data-act="resume">Resume</button>
+        <button class="btn" data-act="restart">Restart plate</button>
+        <button class="btn" data-act="atlas" id="sheet-exit">Return to the Atlas</button>
+      </div>
+      <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+    </div>
+  </div>
+
+</div>

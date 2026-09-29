@@ -1,0 +1,3418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Perihelion">
+<meta name="theme-color" content="#0E0D0B">
+<title>Perihelion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Cormorant+SC:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* owner: INPUT & FEEL AGENT (DOM/CSS). Tokens are frozen by the contract (§8). */
+:root {
+  padding: 0 !important;           /* neutralise the artifact host's safe-area padding on :root */
+  --ink: #0E0D0B; --paper: #EDE6D6; --graphite: #2A2620; --vermilion: #E4572E; --brass: #C9A45C;
+  --paper-90: rgba(237,230,214,.9); --paper-75: rgba(237,230,214,.75); --paper-60: rgba(237,230,214,.6);
+  --paper-45: rgba(237,230,214,.45); --hair: rgba(237,230,214,.42); --hair-faint: rgba(237,230,214,.17);
+  --press: rgba(237,230,214,.08); --brass-hair: rgba(201,164,92,.72); --brass-faint: rgba(201,164,92,.3);
+  --ink-veil: rgba(14,13,11,.86); --ink-card: rgba(14,13,11,.95);
+  --sc: "Cormorant SC", "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ease: cubic-bezier(.22,.8,.26,1); --ease-back: cubic-bezier(.3,1.35,.5,1); --t: 280ms;
+  --sat: env(safe-area-inset-top, 0px); --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px); --sal: env(safe-area-inset-left, 0px);
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0 !important; padding: 0 !important; background: var(--ink); color: var(--paper);
+  overflow: hidden; overscroll-behavior: none; }
+body { position: fixed; inset: 0; font-family: var(--serif); -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased; }
+html, body, #ui, #ui * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+*, *::before, *::after { box-sizing: border-box; }
+#game { position: fixed; inset: 0; left: 0; top: 0; width: 100%; height: 100%; display: block; touch-action: none; background: var(--ink); }
+#safe-probe { position: fixed; left: 0; top: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+#ui { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+button { font: inherit; color: inherit; }
+/* small caps also when Cormorant SC fails to load (fallback serif synthesises them) */
+.btn, .txtbtn, .kicker, .t-ed, .tally, .c-stats, .s-title, .c-title, .pl-num, .sealed span { font-variant-caps: small-caps; }
+
+/* ---------- shared atlas typography ---------- */
+.rule { width: min(78vw, 420px); height: 4px; margin: 0 auto; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.rule.narrow { width: min(46vw, 220px); border-color: var(--hair-faint); }
+.note { font-family: var(--serif); font-style: italic; font-weight: 500; color: var(--paper-75); margin: 0; }
+.kicker { font-family: var(--sc); font-weight: 600; font-size: 13px; letter-spacing: .2em; color: var(--paper-60); margin: 0; }
+.mono, .tally b, .c-stats b { font-family: var(--mono); font-weight: 400; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+
+.btn { -webkit-appearance: none; appearance: none; background: transparent; border: 1px solid var(--hair); border-radius: 0;
+  color: var(--paper); font-family: var(--sc); font-weight: 600; font-size: 17px; letter-spacing: .14em; line-height: 1;
+  min-height: 48px; padding: 0 20px 2px; cursor: pointer; touch-action: manipulation; pointer-events: auto;
+  transition: background-color 200ms var(--ease), border-color 200ms var(--ease), color 200ms var(--ease), transform 200ms var(--ease); }
+.btn:active, .btn.pressed { background: var(--press); transform: translateY(1px); }
+.btn.primary { color: var(--brass); border-color: var(--brass-hair); outline: 1px solid var(--brass-faint); outline-offset: 3px; }
+.btn:focus { outline: none; }
+.btn.primary:focus { outline: 1px solid var(--brass-faint); }
+.btn:focus-visible, .txtbtn:focus-visible, .plate:focus-visible { outline: 1px solid var(--brass); outline-offset: 3px; }
+.txtbtn { -webkit-appearance: none; appearance: none; background: none; border: 0; border-radius: 0; color: var(--paper-60);
+  font-family: var(--sc); font-weight: 600; font-size: 14px; letter-spacing: .18em; min-height: 44px; min-width: 44px;
+  padding: 0 12px 2px; cursor: pointer; touch-action: manipulation; pointer-events: auto; transition: color 200ms var(--ease); }
+.txtbtn:active { color: var(--paper); }
+.txtbtn:focus:not(:focus-visible) { outline: none; }
+
+/* ---------- screens ---------- */
+.screen { position: absolute; inset: 0; opacity: 0; visibility: hidden; transform: translateY(8px); pointer-events: none;
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility 0s linear var(--t); }
+.screen.on { opacity: 1; visibility: visible; transform: none; pointer-events: auto;
+  transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility 0s linear 0s; }
+
+/* title */
+#scr-title { display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center;
+  padding: calc(var(--sat) + 8vh) calc(var(--sar) + 24px) calc(var(--sab) + 5vh) calc(var(--sal) + 24px); }
+.t-head { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.t-name { font-family: var(--sc); font-weight: 600; font-size: clamp(30px, 9.4vw, 72px); letter-spacing: .22em;
+  line-height: 1; margin: 2px 0 0; padding-left: .22em; color: var(--paper); text-transform: uppercase; }
+.t-sub { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: clamp(17px, 4.7vw, 24px);
+  color: var(--paper-90); margin: 4px 0 0; line-height: 1.2; max-width: 22em; }
+.t-ed { font-family: var(--sc); font-weight: 600; font-size: 13px; letter-spacing: .2em; color: var(--paper-60); margin: 0; }
+.t-menu { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: min(78vw, 320px); }
+.t-best { font-size: 16px; min-height: 1.2em; text-align: center; margin-top: 2px; }
+.t-best b { font-family: var(--mono); font-style: normal; font-weight: 400; font-size: 13px; color: var(--paper); }
+.t-menu .txtbtn { align-self: center; margin-top: -6px; }
+
+/* select */
+#scr-select { background: var(--ink); display: flex; flex-direction: column; }
+.s-head { flex: none; position: relative; text-align: center; padding: calc(var(--sat) + 14px) calc(var(--sar) + 16px) 12px calc(var(--sal) + 16px);
+  border-bottom: 3px double var(--hair-faint); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.s-back { position: absolute; left: calc(var(--sal) + 4px); top: calc(var(--sat) + 6px); }
+.s-title { font-family: var(--sc); font-weight: 600; font-size: 28px; letter-spacing: .2em; padding-left: .2em; margin: 4px 0 0; line-height: 1.1; }
+.tally { font-family: var(--sc); font-weight: 600; font-size: 13px; letter-spacing: .16em; color: var(--paper-60); margin: 0; }
+.tally b { font-size: 12px; color: var(--paper); }
+.tally .sep { padding: 0 .5em; color: var(--paper-45); }
+.scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain;
+  padding: 16px calc(var(--sar) + 16px) calc(var(--sab) + 28px) calc(var(--sal) + 16px); }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; max-width: 560px; margin: 0 auto; }
+.plate { -webkit-appearance: none; appearance: none; background: transparent; border: 1px solid var(--hair-faint); border-radius: 0;
+  padding: 5px 5px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; min-height: 44px;
+  color: var(--paper); text-align: center; cursor: pointer; touch-action: manipulation;
+  transition: border-color 200ms var(--ease), background-color 200ms var(--ease), transform 200ms var(--ease); }
+.plate:active { background: var(--press); transform: translateY(1px); }
+.plate.done { border-color: rgba(201,164,92,.34); }
+.thumb-wrap { position: relative; width: 100%; aspect-ratio: 9 / 16; border: 1px solid var(--hair-faint); overflow: hidden; }
+.thumb { display: block; width: 100%; height: 100%; }
+.pl-num { font-family: var(--sc); font-weight: 600; font-size: 17px; letter-spacing: .12em; line-height: 1; margin-top: 5px; }
+.pl-name { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 13px; line-height: 1.1; color: var(--paper-75);
+  max-width: 100%; height: 2.2em; overflow: hidden; white-space: normal; display: flex; align-items: center; justify-content: center; }
+.pl-meta { display: flex; align-items: center; gap: 3px; height: 13px; }
+.plate.locked { cursor: default; }
+.plate.locked .thumb { opacity: .2; }
+.plate.locked .pl-num, .plate.locked .pl-name, .plate.locked .pl-meta { opacity: .4; }
+.sealed[hidden] { display: none; }
+.sealed { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.sealed span { font-family: var(--sc); font-weight: 600; font-size: 12px; letter-spacing: .24em; padding: 5px 4px 6px 8px; color: var(--paper-75);
+  border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.colophon { text-align: center; font-size: 15px; margin: 22px auto 0; max-width: 20em; color: var(--paper-60); }
+
+/* stars & comet glyphs (inline svg) */
+svg.star path { fill: none; stroke: var(--paper-45); stroke-width: 1.2; stroke-linejoin: round; }
+svg.star.on path { fill: var(--brass); stroke: var(--brass); }
+svg.comet { margin-left: 4px; }
+svg.comet * { stroke: var(--brass); stroke-width: 1; fill: none; stroke-linecap: round; }
+svg.comet circle { fill: var(--brass); stroke: none; }
+svg.comet.off * { stroke: var(--paper-45); }
+svg.comet.off circle { fill: var(--paper-45); }
+.pl-meta .fr { font-family: var(--mono); font-size: 10px; color: var(--paper-60); margin-left: 2px; }
+
+/* ---------- play layer ---------- */
+.layer { position: absolute; inset: 0; pointer-events: none; opacity: 0; visibility: hidden;
+  transition: opacity var(--t) var(--ease), visibility 0s linear var(--t); }
+.layer.on { opacity: 1; visibility: visible; transition: opacity var(--t) var(--ease), visibility 0s linear 0s; }
+.hud-zone { position: absolute; display: flex; align-items: center; justify-content: flex-start; padding: 0 0 0 12px; pointer-events: none; }
+.hud-zone.right { justify-content: flex-end; padding: 0 12px 0 0; }
+.btn.hud-btn { font-size: 14px; letter-spacing: .18em; min-height: 44px; min-width: 64px; padding: 0 12px 2px; border-color: var(--hair-faint); color: var(--paper-75); }
+.margin-note { position: absolute; margin: 0; font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 17px; line-height: 1.25;
+  color: var(--paper-75); pointer-events: none; opacity: 0; transform: translateY(4px);
+  transition: opacity 600ms var(--ease), transform 600ms var(--ease); }
+.margin-note.on { opacity: 1; transform: none; }
+#hint { text-align: right; }
+#hint.left { text-align: left; }
+#hint::before { content: ""; display: block; width: 36px; height: 0; margin: 0 0 8px auto; border-top: 1px solid var(--hair); }
+#hint.left::before { margin: 0 auto 8px 0; }
+#note { text-align: center; font-size: 16px; color: var(--paper-60); }
+
+/* result card */
+.card { position: absolute; left: 0; top: 0; width: 340px; padding: 14px 16px 12px; overflow-y: auto; overscroll-behavior: contain; text-align: center; background: var(--ink-card);
+  border: 1px solid var(--hair); outline: 1px solid var(--hair-faint); outline-offset: -6px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  opacity: 0; visibility: hidden; transform: translateY(14px) scale(.98); pointer-events: none;
+  transition: opacity 320ms var(--ease), transform 340ms var(--ease-back), visibility 0s linear 340ms; }
+.card.on { opacity: 1; visibility: visible; transform: none; pointer-events: auto;
+  transition: opacity 320ms var(--ease), transform 340ms var(--ease-back), visibility 0s linear 0s; }
+.c-title { font-family: var(--sc); font-weight: 600; font-size: 27px; letter-spacing: .16em; padding-left: .16em; margin: 0; line-height: 1.1; color: var(--paper); }
+.c-title.win { color: var(--brass); }
+.card .note, .panel .note { font-size: 17px; }
+.card .note { font-size: 16px; line-height: 1.2; }
+.card .c-title { font-size: 24px; }
+.c-stars { display: flex; gap: 8px; margin: 2px 0 0; }
+.c-stats { font-family: var(--sc); font-weight: 600; font-size: 13px; letter-spacing: .16em; color: var(--paper-60); margin: 0; }
+.c-stats b { font-size: 12px; color: var(--paper); }
+.c-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-top: 10px; }
+.c-btns .btn { width: 100%; padding: 0 8px 2px; font-size: 16px; }
+.c-btns .wide { grid-column: 1 / -1; }
+.card .c-btns { margin-top: 6px; }
+.c-btns.three { grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; }
+.c-btns.three .btn { font-size: 15px; letter-spacing: .1em; padding: 0 4px 2px; }
+.card .c-btns .btn { white-space: nowrap; }
+.card.narrow .c-btns.three { grid-template-columns: 1fr 1fr 1.45fr; gap: 6px; }
+.card.narrow .c-btns.three .btn { font-size: 14px; letter-spacing: .05em; padding: 0 2px 2px; }
+
+/* pause sheet */
+.overlay { position: absolute; inset: 0; background: var(--ink-veil); display: flex; align-items: center; justify-content: center;
+  padding: calc(var(--sat) + 16px) calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity var(--t) var(--ease), visibility 0s linear var(--t); }
+.overlay.on { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--t) var(--ease), visibility 0s linear 0s; }
+.panel { width: min(340px, 100%); padding: 24px 20px 14px; text-align: center; background: var(--ink);
+  border: 1px solid var(--hair); outline: 1px solid var(--hair-faint); outline-offset: -6px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  transform: translateY(10px); transition: transform var(--t) var(--ease); }
+.overlay.on .panel { transform: none; }
+.panel .c-btns { grid-template-columns: 1fr; }
+
+/* short landscape screens */
+@media (orientation: landscape) and (max-height: 520px) {
+  .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); max-width: 820px; }
+}
+@media (max-height: 520px) {
+  #scr-title { padding-top: calc(var(--sat) + 18px); padding-bottom: calc(var(--sab) + 12px); }
+  .t-head { gap: 8px; }
+  .t-menu { gap: 8px; }
+  .t-name { font-size: clamp(28px, 7vh, 48px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .screen, .screen.on, .layer, .layer.on, .card, .card.on, .overlay, .overlay.on, .panel, .margin-note, .btn, .plate {
+    transition-duration: 1ms !important; transition-delay: 0s !important; }
+  .screen, .card, .panel, .margin-note { transform: none !important; }
+}
+</style>
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+</head>
+<body>
+<canvas id="game" aria-label="Perihelion playfield"></canvas>
+<div id="safe-probe" aria-hidden="true"></div>
+<div id="ui">
+
+  <section id="scr-title" class="screen on" aria-label="Title">
+    <header class="t-head">
+      <div class="rule"></div>
+      <h1 class="t-name">Perihelion</h1>
+      <div class="rule"></div>
+      <p class="t-sub">A Celestial Atlas of Slingshot Trajectories</p>
+      <p class="t-ed">Plates I&ndash;XXX &middot; Engraved MMXXVI</p>
+    </header>
+    <nav class="t-menu">
+      <button class="btn primary" data-act="begin">Begin the Atlas</button>
+      <button class="btn" data-act="endless">Endless Survey</button>
+      <p class="t-best note" id="t-best"></p>
+      <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+    </nav>
+  </section>
+
+  <section id="scr-select" class="screen" aria-label="The Atlas">
+    <header class="s-head">
+      <button class="txtbtn s-back" data-act="title">&lsaquo; Title</button>
+      <h2 class="s-title">The Atlas</h2>
+      <div class="rule narrow"></div>
+      <p class="tally" id="tally"></p>
+    </header>
+    <div class="scroll" id="s-scroll">
+      <div class="grid" id="grid"></div>
+      <p class="colophon note">Each plate admits three launches. Seal it in one for three stars.</p>
+    </div>
+  </section>
+
+  <div id="play-ui" class="layer" aria-label="Plate controls">
+    <div class="hud-zone" id="zone-l"><button class="btn hud-btn" data-act="reset">Reset</button></div>
+    <div class="hud-zone right" id="zone-r"><button class="btn hud-btn" data-act="menu">Menu</button></div>
+    <p class="margin-note" id="hint">Pull back anywhere<br>and release to launch.</p>
+    <p class="margin-note" id="note"></p>
+    <div class="card" id="card" role="dialog" aria-live="polite"></div>
+  </div>
+
+  <div id="sheet" class="overlay" role="dialog" aria-label="Paused">
+    <div class="panel" id="sheet-panel">
+      <p class="kicker" id="sheet-kicker">Plate I</p>
+      <h3 class="c-title">Paused</h3>
+      <p class="note">Tap anywhere to resume.</p>
+      <div class="c-btns">
+        <button class="btn primary" data-act="resume">Resume</button>
+        <button class="btn" data-act="restart">Restart plate</button>
+        <button class="btn" data-act="atlas" id="sheet-exit">Return to the Atlas</button>
+      </div>
+      <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+// ===================== MODULE: 00-const.js =====================
+/* PERIHELION — shared constants & palette (owner: LEAD). FROZEN: do not change numeric values
+   without the lead's approval; the baked campaign levels and their verified solutions depend on them. */
+var K = {
+  WORLD_W: 900,          // logical world units (portrait plate)
+  WORLD_H: 1600,
+  BOUNDS_MARGIN: 220,    // probe is "lost" once it is this far outside the world rect
+  DT: 1 / 120,           // fixed physics step (120 Hz)
+  MAX_STEPS: 1200,       // 10 s of simulated flight
+  PREDICT_STEPS: 420,    // 35% of flight shown while aiming
+  EPS2: 400,             // gravity softening, eps = 20 units
+  PROBE_R: 6,            // probe collision radius
+  FRAG_R: 24,            // comet fragment pickup radius
+  DRAG_MAX: 300,         // world units of pull for full power (~120 CSS px on an iPhone)
+  DRAG_CANCEL: 40,       // release with a pull shorter than this = cancel
+  VMAX: 640,             // launch speed at full power (units/s)
+  MAX_LAUNCHES: 3,
+  TRAIL_MAX: 720,        // pooled trail ring size (points)
+  MAX_STEPS_PER_FRAME: 16
+};
+
+var PAL = {
+  ink: '#0E0D0B',        // background
+  paper: '#EDE6D6',      // all line work
+  graphite: '#2A2620',   // grid, faint marks
+  vermilion: '#E4572E',  // probe, trajectory, danger
+  brass: '#C9A45C',      // target, stars, success
+  // same hues at an alpha — the ONLY way to vary tone. No other hues.
+  a: function (name, alpha) {
+    var h = PAL[name].slice(1);
+    var r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+};
+
+var FONT = {
+  sc: '"Cormorant SC", "Cormorant Garamond", Georgia, "Times New Roman", serif',   // small-caps titles
+  serif: '"Cormorant Garamond", Georgia, "Times New Roman", serif',                // italic notes
+  mono: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace'              // numbers
+};
+
+function toRoman(n) {
+  var m = [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+  var s = '';
+  for (var i = 0; i < m.length; i++) while (n >= m[i][0]) { s += m[i][1]; n -= m[i][0]; }
+  return s;
+}
+
+// ===================== MODULE: 10-physics.js =====================
+/* PERIHELION — physics (owner: PHYSICS AGENT; reference core written by LEAD).
+   Integrator: semi-implicit (symplectic) Euler at a fixed DT = K.DT (120 Hz):
+     a = accel(bodies at t = abs*DT);  v += a*DT;  x += v*DT;  abs++;
+   then, against body positions at the END of the step (t = abs*DT), in this order: fragment pickups ->
+   body collisions (per body: blackhole capture, then crash) -> target -> bounds -> timeout (K.MAX_STEPS).
+   Gravity is softened Newtonian: a = mu*d / (|d|^2 + EPS2)^1.5 (mu < 0 = repulsor).
+   DETERMINISM RULE: numeric behaviour is FROZEN (baked levels + solutions depend on it; see
+   tools/physics-golden.json). Time is ALWAYS abs*DT from an integer step counter, never accumulated.
+   predict/simulate and the live flight run the very same createSim + stepSim, so a predicted point is
+   bit-identical (===) to the live probe at that step. Never reorder float ops here; `node tools/physics-test.js`
+   must stay green. Guards for bad input (NaN/Infinity) only change results for non-finite values. */
+var Physics = (function () {
+  var C = K, DT = K.DT, sqrt = Math.sqrt, cos = Math.cos, sin = Math.sin; // locals: fast in vm and browser
+
+  // Body position at absolute time t (seconds). Bodies with `orbit` move on rails: angle = phase + omega*t.
+  function bodyPos(b, t, out) {
+    var o = b.orbit;
+    if (o) {
+      var a = o.phase + o.omega * t;
+      out.x = o.cx + o.rad * cos(a);
+      out.y = o.cy + o.rad * sin(a);
+    } else {
+      out.x = b.x; out.y = b.y;
+    }
+    return out;
+  }
+
+  var _p = { x: 0, y: 0 };
+  // Softened Newtonian gravity: a = mu * d / (|d|^2 + eps^2)^(3/2). Negative mu = repulsor, mu = 0 = inert.
+  function accel(level, x, y, t, out) {
+    var ax = 0, ay = 0, bs = level.bodies, e2 = C.EPS2;
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i];
+      bodyPos(b, t, _p);
+      var dx = _p.x - x, dy = _p.y - y;
+      var d2 = dx * dx + dy * dy + e2;
+      var inv = b.mu / (d2 * sqrt(d2));
+      ax += dx * inv; ay += dy * inv;
+    }
+    out.x = ax; out.y = ay;
+    return out;
+  }
+
+  // Pull vector (finger - touchStart) in world units -> launch velocity (slingshot: opposite direction).
+  // Non-finite or overflowing input cancels instead of producing NaN velocities.
+  function launchVelocity(dx, dy) {
+    var len = sqrt(dx * dx + dy * dy);
+    if (!(len >= C.DRAG_CANCEL) || len === Infinity) return { cancel: true, vx: 0, vy: 0, power: 0 };
+    var L = Math.min(len, C.DRAG_MAX);
+    var power = L / C.DRAG_MAX;
+    var s = -C.VMAX * power / len;
+    return { cancel: false, vx: dx * s, vy: dy * s, power: power };
+  }
+
+  function createSim(level, vx, vy, t0Step) {
+    return {
+      x: level.probe.x, y: level.probe.y, vx: vx, vy: vy,
+      t0Step: t0Step | 0, abs: t0Step | 0, step: 0,
+      status: 'flying',                 // 'flying'|'hit'|'crash'|'captured'|'lost'|'timeout'
+      hitBody: -1,
+      collected: new Uint8Array(level.frags ? level.frags.length : 0),
+      minDist: Infinity,                // closest approach to target centre
+      events: []                        // {type:'frag', i} pushed as they happen; consumer may clear
+    };
+  }
+
+  var _a = { x: 0, y: 0 }, _q = { x: 0, y: 0 };
+  // One fixed step. Once status leaves 'flying' it is terminal: further calls change nothing.
+  function stepSim(sim, level) {
+    if (sim.status !== 'flying') return sim.status;
+    accel(level, sim.x, sim.y, sim.abs * DT, _a);
+    sim.vx += _a.x * DT; sim.vy += _a.y * DT;
+    sim.x += sim.vx * DT; sim.y += sim.vy * DT;
+    sim.abs++; sim.step++;
+    var t = sim.abs * DT, x = sim.x, y = sim.y, i, dx, dy, pr = C.PROBE_R, fr2 = C.FRAG_R * C.FRAG_R;
+
+    var fr = level.frags, got = sim.collected;
+    if (fr) for (i = 0; i < fr.length; i++) {
+      if (got[i]) continue;
+      dx = fr[i].x - x; dy = fr[i].y - y;
+      if (dx * dx + dy * dy < fr2) { got[i] = 1; sim.events.push({ type: 'frag', i: i }); }
+    }
+
+    var bs = level.bodies;
+    for (i = 0; i < bs.length; i++) {
+      var b = bs[i];
+      bodyPos(b, t, _q);
+      dx = _q.x - x; dy = _q.y - y;
+      var d2 = dx * dx + dy * dy;
+      if (b.kind === 'blackhole' && b.capture && d2 < b.capture * b.capture) { sim.status = 'captured'; sim.hitBody = i; return sim.status; }
+      var rr = b.r + pr;
+      if (d2 < rr * rr) { sim.status = 'crash'; sim.hitBody = i; return sim.status; }
+    }
+
+    var tg = level.target;
+    dx = tg.x - x; dy = tg.y - y;
+    var dt2 = sqrt(dx * dx + dy * dy);
+    if (dt2 < sim.minDist) sim.minDist = dt2;
+    if (dt2 < tg.r) { sim.status = 'hit'; return sim.status; }
+
+    var M = C.BOUNDS_MARGIN;  // negated form so a NaN position counts as lost (identical for finite x,y)
+    if (!(x >= -M && x <= C.WORLD_W + M && y >= -M && y <= C.WORLD_H + M)) { sim.status = 'lost'; return sim.status; }
+    if (sim.step >= C.MAX_STEPS) { sim.status = 'timeout'; return sim.status; }
+    return sim.status;
+  }
+
+  // Runs a flight headlessly. If outPts (Float32Array/Float64Array, length >= 2*maxSteps) is given, writes x,y
+  // per step. Returns the sim (with .n = number of points written).
+  function simulate(level, vx, vy, t0Step, maxSteps, outPts) {
+    var sim = createSim(level, vx, vy, t0Step);
+    var n = 0, lim = maxSteps || C.MAX_STEPS;
+    while (sim.status === 'flying' && sim.step < lim) {
+      stepSim(sim, level);
+      if (outPts) { outPts[2 * n] = sim.x; outPts[2 * n + 1] = sim.y; }
+      n++;
+    }
+    sim.n = n;
+    return sim;
+  }
+
+  // Aiming preview: first K.PREDICT_STEPS of the exact same flight.
+  function predict(level, vx, vy, t0Step, outPts) {
+    return simulate(level, vx, vy, t0Step, C.PREDICT_STEPS, outPts);
+  }
+
+  function speed(sim) { return sqrt(sim.vx * sim.vx + sim.vy * sim.vy); }
+
+  // selfTest (browser + node, no DOM, own inline levels) -> {ok, checks:[{name, ok, detail}]}
+  function selfTest() {
+    var cks = [], N = C.MAX_STEPS, Q = C.PREDICT_STEPS, V = launchVelocity, S = simulate, KS = 'x y vx vy status abs minDist hitBody'.split(' ');
+    function chk(name, fn) {
+      var r; try { r = fn(); } catch (e) { r = 'threw ' + e; }
+      cks.push({ name: name, ok: r === true, detail: r === true ? '' : String(r) });
+    }
+    function B(x, y, r, mu, k, cap) { return { kind: k || 'planet', x: x, y: y, r: r, mu: mu, orbit: null, capture: cap }; }
+    function O(r, mu, cx, cy, rad, om, ph, k) { return { kind: k || 'moon', r: r, mu: mu, orbit: { cx: cx, cy: cy, rad: rad, omega: om, phase: ph } }; }
+    function L(py, bs, fr, tr) { var l = { probe: { x: 450, y: py }, target: { x: 450, y: 200, r: tr || 40 }, bodies: bs }; if (fr) l.frags = fr; return l; }
+    var fr3 = [{ x: 450, y: 1200 }, { x: 450, y: 1000 }, { x: 450, y: 800 }], lv = [
+      L(1420, [B(330, 780, 70, 2.4e7)]),                 // no frags field
+      L(1440, [B(450, 820, 60, 1.6e7), O(16, 8e5, 450, 820, 150, 1.3, .4)], []), // moon
+      L(1400, [O(46, 7.5e6, 470, 820, 120, .9, 0, 'planet'), O(40, 5.2e6, 470, 820, 120, .9, Math.PI, 'planet')]),
+      L(1440, [B(450, 800, 14, 3.2e7, 'blackhole', 44), B(220, 520, 26, -1.1e7, 'repulsor')]),
+      L(1450, [B(250, 700, 40, 6e6)], fr3)];
+    function same(a, b) { return KS.every(function (k) { return a[k] === b[k]; }); }
+    chk('predict/simulate === live steps (t0 0/37/1234)', function () {
+      var p = new Float64Array(2 * N), f = new Float32Array(2 * Q);
+      for (var j = 0; j < 15; j++) {
+        var l = lv[j % 5], t0 = [0, 37, 1234][j % 3], v = V(20 - 9 * j, 110 + 9 * j);
+        var s = S(l, v.vx, v.vy, t0, N, p), q = predict(l, v.vx, v.vy, t0, f), m = createSim(l, v.vx, v.vy, t0);
+        for (var i = 0; m.status === 'flying'; i++) {
+          stepSim(m, l);
+          if (i % 64 === 0) predict(lv[(j + 1) % 5], 50, -300, 9); // interleave
+          if (p[2 * i] !== m.x || p[2 * i + 1] !== m.y || i < q.n && (f[2 * i] !== Math.fround(m.x) || f[2 * i + 1] !== Math.fround(m.y))) return 'f' + j + '@' + i;
+        }
+        if (i !== s.n || !same(s, m) || m.abs !== t0 + i || q.n !== Math.min(i, Q)) return 'f' + j + ' end';
+      }
+      return true;
+    });
+    chk('determinism; mu=0 body inert', function () {
+      for (var j = 0; j < 5; j++) if (!same(S(lv[j], 90, -400, 5), S(lv[j], 90, -400, 5))) return 'L' + j;
+      return same(S(lv[0], 90, -400), S(L(1420, lv[0].bodies.concat(B(0, 0, 5, 0))), 90, -400)) || 'mu=0';
+    });
+    chk('launchVelocity', function () {
+      var c = C.DRAG_CANCEL, D = C.DRAG_MAX, h = V(D * 9, 0), u = V(-D * .6, D * .8), w = V(D * .3, D * .4);
+      if (!V(0, 0).cancel || !V(c - 1e-9, 0).cancel || V(c, 0).cancel || !V(NaN, 1).cancel || !V(1 / 0, 0).cancel) return 'cancel';
+      if (h.power !== 1 || h.vx !== -C.VMAX || u.power !== 1 || Math.abs(speed(u) - C.VMAX) > 1e-9) return 'clamp';
+      if (w.power !== .5 || Math.abs(speed(w) - C.VMAX / 2) > 1e-9) return 'linear';
+      return u.vx > 0 && u.vy < 0 && Math.abs(u.vx * .8 + u.vy * .6) < 1e-9 || 'direction';
+    });
+    chk('terminal statuses (end-of-step bodies)', function () {
+      var cs = [['hit', L(290, []), -300], ['crash', L(800, [O(50, 1e5, 450, 500, 100, .5, Math.PI / 2)]), -200],
+        ['captured', L(800, [B(450, 600, 14, 1e6, 'blackhole', 60)]), -200], ['lost', L(800, []), 0, 640], ['timeout', L(800, []), 0], ['lost', L(800, []), NaN]];
+      for (var j = 0; j < 6; j++) {
+        var c = cs[j], s = S(c[1], c[3] || 0, c[2], 3), x = s.x, n = s.step, b = c[1].bodies[0], g = { x: 0, y: 0 };
+        if (s.status !== c[0] || stepSim(s, c[1]) !== c[0] || s.x !== x || s.step !== n || c[0] === 'timeout' && n !== N) return c[0] + ' got ' + s.status;
+        if (b && (s.hitBody || (bodyPos(b, s.abs * DT, g), speed({ vx: g.x - s.x, vy: g.y - s.y }) >= (b.capture || b.r + C.PROBE_R)))) return c[0] + ' body';
+      }
+      return true;
+    });
+    chk('fragment events once', function () {
+      var l = L(1450, [], fr3), s = createSim(l, 0, -100), e = [];
+      while (stepSim(s, l) === 'flying' && s.step < 900) { e = e.concat(s.events); s.events.length = 0; }
+      return e.length === 3 && e[0].i === 0 && e[1].i === 1 && e[2].i === 2 && s.collected.join() === '1,1,1' || 'ev ' + e.length;
+    });
+    chk('rails + integrator order', function () {
+      var l = lv[2], b = l.bodies[1], o = b.orbit, p = { x: 0, y: 0 }, a = { x: 0, y: 0 };
+      for (var s = 0; s < 3000; s += 37) {
+        var g = o.phase + o.omega * (s * DT); bodyPos(b, s * DT, p);
+        if (p.x !== o.cx + o.rad * Math.cos(g) || p.y !== o.cy + o.rad * Math.sin(g)) return 'step ' + s;
+      }
+      for (var m = createSim(l, 10, -300, 1234); m.status === 'flying';) {
+        var x = m.x, vx = m.vx; accel(l, x, m.y, m.abs * DT, a); stepSim(m, l);
+        if (m.vx !== vx + a.x * DT || m.x !== x + m.vx * DT) return 'int@' + m.abs;
+      }
+      return m.step > 99 || 'short';
+    });
+    for (var i = 0, ok = true; i < cks.length; i++) ok = ok && cks[i].ok;
+    return { ok: ok, checks: cks };
+  } /* selfTest end */
+
+  return {
+    bodyPos: bodyPos, accel: accel, launchVelocity: launchVelocity,
+    createSim: createSim, stepSim: stepSim, simulate: simulate, predict: predict, speed: speed,
+    selfTest: selfTest
+  };
+})();
+
+// ===================== MODULE: 20-levels.js =====================
+/* PERIHELION — levels (owner: LEVEL AGENT).
+   CAMPAIGN is baked offline by tools/levels-bake.js (same generator as generate() below, plus a brute-force
+   angle x power solver); every baked number was verified AFTER rounding against the frozen Physics core.
+   generate(seed, difficulty) builds Endless plates at runtime with a fast, budgeted solver. */
+var Levels = (function () {
+  function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+  var NAMES = ['First Light', 'The Solitary Mass', 'Two Lanterns', 'Comet Dust', 'The Narrow Pass',
+    'A Wandering Moon', 'Tidal Reach', 'The Retinue', 'Perturbation', 'The Binary',
+    'Syzygy', 'The Dioscuri', 'Roche Limit', 'Event Horizon', 'The Dark Well',
+    'Accretion', 'Hill Sphere', 'The Lagrange Gate', 'Precession', 'The Contrary Star',
+    'Aphelion', 'Occultation', 'The Ecliptic', 'Libration', 'Conjunction',
+    'The Orrery', 'Eccentric Anomaly', 'The Ascending Node', 'Harmony of the Spheres', 'Perihelion'];
+  var SUFFIX = ['Minor', 'Major', 'Borealis', 'Australis', 'Secunda', 'Tertia', 'Nova', 'Obscura'];
+
+  var TAU = Math.PI * 2, DEG = Math.PI / 180;
+  var W = K.WORLD_W, H = K.WORLD_H, MARGIN = 40;
+  function r3(x) { return Number(x.toPrecision(3)); }          // mu: 3 significant figures
+  function d3(x) { return Math.round(x * 1000) / 1000; }        // phases / omegas: 3 decimals
+  function ri(x) { return Math.round(x); }                      // coordinates, radii
+
+  /* ---------- geometry: every body sweeps a disk (fixed) or an annulus (on rails) ---------- */
+  function reff(b) { return b.kind === 'blackhole' ? b.capture : b.r; }
+  // smallest distance between point (x,y) and the surface of anything body b can ever occupy
+  function pointGap(b, x, y) {
+    var o = b.orbit, e = reff(b);
+    if (!o) return Math.sqrt((b.x - x) * (b.x - x) + (b.y - y) * (b.y - y)) - e;
+    var d = Math.sqrt((o.cx - x) * (o.cx - x) + (o.cy - y) * (o.cy - y));
+    return Math.abs(d - o.rad) - e;
+  }
+  function sweep(b) { // outer swept disk {x,y,R}
+    var o = b.orbit;
+    return o ? { x: o.cx, y: o.cy, R: o.rad + reff(b) } : { x: b.x, y: b.y, R: reff(b) };
+  }
+  // conservative smallest surface gap between two bodies over all time
+  function bodyGap(a, b) {
+    var oa = a.orbit, ob = b.orbit, ea = reff(a), eb = reff(b);
+    if (!oa && !ob) return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)) - ea - eb;
+    if (!oa) return pointGap(b, a.x, a.y) - ea;
+    if (!ob) return pointGap(a, b.x, b.y) - eb;
+    if (oa.cx === ob.cx && oa.cy === ob.cy) {
+      if (oa.omega === ob.omega) { // rigid pair: constant separation
+        var dx = oa.rad * Math.cos(oa.phase) - ob.rad * Math.cos(ob.phase), dy = oa.rad * Math.sin(oa.phase) - ob.rad * Math.sin(ob.phase);
+        return Math.sqrt(dx * dx + dy * dy) - ea - eb;
+      }
+      return Math.abs(oa.rad - ob.rad) - ea - eb;
+    }
+    var sa = sweep(a), sb = sweep(b);
+    return Math.sqrt((sa.x - sb.x) * (sa.x - sb.x) + (sa.y - sb.y) * (sa.y - sb.y)) - sa.R - sb.R;
+  }
+  function inWorld(b) { var s = sweep(b); return s.x - s.R >= MARGIN && s.x + s.R <= W - MARGIN && s.y - s.R >= MARGIN && s.y + s.R <= H - MARGIN; }
+
+  /* ---------- recipe: which mechanics appear at a given difficulty ---------- */
+  // tokens: P planet, M moon (rides a planet / black hole), B binary pair, H black hole, R repulsor
+  function recipe(rng, d) {
+    var i = Math.round(d * 29), t = [], j, n, pick;
+    if (i <= 1) t = ['P'];
+    else if (i <= 4) t = (i === 3 && rng() < 0.5) ? ['P'] : ['P', 'P'];
+    else if (i <= 8) { t = ['P', 'M']; if (i >= 7) t.push(rng() < 0.5 ? 'P' : 'M'); }
+    else if (i <= 12) { t = ['B']; if (i >= 10) t.push('P'); if (i >= 12 || (i === 11 && rng() < 0.5)) t.push('M'); }
+    else if (i <= 18) {
+      t = ['H', 'P']; n = i >= 16 ? 2 : (i >= 14 ? 1 : 0);
+      for (j = 0; j < n; j++) { pick = rng(); t.push(pick < 0.4 ? 'M' : pick < 0.7 ? 'P' : 'B'); }
+    } else {
+      t = ['P', 'R']; n = 1 + Math.floor((i - 19) / 3); // 3..6 bodies by the end; a planet blocks (a repulsor on the line casts a shadow no path escapes)
+      var pool = ['P', 'M', 'B', 'H', 'M', 'P'];
+      for (j = 0; j < n; j++) { pick = pool[Math.floor(rng() * pool.length)]; t.push(pick === 'H' && t.indexOf('H') >= 0 ? 'P' : pick); } // one black hole at most
+      if (i === 19) t = ['P', 'R'];
+    }
+    var cnt = 0; for (j = 0; j < t.length; j++) cnt += t[j] === 'B' ? 2 : 1;
+    while (cnt > 6) { t.pop(); cnt--; } // (only 'B' can overshoot by one; trimming the tail keeps it simple)
+    var frags = i < 3 ? 0 : i < 10 ? 1 : i < 20 ? 1 + (rng() < 0.5 ? 1 : 0) : 2 + (rng() < 0.5 ? 1 : 0);
+    return { tokens: t, frags: frags, index: i };
+  }
+
+  /* ---------- placement ---------- */
+  function planet(rng, big) { var r = ri(big ? 55 + rng() * 30 : 40 + rng() * 30); return { kind: 'planet', r: r, mu: r3((55 + rng() * 30) * r * r * r), x: 0, y: 0, orbit: null }; }
+  function makeSystem(rng, tok, pairId, d) {
+    var b, b2, r1, r2, rad, om, ph;
+    if (tok === 'P') return [planet(rng, rng() < 1 - d * 0.7)];
+    if (tok === 'H') { b = { kind: 'blackhole', r: ri(12 + rng() * 4), capture: ri(38 + rng() * 12), mu: r3(2.5e7 + rng() * 1.5e7), x: 0, y: 0, orbit: null }; return [b]; }
+    if (tok === 'R') { b = { kind: 'repulsor', r: ri(22 + rng() * 8), mu: r3(-(0.8e7 + rng() * 0.6e7)), x: 0, y: 0, orbit: null }; return [b]; }
+    // binary: two planets on one circle, opposite phases
+    r1 = ri(30 + rng() * 20); r2 = ri(30 + rng() * 20); rad = ri(80 + rng() * 60);
+    om = d3((rng() < 0.5 ? -1 : 1) * (0.5 + rng() * 0.6)); ph = d3(rng() * TAU);
+    b = { kind: 'planet', r: r1, mu: r3((55 + rng() * 30) * r1 * r1 * r1), orbit: { cx: 0, cy: 0, rad: rad, omega: om, phase: ph }, pair: pairId };
+    b2 = { kind: 'planet', r: r2, mu: r3((55 + rng() * 30) * r2 * r2 * r2), orbit: { cx: 0, cy: 0, rad: rad, omega: om, phase: d3(ph + Math.PI) }, pair: pairId };
+    return [b, b2];
+  }
+  function setCentre(sys, x, y) {
+    for (var i = 0; i < sys.length; i++) { var b = sys[i]; if (b.orbit) { b.orbit.cx = x; b.orbit.cy = y; } else { b.x = x; b.y = y; } }
+  }
+  function moonFor(rng, parent, shrink) {
+    var r = ri(12 + rng() * 10);
+    return { kind: 'moon', r: r, mu: r3(60 * r * r * r),
+      orbit: { cx: parent.x, cy: parent.y, rad: ri(reff(parent) + Math.max(50, r + 34) + rng() * 60 * shrink), omega: d3((rng() < 0.5 ? -1 : 1) * (0.5 + rng() * 1.1)), phase: d3(rng() * TAU) } };
+  }
+  function clearOf(L, b, others) {
+    if (!inWorld(b)) return false;
+    if (pointGap(b, L.probe.x, L.probe.y) < 140) return false;
+    var g = pointGap(b, L.target.x, L.target.y);
+    if (g < 110 || g - L.target.r < 70) return false;
+    for (var i = 0; i < others.length; i++) if (others[i] !== b && bodyGap(b, others[i]) < 36) return false;
+    return true;
+  }
+
+  // endless=true (runtime only; the campaign bake calls build(seed, d)): a plain planet takes the blocking slot when the
+  // recipe has one — a black hole or binary straddling the line leaves few finger-robust routes, which costs solver time.
+  function build(seed, d, endless) {
+    var rng = mulberry32(seed), rc = recipe(rng, d), i, k, tries;
+    if (endless && rc.tokens[0] !== 'P') { var pi = rc.tokens.indexOf('P'); if (pi > 0) { rc.tokens.splice(pi, 1); rc.tokens.unshift('P'); } }
+    var L = { id: 'e' + seed, index: -1, seed: seed, difficulty: d3(d), name: '', plate: '∞',
+      probe: { x: ri(180 + rng() * 540), y: ri(1350 + rng() * 130) },
+      target: { x: ri(140 + rng() * 620), y: ri(140 + rng() * 280), r: ri(46 - 12 * d) },
+      bodies: [], frags: [], solution: null, _frags: rc.frags };
+    var P = L.probe, T = L.target, blocker = rc.index >= 5, pair = 1, parents = [], lane = null;
+    // lane: probe -> a waypoint beside the blocker -> target. Later bodies keep clear of it, so a bending
+    // route stays open (moons may still sweep across it, and attractors near the target sit on it on purpose).
+    function laneGap(b) {
+      var g = 1e9;
+      for (var q = 0; q < lane.length - 2; q += 2) for (var u = 0; u <= 1; u += 0.05) g = Math.min(g, pointGap(b, lane[q] + (lane[q + 2] - lane[q]) * u, lane[q + 1] + (lane[q + 3] - lane[q + 1]) * u));
+      return g;
+    }
+    var toks = rc.tokens.filter(function (t) { return t !== 'M'; }), moons = rc.tokens.length - toks.length;
+    for (k = 0; k < toks.length; k++) {
+      var sys = makeSystem(rng, toks[k], pair, d), ok = false;
+      if (toks[k] === 'B') pair++;
+      for (tries = 0; tries < 60 && !ok; tries++) {
+        var x, y, s = sweep(sys[0]).R, free = false;
+        if (k === 0 && blocker) { // the principal body sits across the direct line: every hit must bend
+          var f = 0.35 + rng() * 0.3, off = (rng() * 2 - 1) * 0.6 * s;
+          var lx = P.x + (T.x - P.x) * f, ly = P.y + (T.y - P.y) * f, len = Math.sqrt((T.x - P.x) * (T.x - P.x) + (T.y - P.y) * (T.y - P.y));
+          x = lx - (T.y - P.y) / len * off; y = ly + (T.x - P.x) / len * off;
+        } else if ((k === 0 && !blocker) || (k === 1 && toks[1] !== 'R' && rng() < 0.7 * (1 - d))) {
+          // an attractor just below the target: gravity funnels near-misses into the bezel (gentler plates)
+          var an = Math.atan2(P.y - T.y, P.x - T.x) + (rng() * 2 - 1) * 1.3, dd = s + 115 + rng() * 120;
+          x = T.x + Math.cos(an) * dd; y = T.y + Math.sin(an) * dd;
+        } else { x = MARGIN + rng() * (W - 2 * MARGIN); y = T.y + 60 + rng() * (P.y - T.y - 120); free = true; }
+        setCentre(sys, ri(x), ri(y));
+        ok = true;
+        for (i = 0; i < sys.length && ok; i++) ok = clearOf(L, sys[i], L.bodies) && (!lane || !free || laneGap(sys[i]) >= 80);
+      }
+      if (!ok) return null;
+      if (k === 0 && blocker) {
+        var nx = -(T.y - P.y), ny = T.x - P.x, nl = Math.sqrt(nx * nx + ny * ny), sd = rng() < 0.5 ? -1 : 1, wd = sweep(sys[0]).R + 70 + rng() * 80, c = sweep(sys[0]);
+        lane = [P.x, P.y, Math.max(80, Math.min(W - 80, c.x + nx / nl * sd * wd)), c.y + ny / nl * sd * wd, T.x, T.y];
+      }
+      for (i = 0; i < sys.length; i++) { L.bodies.push(sys[i]); if (!sys[i].orbit && sys[i].kind !== 'repulsor') parents.push(sys[i]); }
+    }
+    for (k = 0; k < moons; k++) {
+      var placed = false;
+      for (tries = 0; tries < 40 && !placed; tries++) {
+        var par = parents[Math.floor(rng() * parents.length)];
+        if (!par) return null;
+        var m = moonFor(rng, par, 1 - tries / 40);
+        if (clearOf(L, m, L.bodies)) { L.bodies.push(m); placed = true; } // moons may cross the lane: a timing puzzle
+      }
+      if (!placed) return null;
+    }
+    return L;
+  }
+
+  /* ---------- solver ---------- */
+  function launch(aDeg, p) { var a = aDeg * DEG, v = K.VMAX * p; return { vx: Math.cos(a) * v, vy: Math.sin(a) * v }; }
+  var nSims = 0, fast = false, FAST_STEPS = 720; // solver ignores routes longer than 6 s (rare, and hard to aim)
+  // Exact flight (Physics.simulate). Inside solve() `fast` also drops flights that are >80 u outside the plate and
+  // still heading out, and flights past FAST_STEPS: this can only turn a rare late hit into a miss, so every hit the solver reports is genuine.
+  function shoot(L, aDeg, p, t0) {
+    var v = launch(aDeg, p); nSims++;
+    if (!fast) return Physics.simulate(L, v.vx, v.vy, t0, K.MAX_STEPS);
+    var s = Physics.createSim(L, v.vx, v.vy, t0);
+    while (Physics.stepSim(s, L) === 'flying') {
+      if (s.step & 7) continue;
+      if (s.step >= FAST_STEPS) { s.status = 'timeout'; break; }
+      var ox = s.x < -80 ? s.x + 80 : s.x > W + 80 ? s.x - W - 80 : 0, oy = s.y < -80 ? s.y + 80 : s.y > H + 80 ? s.y - H - 80 : 0;
+      if ((ox || oy) && ox * s.vx + oy * s.vy > 0) { s.status = 'lost'; break; }
+    }
+    return s;
+  }
+  function hit(L, aDeg, p, t0) { return shoot(L, aDeg, p, t0).status === 'hit'; }
+  function clampP(p) { return p > 1 ? 1 : p; } // pulling past DRAG_MAX gives full power
+  // Finger tolerance: 3x3 neighbourhood at +-1 deg / +-0.03 power. Returns hits out of 9 (0 if the centre misses).
+  // With `need`, bails out as soon as `need` can no longer be reached.
+  function robust(L, a, p, t0, need) {
+    if (!hit(L, a, p, t0)) return 0;
+    var n = 1, miss = 0;
+    for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) if (i || j) {
+      if (hit(L, a + i, clampP(p + 0.03 * j), t0)) n++; else if (need && ++miss > 9 - need) return 0;
+    }
+    return n;
+  }
+  function result(a, p, sc) { var v = launch(a, p); return { vx: v.vx, vy: v.vy, angle: a, power: p, robust: sc }; }
+  // From a hit, find the widest part of its cluster: centre the angle, walk the power run, then pick the power
+  // whose angle run is widest (clusters are often thin at one end) and return the middle of that run.
+  function centre(L, a, p, t0) {
+    function arun(a0, pp) { // [centre, width] of the angle run through a0 at power pp (0.5 deg steps)
+      var lo = 0, hi = 0;
+      while (lo < 12 && hit(L, a0 - (lo + 1) * 0.5, pp, t0)) lo++;
+      while (hi < 12 && hit(L, a0 + (hi + 1) * 0.5, pp, t0)) hi++;
+      return [a0 + (hi - lo) * 0.25, lo + hi];
+    }
+    var c = arun(a, p), best = [c[0], p, c[1]], plo = p, phi = p;
+    a = c[0];
+    while (plo - 0.03 >= 0.17 && p - plo < 0.3 && hit(L, a, plo - 0.03, t0)) plo -= 0.03;
+    while (phi < 1 && phi - p < 0.3 && hit(L, a, clampP(phi + 0.03), t0)) phi = clampP(phi + 0.03);
+    for (var pp = plo; pp <= phi + 1e-9; pp += 0.03) {
+      if (Math.abs(pp - p) < 1e-9) continue;
+      var r = arun(a, pp);
+      if (r[1] > best[2] || (r[1] === best[2] && Math.abs(pp - (plo + phi) / 2) < Math.abs(best[1] - (plo + phi) / 2))) best = [r[0], pp, r[1]];
+    }
+    return [best[0], best[1]];
+  }
+
+  // Fast budgeted solver: coarse fan around the direct line (closest-approach recorded for every shot), then
+  // pattern search on closest approach from the most promising shots; each hit is centred and finger-tested.
+  // opts: {t0Step, maxSims (default 3000), minRobust (default 7 of 9)}. Returns {vx, vy, angle, power, robust} | null.
+  function solve(L, opts) {
+    fast = true;
+    try { return solveFast(L, opts || {}); } finally { fast = false; }
+  }
+  function solveFast(L, opts) {
+    var t0 = opts.t0Step | 0, budget = opts.maxSims || 3000, need = opts.minRobust || 7, start = nSims, tried = [];
+    var th = Math.atan2(L.target.y - L.probe.y, L.target.x - L.probe.x) / DEG, seeds = [], i, r;
+    function fresh(a, p) { for (var q = 0; q < tried.length; q++) if (Math.abs(tried[q][0] - a) < 2 && Math.abs(tried[q][1] - p) < 0.08) return false; return true; }
+    function onHit(a, p) {
+      if (!fresh(a, p)) return null;
+      var c = centre(L, a, p, t0); tried.push([a, p], c);
+      var sc = robust(L, c[0], c[1], t0, need);
+      if (sc >= need) return result(c[0], c[1], sc);
+      if (budget - (nSims - start) < 400) return null;
+      // generous budget: map the neighbourhood (13 angles x 7 powers) and take its most tolerant cell
+      var G = [], bi = -1, bs = 0, u, w;
+      for (u = 0; u < 13; u++) for (w = 0; w < 7; w++) G.push(hit(L, c[0] - 3 + u * 0.5, clampP(c[1] - 0.09 + w * 0.03), t0) && c[1] - 0.09 + w * 0.03 >= 0.17 ? 1 : 0);
+      for (u = 2; u < 11; u++) for (w = 1; w < 6; w++) if (G[u * 7 + w]) {
+        var n = 0; for (var du = -2; du <= 2; du += 2) for (var dw = -1; dw <= 1; dw++) n += G[(u + du) * 7 + w + dw];
+        if (n > bs) { bs = n; bi = u * 7 + w; }
+      }
+      if (bs < need) return null;
+      var ba = c[0] - 3 + Math.floor(bi / 7) * 0.5, bp = clampP(c[1] - 0.09 + (bi % 7) * 0.03);
+      tried.push([ba, bp]);
+      sc = robust(L, ba, bp, t0, need);
+      return sc >= need ? result(ba, bp, sc) : null;
+    }
+    // two interleaved fans: 5 deg apart, the second offset by 2.5 deg and between the first one's powers
+    var PWS = [[1, 0.8, 0.62, 0.46, 0.32, 0.22], [0.9, 0.71, 0.54, 0.39, 0.27, 1]];
+    for (var pass = 0; pass < 2; pass++) for (var ring = 0; ring <= 36; ring++) for (var sg = -1; sg <= 1; sg += 2) {
+      if (ring === 0 && sg > 0 && !pass) continue;
+      var a = th + sg * (ring * 5 + pass * 2.5), PW = PWS[pass];
+      for (var q = 0; q < PW.length; q++) {
+        if (nSims - start > budget) return null;
+        var s = shoot(L, a, PW[q], t0);
+        if (s.status === 'hit') { if ((r = onHit(a, PW[q]))) return r; }
+        else seeds.push([s.minDist, a, PW[q]]);
+      }
+      if (sg > 0 && (ring === 5 || ring === 12 || ring === 22 || ring === 36)) { // descend from the closest near-misses so far
+        seeds.sort(function (x, y) { return x[0] - y[0]; });
+        for (i = 0; i < 4 && i < seeds.length; i++) {
+          var ca = seeds[i][1], cp = seeds[i][2], best = seeds[i][0], da = 2.5, dp = 0.08;
+          if (best > 400) break;
+          while (da >= 0.3 && nSims - start < budget) {
+            var moved = false, cand = [[ca + da, cp], [ca - da, cp], [ca, clampP(cp + dp)], [ca, cp - dp]];
+            for (var k = 0; k < 4 && !moved; k++) {
+              if (cand[k][1] < 0.17) continue;
+              var z = shoot(L, cand[k][0], cand[k][1], t0);
+              if (z.status === 'hit') { if ((r = onHit(cand[k][0], cand[k][1]))) return r; da = 0; moved = true; break; }
+              if (z.minDist < best) { best = z.minDist; ca = cand[k][0]; cp = cand[k][1]; moved = true; }
+            }
+            if (!moved) { da /= 2; dp /= 2; }
+          }
+        }
+        seeds.length = 0;
+      }
+    }
+    return null;
+  }
+
+  /* ---------- comet fragments: on a DIFFERENT hit path, away from the stored solution ---------- */
+  var _A = new Float32Array(2 * K.MAX_STEPS), _S = new Float32Array(2 * K.MAX_STEPS);
+  function placeFrags(L, n, alt, sol, rng) {
+    if (!n) return [];
+    var sa = Physics.simulate(L, alt.vx, alt.vy, alt.t0Step | 0, K.MAX_STEPS, _A);
+    var ss = Physics.simulate(L, sol.vx, sol.vy, sol.t0Step | 0, K.MAX_STEPS, _S);
+    if (sa.status !== 'hit') return null;
+    var out = [], lo = Math.floor(sa.n * 0.15), hi = Math.floor(sa.n * 0.85), seg = (hi - lo) / n;
+    for (var f = 0; f < n; f++) {
+      var found = null;
+      for (var tries = 0; tries < 40 && !found; tries++) {
+        var s = Math.floor(lo + seg * (f + rng())), x = _A[2 * s], y = _A[2 * s + 1];
+        var ang = rng() * TAU, rr = rng() * 8;
+        x = ri(x + Math.cos(ang) * rr); y = ri(y + Math.sin(ang) * rr);
+        if (x < MARGIN || x > W - MARGIN || y < MARGIN || y > H - MARGIN) continue;
+        var ok = true, i;
+        for (i = 0; i < L.bodies.length && ok; i++) if (pointGap(L.bodies[i], x, y) < 22) ok = false;
+        if (!ok) continue;
+        if (Math.hypot(x - L.probe.x, y - L.probe.y) < 120 || Math.hypot(x - L.target.x, y - L.target.y) < L.target.r + 60) continue;
+        for (i = 0; i < out.length && ok; i++) if (Math.hypot(x - out[i].x, y - out[i].y) < 130) ok = false;
+        for (i = 0; i < ss.n && ok; i += 2) { var dx = _S[2 * i] - x, dy = _S[2 * i + 1] - y; if (dx * dx + dy * dy < 70 * 70) ok = false; }
+        if (ok) found = { x: x, y: y };
+      }
+      if (!found) return null;
+      out.push(found);
+    }
+    var keep = L.frags; L.frags = out;
+    var v = Physics.simulate(L, alt.vx, alt.vy, alt.t0Step | 0, K.MAX_STEPS), all = v.status === 'hit';
+    for (i = 0; i < out.length; i++) if (!v.collected[i]) all = false;
+    L.frags = keep;
+    return all ? out : null;
+  }
+
+  function straightHits(L, t0, powers) {
+    var a = Math.atan2(L.target.y - L.probe.y, L.target.x - L.probe.x) / DEG;
+    for (var i = 0; i < powers.length; i++) if (hit(L, a, powers[i], t0)) return true;
+    return false;
+  }
+
+  function finish(L) { delete L._frags; return L; }
+
+  // Endless: deterministic for (seed, difficulty); never returns an unsolvable plate.
+  var SP = [0.4, 0.6, 0.8, 1];
+  // Endless budget, counted in simulated flights (not ms) so results stay deterministic across devices.
+  var CAND_SIMS = 90, STAGE_CAPS = [330, 150, 150, 100];
+  function attempt(seed, s, d, maxSims, cap) {
+    var L = build(s, d, true), sol, rng;
+    if (!L) return null;
+    if (d >= 0.17 && straightHits(L, 0, SP)) return null;
+    sol = solve(L, { maxSims: Math.min(maxSims, cap - nSims) });
+    if (!sol) return null;
+    rng = mulberry32(s ^ 0x5bd1e995);
+    L.solution = { vx: sol.vx, vy: sol.vy, t0Step: 0 };
+    // a second, different hit for comet fragments (cheap and optional in Endless; skipped when the budget is spent)
+    var fr = null;
+    for (var j = 0; j < 12 && !fr && L._frags && nSims < cap; j++) {
+      var a = sol.angle + (j % 2 ? 1 : -1) * (4 + 3 * (j >> 1)), p = [1, 0.7, 0.45][j % 3];
+      if (hit(L, a, p, 0)) { var v = launch(a, p); fr = placeFrags(L, Math.min(2, L._frags), { vx: v.vx, vy: v.vy, t0Step: 0 }, L.solution, rng); }
+    }
+    L.frags = fr || [];
+    L.seed = seed; L.id = 'e' + seed; L.difficulty = d3(d);
+    L.name = NAMES[s % 30] + ' ' + SUFFIX[(s >>> 5) % SUFFIX.length];
+    return finish(L);
+  }
+  var genStats = { fallback: 0, empty: 0 };
+  // Endless: deterministic for (seed, difficulty); never returns an unsolvable plate. Work is capped in simulated
+  // flights (not ms) so results are identical on every device: candidates at the asked difficulty get CAND_SIMS each
+  // within STAGE_CAPS[0]; if none proves finger-robust, cheaper archetypes follow (3-body repulsor plate at 0.69,
+  // planet + moon at 0.2, two planets at 0.1), each with its own small cap. Worst case ~730 flights.
+  function generate(seed, difficulty) {
+    var d = Math.max(0, Math.min(1, +difficulty || 0)), k, L, s, cap, fb = false;
+    var ds = [d, Math.min(d, 0.69), Math.min(d, 0.2), Math.min(d, 0.1)];
+    for (var g = 0; g < ds.length; g++) {
+      if (g && ds[g] === ds[g - 1]) continue;
+      if (g && !fb) { fb = true; genStats.fallback++; }
+      cap = nSims + STAGE_CAPS[g];
+      for (k = 0; k < 48 && nSims < cap; k++) {
+        s = (seed + Math.imul(k + 101 * g, 0x9E3779B1)) >>> 0;
+        if ((L = attempt(seed, s, ds[g], CAND_SIMS, cap))) return L;
+      }
+    }
+    // Last resort (not seen in 1000s of seeds): an empty plate — the straight shot is a guaranteed hit.
+    genStats.empty++;
+    L = { id: 'e' + seed, index: -1, seed: seed, difficulty: d3(d), name: 'Quiet Sky', plate: '\u221E',
+      probe: { x: 450, y: 1420 }, target: { x: 450, y: 260, r: 44 }, bodies: [], frags: [], solution: { vx: 0, vy: -K.VMAX * 0.8, t0Step: 0 } };
+    return L;
+  }
+
+  /*@CAMPAIGN*/var CAMPAIGN = [
+    {id:"c01",index:0,seed:21000,difficulty:0,name:"First Light",plate:"I",probe:{x:498,y:1469},target:{x:376,y:396,r:46},bodies:[{kind:"planet",r:81,mu:4.19e7,x:375,y:661,orbit:null}],frags:[],solution:{vx:104.15808168664763,vy:-402.7494183972928,t0Step:0}},
+    {id:"c02",index:1,seed:7131,difficulty:.034,name:"The Solitary Mass",plate:"II",probe:{x:368,y:1371},target:{x:183,y:367,r:46},bodies:[{kind:"planet",r:85,mu:4e7,x:367,y:535,orbit:null}],frags:[],solution:{vx:-182.36239706425633,vy:-373.89832326045337,t0Step:0}},
+    {id:"c03",index:2,seed:9262,difficulty:.069,name:"Two Lanterns",plate:"III",probe:{x:302,y:1460},target:{x:364,y:177,r:45},bodies:[{kind:"planet",r:79,mu:3.41e7,x:612,y:298,orbit:null},{kind:"planet",r:83,mu:3.18e7,x:271,y:476,orbit:null}],frags:[],solution:{vx:78.72574701260768,vy:-424.7661200676284,t0Step:0}},
+    {id:"c04",index:3,seed:8393,difficulty:.103,name:"Comet Dust",plate:"IV",probe:{x:705,y:1425},target:{x:313,y:385,r:45},bodies:[{kind:"planet",r:76,mu:3.31e7,x:521,y:484,orbit:null}],frags:[{x:685,y:574}],solution:{vx:-220.4464139210133,vy:-352.7880080010732,t0Step:0},fragSolution:{vx:27.60357672582453,vy:-286.67410512974755,t0Step:0}},
+    {id:"c05",index:4,seed:8524,difficulty:.138,name:"The Narrow Pass",plate:"V",probe:{x:275,y:1358},target:{x:636,y:409,r:44},bodies:[{kind:"planet",r:58,mu:1.26e7,x:364,y:499,orbit:null},{kind:"planet",r:72,mu:2.52e7,x:738,y:598,orbit:null}],frags:[{x:790,y:1008}],solution:{vx:121.62662916465847,vy:-397.82277848062273,t0Step:0},fragSolution:{vx:127.98050498001808,vy:2.2339080239722895,t0Step:0}},
+    {id:"c06",index:5,seed:16655,difficulty:.172,name:"A Wandering Moon",plate:"VI",probe:{x:346,y:1456},target:{x:661,y:397,r:44},bodies:[{kind:"planet",r:82,mu:3.43e7,x:549,y:801,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:549,cy:801,rad:134,omega:-1.241,phase:2.754}}],frags:[{x:696,y:619}],solution:{vx:-11.169540119861438,vy:-639.9025249000904,t0Step:0},fragSolution:{vx:362.4999916318928,vy:-527.4407607180901,t0Step:0}},
+    {id:"c07",index:6,seed:64786,difficulty:.207,name:"Tidal Reach",plate:"VII",probe:{x:273,y:1381},target:{x:284,y:401,r:44},bodies:[{kind:"planet",r:78,mu:3.57e7,x:275,y:773,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:275,cy:773,rad:185,omega:-1.203,phase:2.757}}],frags:[{x:379,y:578}],solution:{vx:-208.36361885258026,vy:-605.1318883835628,t0Step:0},fragSolution:{vx:218.89289172842814,vy:-601.4032773029813,t0Step:0}},
+    {id:"c08",index:7,seed:14917,difficulty:.241,name:"The Retinue",plate:"VIII",probe:{x:525,y:1444},target:{x:506,y:332,r:43},bodies:[{kind:"planet",r:83,mu:3.35e7,x:532,y:906,orbit:null},{kind:"planet",r:67,mu:2.41e7,x:719,y:415,orbit:null},{kind:"moon",r:14,mu:165000,orbit:{cx:532,cy:906,rad:138,omega:.904,phase:2.066}}],frags:[{x:595,y:611}],solution:{vx:-265.4036752999931,vy:-582.3752133609876,t0Step:0},fragSolution:{vx:229.35548770899226,vy:-597.4914729582091,t0Step:0}},
+    {id:"c09",index:8,seed:9048,difficulty:.276,name:"Perturbation",plate:"IX",probe:{x:612,y:1421},target:{x:240,y:261,r:43},bodies:[{kind:"planet",r:79,mu:2.97e7,x:386,y:867,orbit:null},{kind:"planet",r:77,mu:3.18e7,x:126,y:420,orbit:null},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:386,cy:867,rad:135,omega:-.676,phase:2.417}}],frags:[{x:273,y:539}],solution:{vx:27.91640791381489,vy:-639.390861812389,t0Step:0},fragSolution:{vx:-370.24566317944675,vy:-441.2415992365313,t0Step:0}},
+    {id:"c10",index:9,seed:38179,difficulty:.31,name:"The Binary",plate:"X",probe:{x:616,y:1353},target:{x:753,y:241,r:42},bodies:[{kind:"planet",r:47,mu:7.17e6,orbit:{cx:637,cy:636,rad:87,omega:-.881,phase:2.429},pair:1},{kind:"planet",r:44,mu:6.22e6,orbit:{cx:637,cy:636,rad:87,omega:-.881,phase:5.571},pair:1}],frags:[{x:539,y:1113}],solution:{vx:171.03256069008432,vy:-616.7234900535187,t0Step:0},fragSolution:{vx:-104.18180942629013,vy:-302.5659441917814,t0Step:0}},
+    {id:"c11",index:10,seed:84310,difficulty:.345,name:"Syzygy",plate:"XI",probe:{x:291,y:1382},target:{x:178,y:352,r:42},bodies:[{kind:"planet",r:34,mu:2.49e6,orbit:{cx:201,cy:724,rad:116,omega:.58,phase:1.002},pair:1},{kind:"planet",r:45,mu:7.27e6,orbit:{cx:201,cy:724,rad:116,omega:.58,phase:4.144},pair:1},{kind:"planet",r:56,mu:1.47e7,x:731,y:524,orbit:null}],frags:[{x:302,y:1131},{x:260,y:531}],solution:{vx:-181.7698206105105,vy:-613.6446303156436,t0Step:0},fragSolution:{vx:18.985326206160696,vy:-543.6686098983881,t0Step:0}},
+    {id:"c12",index:11,seed:21441,difficulty:.379,name:"The Dioscuri",plate:"XII",probe:{x:204,y:1460},target:{x:154,y:174,r:41},bodies:[{kind:"planet",r:32,mu:2.6e6,orbit:{cx:255,cy:909,rad:114,omega:.599,phase:4.176},pair:1},{kind:"planet",r:41,mu:4.35e6,orbit:{cx:255,cy:909,rad:114,omega:.599,phase:7.318},pair:1},{kind:"planet",r:60,mu:1.79e7,x:366,y:274,orbit:null}],frags:[{x:282,y:1149}],solution:{vx:-127.59547802700627,vy:-627.1518109573309,t0Step:0},fragSolution:{vx:45.44245515262757,vy:-153.41115757891092,t0Step:0}},
+    {id:"c13",index:12,seed:22572,difficulty:.414,name:"Roche Limit",plate:"XIII",probe:{x:370,y:1396},target:{x:614,y:316,r:41},bodies:[{kind:"planet",r:34,mu:2.78e6,orbit:{cx:569,cy:909,rad:140,omega:.769,phase:3.779},pair:1},{kind:"planet",r:36,mu:3.04e6,orbit:{cx:569,cy:909,rad:140,omega:.769,phase:6.921},pair:1},{kind:"planet",r:58,mu:1.3e7,x:313,y:424,orbit:null},{kind:"moon",r:14,mu:165000,orbit:{cx:313,cy:424,rad:127,omega:-1.093,phase:4.625}}],frags:[{x:553,y:1146},{x:588,y:862}],solution:{vx:56.387315039062145,vy:-428.30418011348615,t0Step:0},fragSolution:{vx:142.48152134221905,vy:-172.84390667884932,t0Step:0}},
+    {id:"c14",index:13,seed:20703,difficulty:.448,name:"Event Horizon",plate:"XIV",probe:{x:303,y:1395},target:{x:640,y:242,r:41},bodies:[{kind:"blackhole",r:14,capture:45,mu:3.1e7,x:514,y:732,orbit:null},{kind:"planet",r:50,mu:8.03e6,x:172,y:354,orbit:null}],frags:[{x:511,y:1089},{x:680,y:549}],solution:{vx:5.584982718959422,vy:-639.9756307610696,t0Step:0},fragSolution:{vx:367.08891926466947,vy:-524.2573083449547,t0Step:0}},
+    {id:"c15",index:14,seed:27834,difficulty:.483,name:"The Dark Well",plate:"XV",probe:{x:437,y:1442},target:{x:231,y:366,r:40},bodies:[{kind:"blackhole",r:14,capture:50,mu:3.99e7,x:326,y:920,orbit:null},{kind:"planet",r:65,mu:2.2e7,x:205,y:605,orbit:null},{kind:"planet",r:74,mu:2.74e7,x:647,y:1276,orbit:null}],frags:[{x:711,y:1407},{x:273,y:1015}],solution:{vx:-3.7698633352973845,vy:-431.983550763722,t0Step:0},fragSolution:{vx:218.67929930294997,vy:211.17614461953517,t0Step:0}},
+    {id:"c16",index:15,seed:10965,difficulty:.517,name:"Accretion",plate:"XVI",probe:{x:276,y:1393},target:{x:690,y:265,r:40},bodies:[{kind:"blackhole",r:13,capture:48,mu:4e7,x:471,y:880,orbit:null},{kind:"planet",r:70,mu:2.86e7,x:493,y:268,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:471,cy:880,rad:107,omega:-1.147,phase:.003}}],frags:[{x:282,y:879}],solution:{vx:471.8574955584793,vy:-432.3777328740227,t0Step:0},fragSolution:{vx:-51.59619970661368,vy:-589.7472612703134,t0Step:0}},
+    {id:"c17",index:16,seed:63096,difficulty:.552,name:"Hill Sphere",plate:"XVII",probe:{x:534,y:1372},target:{x:498,y:246,r:39},bodies:[{kind:"blackhole",r:14,capture:42,mu:3.99e7,x:534,y:771,orbit:null},{kind:"planet",r:41,mu:4.01e6,x:258,y:382,orbit:null},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:534,cy:771,rad:115,omega:-1.226,phase:6.072}},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:258,cy:382,rad:125,omega:-.564,phase:4.783}}],frags:[{x:397,y:539}],solution:{vx:239.74821978618365,vy:-593.397666922744,t0Step:0},fragSolution:{vx:-255.19940411215782,vy:-586.9184476064793,t0Step:0}},
+    {id:"c18",index:17,seed:18227,difficulty:.586,name:"The Lagrange Gate",plate:"XVIII",probe:{x:371,y:1356},target:{x:162,y:246,r:39},bodies:[{kind:"blackhole",r:14,capture:49,mu:3.57e7,x:289,y:830,orbit:null},{kind:"planet",r:53,mu:1.02e7,x:397,y:394,orbit:null},{kind:"planet",r:41,mu:5.57e6,x:672,y:888,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:289,cy:830,rad:139,omega:-.575,phase:5.958}}],frags:[{x:446,y:962},{x:298,y:521}],solution:{vx:-376.1825614671829,vy:-517.7708763999663,t0Step:0},fragSolution:{vx:132.2006421407451,vy:-511.18195411964086,t0Step:0}},
+    {id:"c19",index:18,seed:60358,difficulty:.621,name:"Precession",plate:"XIX",probe:{x:674,y:1366},target:{x:179,y:210,r:39},bodies:[{kind:"blackhole",r:16,capture:43,mu:2.79e7,x:463,y:820,orbit:null},{kind:"planet",r:41,mu:4.25e6,x:809,y:1186,orbit:null},{kind:"planet",r:65,mu:1.7e7,x:676,y:611,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:676,cy:611,rad:157,omega:.663,phase:4.15}}],frags:[{x:636,y:1143}],solution:{vx:-475.6126883055323,vy:-428.2435880696693,t0Step:0},fragSolution:{vx:-116.01186918893913,vy:-596.8293275361797,t0Step:0}},
+    {id:"c20",index:19,seed:17489,difficulty:.655,name:"The Contrary Star",plate:"XX",probe:{x:532,y:1475},target:{x:349,y:416,r:38},bodies:[{kind:"planet",r:56,mu:1.2e7,x:483,y:1079,orbit:null},{kind:"repulsor",r:27,mu:-1.12e7,x:176,y:1217,orbit:null}],frags:[{x:558,y:1262},{x:497,y:846}],solution:{vx:-353.23967059971733,vy:-533.6869261229876,t0Step:0},fragSolution:{vx:66.89821649129792,vy:-636.4940130356949,t0Step:0}},
+    {id:"c21",index:20,seed:19620,difficulty:.69,name:"Aphelion",plate:"XXI",probe:{x:700,y:1450},target:{x:640,y:389,r:38},bodies:[{kind:"planet",r:43,mu:4.77e6,x:692,y:1066,orbit:null},{kind:"repulsor",r:29,mu:-9.58e6,x:222,y:1366,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:692,cy:1066,rad:113,omega:.711,phase:4.522}}],frags:[{x:790,y:925},{x:695,y:577}],solution:{vx:-171.03256069008452,vy:-616.7234900535187,t0Step:0},fragSolution:{vx:88.88099823571196,vy:-290.71664581276275,t0Step:0}},
+    {id:"c22",index:21,seed:9751,difficulty:.724,name:"Occultation",plate:"XXII",probe:{x:587,y:1363},target:{x:566,y:344,r:37},bodies:[{kind:"planet",r:63,mu:2e7,x:582,y:902,orbit:null},{kind:"repulsor",r:30,mu:-1.08e7,x:150,y:452,orbit:null},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:582,cy:902,rad:140,omega:1.134,phase:3.611}}],frags:[{x:668,y:1088},{x:685,y:751},{x:634,y:569}],solution:{vx:-267.65224254354325,vy:-297.2579301909577,t0Step:0},fragSolution:{vx:203.07498009925905,vy:-606.9271393319675,t0Step:0}},
+    {id:"c23",index:22,seed:17882,difficulty:.759,name:"The Ecliptic",plate:"XXIII",probe:{x:302,y:1377},target:{x:275,y:400,r:37},bodies:[{kind:"planet",r:77,mu:3.86e7,x:310,y:935,orbit:null},{kind:"repulsor",r:30,mu:-9.46e6,x:582,y:903,orbit:null},{kind:"planet",r:38,mu:3.27e6,orbit:{cx:660,cy:474,rad:119,omega:.627,phase:2.098},pair:1},{kind:"planet",r:30,mu:2.09e6,orbit:{cx:660,cy:474,rad:119,omega:.627,phase:5.24},pair:1},{kind:"planet",r:41,mu:5.72e6,x:625,y:1261,orbit:null}],frags:[{x:63,y:1318},{x:50,y:474}],solution:{vx:-315.151078466219,vy:-557.0276454015358,t0Step:0},fragSolution:{vx:-319.9512624500452,vy:-5.584770059930763,t0Step:0}},
+    {id:"c24",index:23,seed:30013,difficulty:.793,name:"Libration",plate:"XXIV",probe:{x:308,y:1480},target:{x:529,y:181,r:36},bodies:[{kind:"planet",r:53,mu:1.11e7,x:385,y:998,orbit:null},{kind:"repulsor",r:26,mu:-1.38e7,x:740,y:1108,orbit:null},{kind:"planet",r:47,mu:7.91e6,orbit:{cx:181,cy:412,rad:88,omega:-.851,phase:3.617},pair:1},{kind:"planet",r:50,mu:8.64e6,orbit:{cx:181,cy:412,rad:88,omega:-.851,phase:6.759},pair:1},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:385,cy:998,rad:128,omega:-1.147,phase:5.832}}],frags:[{x:281,y:1286},{x:319,y:829}],solution:{vx:367.08891926466947,vy:-524.2573083449547,t0Step:0},fragSolution:{vx:-40.13892989477889,vy:-381.896407821417,t0Step:0}},
+    {id:"c25",index:24,seed:43144,difficulty:.828,name:"Conjunction",plate:"XXV",probe:{x:287,y:1389},target:{x:245,y:337,r:36},bodies:[{kind:"planet",r:64,mu:2.01e7,x:264,y:980,orbit:null},{kind:"repulsor",r:28,mu:-8.46e6,x:459,y:621,orbit:null},{kind:"planet",r:83,mu:3.39e7,x:771,y:673,orbit:null},{kind:"moon",r:16,mu:246000,orbit:{cx:264,cy:980,rad:160,omega:1.447,phase:3.066}}],frags:[{x:185,y:1164},{x:147,y:790},{x:172,y:656}],solution:{vx:208.29548016187303,vy:-588.2082904415194,t0Step:0},fragSolution:{vx:-285.56660039027753,vy:-572.757991425296,t0Step:0}},
+    {id:"c26",index:25,seed:12275,difficulty:.862,name:"The Orrery",plate:"XXVI",probe:{x:620,y:1447},target:{x:600,y:419,r:36},bodies:[{kind:"planet",r:81,mu:4.42e7,x:582,y:1058,orbit:null},{kind:"repulsor",r:24,mu:-1.11e7,x:423,y:1170,orbit:null},{kind:"planet",r:55,mu:1.15e7,x:369,y:551,orbit:null},{kind:"planet",r:31,mu:2.4e6,orbit:{cx:213,cy:892,rad:120,omega:.786,phase:4.125},pair:1},{kind:"planet",r:45,mu:6.85e6,orbit:{cx:213,cy:892,rad:120,omega:.786,phase:7.267},pair:1},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:369,cy:551,rad:137,omega:1.107,phase:3.586}}],frags:[{x:215,y:1423},{x:45,y:1285},{x:138,y:483}],solution:{vx:320.00000000000006,vy:-554.2562584220407,t0Step:0},fragSolution:{vx:-300.70163865149067,vy:109.44644586421404,t0Step:0}},
+    {id:"c27",index:26,seed:11406,difficulty:.897,name:"Eccentric Anomaly",plate:"XXVII",probe:{x:462,y:1397},target:{x:296,y:283,r:35},bodies:[{kind:"planet",r:41,mu:5.71e6,x:392,y:838,orbit:null},{kind:"repulsor",r:24,mu:-1.18e7,x:625,y:873,orbit:null},{kind:"planet",r:43,mu:5.41e6,orbit:{cx:622,cy:1141,rad:88,omega:.884,phase:3.313},pair:1},{kind:"planet",r:32,mu:2.47e6,orbit:{cx:622,cy:1141,rad:88,omega:.884,phase:6.455},pair:1},{kind:"blackhole",r:13,capture:48,mu:2.54e7,x:536,y:488,orbit:null}],frags:[{x:468,y:1013},{x:393,y:665}],solution:{vx:-239.74821978618388,vy:-593.3976669227438,t0Step:0},fragSolution:{vx:-38.03627982601673,vy:-333.8401435073334,t0Step:0}},
+    {id:"c28",index:27,seed:124537,difficulty:.931,name:"The Ascending Node",plate:"XXVIII",probe:{x:564,y:1370},target:{x:258,y:141,r:35},bodies:[{kind:"planet",r:70,mu:2.49e7,x:388,y:746,orbit:null},{kind:"repulsor",r:26,mu:-1.23e7,x:582,y:343,orbit:null},{kind:"blackhole",r:14,capture:45,mu:2.98e7,x:771,y:876,orbit:null},{kind:"planet",r:63,mu:1.41e7,x:673,y:502,orbit:null},{kind:"moon",r:16,mu:246000,orbit:{cx:388,cy:746,rad:131,omega:1.277,phase:6.061}}],frags:[{x:402,y:1160},{x:198,y:560}],solution:{vx:-77.59149465995459,vy:-489.89341693518827,t0Step:0},fragSolution:{vx:-415.6467509313174,vy:-486.6598179840199,t0Step:0}},
+    {id:"c29",index:28,seed:42668,difficulty:.966,name:"Harmony of the Spheres",plate:"XXIX",probe:{x:493,y:1416},target:{x:439,y:186,r:34},bodies:[{kind:"planet",r:82,mu:3.61e7,x:481,y:944,orbit:null},{kind:"repulsor",r:27,mu:-1.09e7,x:254,y:415,orbit:null},{kind:"blackhole",r:13,capture:39,mu:3.23e7,x:150,y:555,orbit:null},{kind:"planet",r:52,mu:9.52e6,x:690,y:1283,orbit:null},{kind:"planet",r:58,mu:1.49e7,x:781,y:735,orbit:null}],frags:[{x:543,y:1227},{x:545,y:597},{x:476,y:374}],solution:{vx:-357.8834582212778,vy:-530.5840464352268,t0Step:0},fragSolution:{vx:157.36197942233235,vy:-587.2829023837536,t0Step:0}},
+    {id:"c30",index:29,seed:50799,difficulty:1,name:"Perihelion",plate:"XXX",probe:{x:430,y:1369},target:{x:689,y:314,r:34},bodies:[{kind:"planet",r:68,mu:1.87e7,x:554,y:791,orbit:null},{kind:"repulsor",r:29,mu:-9.45e6,x:245,y:479,orbit:null},{kind:"planet",r:45,mu:6.24e6,orbit:{cx:232,cy:1054,rad:122,omega:.667,phase:.471},pair:1},{kind:"planet",r:37,mu:2.79e6,orbit:{cx:232,cy:1054,rad:122,omega:.667,phase:3.613},pair:1},{kind:"moon",r:13,mu:132000,orbit:{cx:554,cy:791,rad:128,omega:1.257,phase:5.964}}],frags:[{x:566,y:1142},{x:705,y:524}],solution:{vx:18.84357534182505,vy:-431.58883172336255,t0Step:0},fragSolution:{vx:348.56898240961704,vy:-536.7491634850716,t0Step:0}}
+  ];/*@END*/
+
+  return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, generate: generate, solve: solve, NAMES: NAMES,
+    // internal: shared with tools/levels-bake.js so the bake uses exactly the runtime generator
+    _gen: { sims: function () { return nSims; }, genStats: genStats, build: build, recipe: recipe, robust: robust, hit: hit, launch: launch, placeFrags: placeFrags,
+      pointGap: pointGap, bodyGap: bodyGap, straightHits: straightHits, finish: finish, d3: d3 } };
+})();
+
+// ===================== MODULE: 30-render.js =====================
+/* PERIHELION — render (owner: RENDER AGENT).
+   "Observatory Plate": a 19th-century engraved star-atlas plate on dark paper, drawn with modern precision.
+   Canvas 2D only. Everything static is pre-rendered per level into device-resolution offscreen canvases
+   (plate base, contour wells, orbit paths, hatched fixed bodies, caption); moving bodies and the target bezel are
+   pre-rendered sprites. frame() = one layer blit + a few sprites + the dynamic line work + a small HUD.
+   Palette: PAL tokens only (tone via alpha). No gradients except the paper grain; no glow, no shadows. */
+var Render = (function () {
+  var TAU = Math.PI * 2;
+  // One light for the whole game: from the UPPER-LEFT, slightly toward the viewer.
+  var LX = -0.5, LY = -0.62, LZ = 0.6;
+  (function () { var m = Math.sqrt(LX * LX + LY * LY + LZ * LZ); LX /= m; LY /= m; LZ /= m; })();
+  var SHADOW_ANG = Math.atan2(-LY, -LX);                       // screen angle of the shadow limb
+  var HATCH_ANG = Math.atan2(LY, LX) + Math.PI / 2 + 0.3;       // main hatch direction (≈ across the light)
+  var TH1 = [-1, 0.46, -1, 0.7, -1, 0.58, -1, 0.82];            // per-line threshold: half always drawn, rest add density in shadow
+  var TH2 = [0.83, 0.91];                                       // cross-hatching: deepest shadow only
+  var PHI0 = 50000;       // contour interval of the softened potential mu/sqrt(d²+eps²) — same for every level
+  var SEAL_R = 34;        // CSS px
+
+  var cv = null, ctx = null, LSP = false;
+  // Layered mode: the static plate lives on a background canvas inserted behind the game canvas and is only
+  // redrawn when the level / screen / size changes; the game canvas is cleared and carries only dynamic work.
+  var bgCv = null, bgCtx = null, bgKey = '', bgShift = '', playGen = 0, titleGen = 0;
+  var layout = { w: 1, h: 1, dpr: 1, scale: 1, plate: { x: 0, y: 0, w: 1, h: 1 },
+                 top: { x: 0, y: 0, w: 1, h: 1 }, bottom: { x: 0, y: 0, w: 1, h: 1 },
+                 safe: { top: 0, right: 0, bottom: 0, left: 0 } };
+  var level = null;
+  var fontsReady = false;
+  var dirtyPlay = true, dirtyTitle = true, dirtyHud = true;
+  var Lplate = null, Lplay = null, Ltitle = null, grainTile = null;
+  var moving = [];                 // [{b, spr}] bodies on rails (sprites)
+  var repulsors = [];              // fixed repulsors [{x,y,r}] (animated rings)
+  var tgtSpr = null;
+  var hudSpr = { launch: [null, null, null, null], star: [null, null, null], launchW: 70 };
+  var titleSpr = [], titleMoonSpr = null;
+  var fragTail = new Float32Array(8 * 2);     // per fragment: tail direction (cos, sin)
+  var P = { x: 0, y: 0 };                      // scratch
+  var DASH_NONE = [], DASH_A = [0, 0], DASH_B = [0, 0], DASH_C = [0, 0];
+  var PCT = []; for (var pi = 0; pi <= 100; pi++) PCT.push(pi + '%');
+
+  // ---------------------------------------------------------------- utilities
+  function mk(w, h) {
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
+    return c;
+  }
+  function rng(seed) {
+    var a = seed | 0;
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function easeOutCubic(p) { p = clamp01(p); var q = 1 - p; return 1 - q * q * q; }
+  function easeOutBack(p) { p = clamp01(p); var c1 = 1.70158, c3 = c1 + 1, q = p - 1; return 1 + c3 * q * q * q + c1 * q * q; }
+  function fnt(style, px, fam) { return style + ' ' + px + 'px ' + fam; }
+  function snap(v) { var d = layout.dpr; return (Math.round(v * d) + 0.5) / d; }   // crisp 1-device-px lines
+
+  // Text with letter-spacing (canvas letterSpacing where supported, manual per-glyph otherwise). Pre-render only.
+  function spacedWidth(g, str, sp) {
+    if (LSP) { g.letterSpacing = sp + 'px'; var w = g.measureText(str).width - sp; g.letterSpacing = '0px'; return w; }
+    var t = 0; for (var i = 0; i < str.length; i++) t += g.measureText(str[i]).width;
+    return t + sp * (str.length - 1);
+  }
+  function spacedText(g, str, x, y, sp, align) {
+    var w = spacedWidth(g, str, sp);
+    var x0 = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+    g.textAlign = 'left';
+    if (LSP) { g.letterSpacing = sp + 'px'; g.fillText(str, x0, y); g.letterSpacing = '0px'; return w; }
+    for (var i = 0; i < str.length; i++) { g.fillText(str[i], x0, y); x0 += g.measureText(str[i]).width + sp; }
+    return w;
+  }
+
+  function grain() {
+    if (grainTile) return grainTile;
+    var N = 192; grainTile = mk(N, N);
+    var g = grainTile.getContext('2d'), im = g.createImageData(N, N), d = im.data, r = rng(1832);
+    for (var i = 0; i < N * N; i++) {
+      var v = r(), a = v * v * v * 20;                  // mostly nothing, occasional fibre speck
+      if (r() < 0.012) a += 14;
+      d[4 * i] = 237; d[4 * i + 1] = 230; d[4 * i + 2] = 214; d[4 * i + 3] = a | 0;
+    }
+    g.putImageData(im, 0, 0);
+    return grainTile;
+  }
+
+  // ---------------------------------------------------------------- engraved line art (CSS-px units)
+  // Lambert tone of a sphere, 0 = lit … 1 = full shadow; optional latitude bands for gas giants.
+  function tone(nx, ny, o) {
+    var r2 = nx * nx + ny * ny; if (r2 >= 1) return 1;
+    var nz = Math.sqrt(1 - r2), lam = nx * LX + ny * LY + nz * LZ;
+    var D = 1 - (lam > 0 ? lam : 0);
+    if (o.bands) {
+      var lat = ny + 0.12 * nx;
+      D += o.bands * Math.sin(lat * o.bf + o.bp) * (0.55 + 0.45 * Math.sin(lat * o.bf * 0.37 + 1.1));
+    }
+    return D;
+  }
+  // Tonal hatching. On dark paper an ivory line ADDS light, so density and brightness are decoupled:
+  // the shadow side gets denser (and cross-hatched) lines drawn progressively dimmer, the lit side sparse bright
+  // ones — it reads as an engraving and still shows the light coming from the upper-left.
+  var HB_A = [0.95, 0.62, 0.36, 0.2], hb = [[], [], [], []];
+  function hatchSet(g, cx, cy, R, ang, sp, TH, o, cross) {
+    var dx = Math.cos(ang), dy = Math.sin(ang), qx = -dy, qy = dx;
+    var st = Math.max(0.3, Math.min(0.6, R / 24)), i = 0;
+    hb[0].length = hb[1].length = hb[2].length = hb[3].length = 0;
+    for (var off = -R + sp * 0.5; off < R; off += sp, i++) {
+      var t = TH[i % TH.length], h = Math.sqrt(R * R - off * off) - 0.25;
+      if (h <= 0) continue;
+      var cur = -1, sx = 0, sy = 0;
+      for (var u = -h; ; u += st) {
+        var last = u >= h; if (last) u = h;
+        var px = qx * off + dx * u, py = qy * off + dy * u, D = tone(px / R, py / R, o);
+        var bk = D > t ? (D < 0.36 ? 0 : D < 0.6 ? 1 : D < 0.82 ? 2 : 3) : -1;
+        if (bk !== cur || last) {
+          if (cur >= 0) hb[cur].push(cx + sx, cy + sy, cx + px, cy + py);
+          cur = bk; sx = px; sy = py;
+        }
+        if (last) break;
+      }
+    }
+    for (var b = 0; b < 4; b++) {
+      var a = hb[b]; if (!a.length) continue;
+      g.globalAlpha = HB_A[b] * (cross ? 0.8 : 1); g.beginPath();
+      for (var k = 0; k < a.length; k += 4) { g.moveTo(a[k], a[k + 1]); g.lineTo(a[k + 2], a[k + 3]); }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+  // Hatched planet/moon: ink occluder, tonal hatching (+cross-hatch in deep shadow), hairline limb,
+  // swelling bright rim on the lit (upper-left) limb.
+  function hatchSphere(g, cx, cy, R, o) {
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(cx, cy, R + 0.6, 0, TAU); g.fill();
+    g.strokeStyle = PAL.paper; g.lineCap = 'round';
+    g.lineWidth = o.lw;
+    hatchSet(g, cx, cy, R, HATCH_ANG + (o.rot || 0), o.sp, TH1, o, false);
+    if (R > 3) { g.lineWidth = o.lw * 0.85; hatchSet(g, cx, cy, R, HATCH_ANG + (o.rot || 0) + 1.2, o.sp * 1.15, TH2, o, true); }
+    g.globalAlpha = 0.55; g.lineWidth = Math.min(0.7, 0.35 + R * 0.03);
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.stroke();
+    var LA = SHADOW_ANG + Math.PI, wmax = Math.min(1.9, 0.7 + R * 0.045), spans = [1.45, 1.0, 0.55];
+    g.globalAlpha = 0.95;
+    for (var k = 0; k < 3; k++) {
+      var lw = g.lineWidth = 0.55 + (wmax - 0.55) * (k + 1) / 3;
+      g.beginPath(); g.arc(cx, cy, R - lw / 2 + 0.3, LA - spans[k], LA + spans[k]); g.stroke();
+    }
+    g.globalAlpha = 1; g.lineCap = 'butt';
+  }
+  function sphereOpts(R, planet, seed) {
+    var r = rng(seed * 7919 + 13), o = { sp: 1.45, lw: 0.55, bands: 0, bf: 0, bp: 0 };
+    if (R < 9) { o.sp = 1.15; o.lw = 0.45; }
+    else if (R < 16) { o.sp = 1.3; o.lw = 0.5; }
+    o.rot = (r() - 0.5) * 0.5;
+    if (planet && R >= 22 && r() < 0.5) { o.bands = 0.07; o.bf = 9 + 4 * r(); o.bp = r() * TAU; }
+    return o;
+  }
+  // Black hole: converging logarithmic spiral hatching around a void; dashed vermilion capture circle.
+  function drawBlackHole(g, x, y, R, C) {
+    var O = C * 1.75, lnr = Math.log(O / (R * 1.28)), k = 1.35;
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, O + 1, 0, TAU); g.fill();
+    var N = Math.max(12, Math.min(44, Math.round(O * 1.4)));
+    var F = [0, 0.34, 0.7, 1], A = [0.22, 0.45, 0.62], W = [0.4, 0.45, 0.42];
+    g.strokeStyle = PAL.paper; g.lineCap = 'round';
+    for (var band = 0; band < 3; band++) {
+      g.beginPath();
+      for (var j = 0; j < N; j++) {
+        if (band !== 1 && (j & 1)) continue;          // sparser at the rim and where the arms converge
+        var th0 = j * TAU / N;
+        for (var q = 0; q <= 10; q++) {
+          var f = F[band] + (F[band + 1] - F[band]) * q / 10;
+          var rho = O * Math.exp(-f * lnr), th = th0 + k * f * lnr;
+          if (q === 0) g.moveTo(x + rho * Math.cos(th), y + rho * Math.sin(th));
+          else g.lineTo(x + rho * Math.cos(th), y + rho * Math.sin(th));
+        }
+      }
+      g.globalAlpha = A[band]; g.lineWidth = W[band]; g.stroke();
+    }
+    g.globalAlpha = 1; g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, R, 0, TAU); g.fill();
+    g.strokeStyle = PAL.paper; g.lineWidth = 0.9; g.beginPath(); g.arc(x, y, R, 0, TAU); g.stroke();
+    g.globalAlpha = 0.45; g.lineWidth = 0.45; g.beginPath(); g.arc(x, y, R * 1.28, 0, TAU); g.stroke(); g.globalAlpha = 1;
+    g.strokeStyle = PAL.a('vermilion', 0.5); g.lineWidth = 0.75; g.setLineDash([2.2, 2.4]);
+    g.beginPath(); g.arc(x, y, C, 0, TAU); g.stroke(); g.setLineDash(DASH_NONE);
+    g.lineCap = 'butt';
+  }
+  // Repulsor core: radiant engraved disc (the dashed outward rings are animated per frame).
+  function drawRepulsor(g, x, y, R) {
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, R * 1.4, 0, TAU); g.fill();
+    g.strokeStyle = PAL.paper; g.lineCap = 'round';
+    var n = Math.max(12, Math.round(R * 2.2)), i, a;
+    g.globalAlpha = 0.5; g.lineWidth = 0.45; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.moveTo(x + Math.cos(a) * R * 0.42, y + Math.sin(a) * R * 0.42); g.lineTo(x + Math.cos(a) * R * 0.93, y + Math.sin(a) * R * 0.93); }
+    g.stroke();
+    g.globalAlpha = 0.65; g.lineWidth = 0.55; g.beginPath();
+    for (i = 0; i < 16; i++) { a = i * TAU / 16 + 0.1; var l = i & 1 ? 1.22 : 1.36; g.moveTo(x + Math.cos(a) * R * 1.1, y + Math.sin(a) * R * 1.1); g.lineTo(x + Math.cos(a) * R * l, y + Math.sin(a) * R * l); }
+    g.stroke();
+    g.globalAlpha = 0.95; g.lineWidth = 0.9; g.beginPath(); g.arc(x, y, R, 0, TAU); g.stroke();
+    g.lineWidth = 0.6; g.beginPath(); g.arc(x, y, R * 0.36, 0, TAU); g.stroke();
+    g.fillStyle = PAL.paper; g.beginPath(); g.arc(x, y, 0.9, 0, TAU); g.fill();
+    g.globalAlpha = 1; g.lineCap = 'butt';
+  }
+  function drawBodyArt(g, b, bi, x, y, s, seed) {
+    var R = b.r * s;
+    if (b.kind === 'blackhole') drawBlackHole(g, x, y, R, (b.capture || b.r * 3) * s);
+    else if (b.kind === 'repulsor') drawRepulsor(g, x, y, R);
+    else hatchSphere(g, x, y, R, sphereOpts(R, b.kind !== 'moon', (seed | 0) + bi * 31));
+  }
+  function bodyExtent(b) { return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.r + 2; }
+  function makeSprite(radCss, fn) {
+    var d = layout.dpr, size = Math.ceil((radCss * 2 + 4) * d), c = mk(size, size), g = c.getContext('2d');
+    g.setTransform(d, 0, 0, d, 0, 0);
+    fn(g, size / (2 * d));
+    return { c: c, h: size / 2 };
+  }
+  function starPath(g, x, y, R) {
+    g.beginPath();
+    for (var i = 0; i < 10; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 5, r = i & 1 ? R * 0.42 : R;
+      if (i) g.lineTo(x + r * Math.cos(a), y + r * Math.sin(a)); else g.moveTo(x + r * Math.cos(a), y + r * Math.sin(a));
+    }
+    g.closePath();
+  }
+  // mode 0 = spent (faint), 1 = potential (paper outline), 2 = earned (brass, engraved fill)
+  function drawStar(g, x, y, R, mode) {
+    g.lineJoin = 'round';
+    if (mode === 2) {
+      g.save(); starPath(g, x, y, R); g.clip();
+      g.strokeStyle = PAL.brass; g.lineWidth = 0.5; g.globalAlpha = 0.9; g.beginPath();
+      for (var o = -R * 1.5; o < R * 1.5; o += 1.25) { g.moveTo(x + o - R, y - R); g.lineTo(x + o + R, y + R); }
+      g.stroke(); g.restore();
+      g.globalAlpha = 1; g.strokeStyle = PAL.brass; g.lineWidth = 0.85; starPath(g, x, y, R); g.stroke();
+    } else {
+      g.strokeStyle = mode ? PAL.a('paper', 0.6) : PAL.a('paper', 0.17); g.lineWidth = 0.7;
+      starPath(g, x, y, R); g.stroke();
+    }
+    g.globalAlpha = 1; g.lineJoin = 'miter';
+  }
+
+  // ---------------------------------------------------------------- plate base (grain, grid, neatline, stars)
+  function ensureLayer(c) {
+    var W = cv.width, H = cv.height;
+    if (!c) return mk(W, H);
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    return c;
+  }
+  function paintPlateBase(g, seed, lv) {
+    var d = layout.dpr, Pl = layout.plate, s = layout.scale, i, x, y;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+    g.fillStyle = PAL.ink; g.fillRect(0, 0, g.canvas.width, g.canvas.height);
+    g.fillStyle = g.createPattern(grain(), 'repeat'); g.fillRect(0, 0, g.canvas.width, g.canvas.height);
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.fillStyle = PAL.a('paper', 0.014); g.fillRect(Pl.x, Pl.y, Pl.w, Pl.h);      // the plate impression
+
+    // coordinate grid (graphite)
+    g.strokeStyle = PAL.graphite; g.lineWidth = 1 / d; g.beginPath();
+    for (i = 100; i < K.WORLD_W; i += 100) { x = snap(Pl.x + i * s); g.moveTo(x, Pl.y + 4); g.lineTo(x, Pl.y + Pl.h - 4); }
+    for (i = 100; i < K.WORLD_H; i += 100) { y = snap(Pl.y + i * s); g.moveTo(Pl.x + 4, y); g.lineTo(Pl.x + Pl.w - 4, y); }
+    g.stroke();
+    g.strokeStyle = PAL.a('paper', 0.05); g.beginPath();                      // meridian & equator, a touch stronger
+    x = snap(Pl.x + 450 * s); g.moveTo(x, Pl.y + 4); g.lineTo(x, Pl.y + Pl.h - 4);
+    y = snap(Pl.y + 800 * s); g.moveTo(Pl.x + 4, y); g.lineTo(Pl.x + Pl.w - 4, y);
+    g.stroke();
+
+    // neatline: outer rule = plate edge, inner hairline inset 4 px, graduated ticks between
+    var ins = 4;
+    g.strokeStyle = PAL.a('paper', 0.6); g.lineWidth = 0.9;
+    g.strokeRect(Pl.x + 0.45, Pl.y + 0.45, Pl.w - 0.9, Pl.h - 0.9);
+    g.strokeStyle = PAL.a('paper', 0.42); g.lineWidth = 1 / d;
+    g.strokeRect(snap(Pl.x + ins), snap(Pl.y + ins), Math.round((Pl.w - 2 * ins) * d) / d, Math.round((Pl.h - 2 * ins) * d) / d);
+    g.strokeStyle = PAL.a('paper', 0.38); g.beginPath();
+    for (i = 20; i < K.WORLD_W; i += 20) {
+      x = snap(Pl.x + i * s); var l = i % 100 === 0 ? ins : 1.7;
+      g.moveTo(x, Pl.y); g.lineTo(x, Pl.y + l); g.moveTo(x, Pl.y + Pl.h); g.lineTo(x, Pl.y + Pl.h - l);
+    }
+    for (i = 20; i < K.WORLD_H; i += 20) {
+      y = snap(Pl.y + i * s); var l2 = i % 100 === 0 ? ins : 1.7;
+      g.moveTo(Pl.x, y); g.lineTo(Pl.x + l2, y); g.moveTo(Pl.x + Pl.w, y); g.lineTo(Pl.x + Pl.w - l2, y);
+    }
+    g.stroke();
+
+    // degree labels: right ascension above the plate, declination inside the side margins
+    var r = rng(seed * 131 + 7), h0 = Math.floor(r() * 24), m0 = Math.floor(r() * 6) * 10, d0 = Math.floor(8 + r() * 56);
+    g.fillStyle = PAL.a('paper', 0.34); g.font = fnt('400', 6, FONT.mono); g.textBaseline = 'alphabetic';
+    g.textAlign = 'center';
+    var raStep = 100 * Math.max(1, Math.ceil(34 / (100 * s))), decStep = 200 * Math.max(1, Math.ceil(24 / (200 * s)));
+    for (i = raStep; i < K.WORLD_W; i += raStep) {
+      var mins = h0 * 60 + m0 + (i / 100) * 10, hh = Math.floor(mins / 60) % 24, mm = mins % 60;
+      g.fillText(hh + 'h' + (mm < 10 ? '0' : '') + mm + 'm', Pl.x + i * s, Pl.y - 4);
+    }
+    for (i = decStep; i < K.WORLD_H; i += decStep) {
+      var dec = d0 + (8 - i / 100) * 2, lab = (dec >= 0 ? '+' : '−') + Math.abs(dec) + '°';
+      y = Pl.y + i * s - 2.5;
+      g.textAlign = 'left'; g.fillText(lab, Pl.x + ins + 2.5, y);
+      g.textAlign = 'right'; g.fillText(lab, Pl.x + Pl.w - ins - 2.5, y);
+    }
+
+    // star field: sparse engraved crosses, deterministic from the seed
+    var rs = rng(seed * 9973 + 17), n = 70;
+    g.strokeStyle = PAL.paper; g.fillStyle = PAL.paper; g.lineCap = 'butt';
+    for (i = 0; i < n; i++) {
+      var wx = 14 + rs() * (K.WORLD_W - 28), wy = 14 + rs() * (K.WORLD_H - 28), m = rs(), al = rs();
+      if (lv && !clearOfLevel(lv, wx, wy)) continue;
+      x = Pl.x + wx * s; y = Pl.y + wy * s;
+      var arm, a;
+      if (m < 0.7) { arm = 1.2; a = 0.22 + 0.2 * al; g.lineWidth = 0.45; }
+      else if (m < 0.93) { arm = 2.1; a = 0.42 + 0.2 * al; g.lineWidth = 0.5; }
+      else { arm = 3.4; a = 0.62 + 0.2 * al; g.lineWidth = 0.55; }
+      g.globalAlpha = a; g.beginPath();
+      g.moveTo(x - arm, y); g.lineTo(x + arm, y); g.moveTo(x, y - arm); g.lineTo(x, y + arm);
+      g.stroke();
+      if (m >= 0.93) { g.lineWidth = 0.45; g.beginPath(); g.arc(x, y, 1.25, 0, TAU); g.stroke(); }
+      else if (m >= 0.7) { g.beginPath(); g.arc(x, y, 0.45, 0, TAU); g.fill(); }
+    }
+    g.globalAlpha = 0.14; g.beginPath();                                   // faint dust of unresolved stars
+    for (i = 0; i < 140; i++) {
+      var ux = 10 + rs() * (K.WORLD_W - 20), uy = 10 + rs() * (K.WORLD_H - 20);
+      g.rect(Pl.x + ux * s, Pl.y + uy * s, 0.55, 0.55);
+    }
+    g.fill();
+    g.globalAlpha = 1;
+  }
+  function clearOfLevel(lv, x, y) {
+    function far(px, py, r) { var dx = px - x, dy = py - y; return dx * dx + dy * dy > r * r; }
+    if (!far(lv.probe.x, lv.probe.y, 70) || !far(lv.target.x, lv.target.y, lv.target.r + 60)) return false;
+    var fr = lv.frags || [];
+    for (var i = 0; i < fr.length; i++) if (!far(fr[i].x, fr[i].y, 40)) return false;
+    return true;
+  }
+
+  // ---------------------------------------------------------------- contour wells (marching squares)
+  function paintContours(g, lv) {
+    var bs = lv.bodies, fixed = [], i, j;
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) fixed.push(bs[i]);
+    var anyAttr = false; for (i = 0; i < fixed.length; i++) if (fixed[i].mu > 0) anyAttr = true;
+    if (!anyAttr) return;
+    var d = layout.dpr, Pl = layout.plate, s = layout.scale;
+    var cell = 5, nx = Math.ceil(K.WORLD_W / cell), ny = Math.ceil(K.WORLD_H / cell), W1 = nx + 1;
+    var F = new Float32Array(W1 * (ny + 1));
+    for (j = 0; j <= ny; j++) for (i = 0; i <= nx; i++) {
+      var x = i * cell, y = j * cell, v = 0;
+      for (var b = 0; b < fixed.length; b++) {
+        var dx = fixed[b].x - x, dy = fixed[b].y - y;
+        v += fixed[b].mu / Math.sqrt(dx * dx + dy * dy + K.EPS2);
+      }
+      F[j * W1 + i] = v;
+    }
+    var segs = [[], [], []];      // 0 outer (faint), 1 regular, 2 index contours
+    function add(k, x1, y1, x2, y2) { var a = segs[k === 1 ? 0 : k % 4 === 0 ? 2 : 1]; a.push(x1, y1, x2, y2); }
+    for (j = 0; j < ny; j++) for (i = 0; i < nx; i++) {
+      var ta = F[j * W1 + i], tb = F[j * W1 + i + 1], tc = F[(j + 1) * W1 + i + 1], td = F[(j + 1) * W1 + i];
+      var mn = Math.min(ta, tb, tc, td), mx = Math.max(ta, tb, tc, td);
+      var k0 = Math.max(1, Math.ceil(mn / PHI0)), k1 = Math.min(60, Math.floor(mx / PHI0));
+      if (k0 > k1) continue;
+      var x0 = i * cell, y0 = j * cell;
+      for (var k = k0; k <= k1; k++) {
+        var L = k * PHI0, c = (ta > L ? 8 : 0) | (tb > L ? 4 : 0) | (tc > L ? 2 : 0) | (td > L ? 1 : 0);
+        if (c === 0 || c === 15) continue;
+        var Tx = x0 + cell * (L - ta) / (tb - ta), Ry = y0 + cell * (L - tb) / (tc - tb);
+        var Bx = x0 + cell * (L - td) / (tc - td), Ly = y0 + cell * (L - ta) / (td - ta);
+        var X1 = x0 + cell, Y1 = y0 + cell;
+        switch (c) {
+          case 1: case 14: add(k, x0, Ly, Bx, Y1); break;
+          case 2: case 13: add(k, Bx, Y1, X1, Ry); break;
+          case 3: case 12: add(k, x0, Ly, X1, Ry); break;
+          case 4: case 11: add(k, Tx, y0, X1, Ry); break;
+          case 6: case 9: add(k, Tx, y0, Bx, Y1); break;
+          case 7: case 8: add(k, x0, Ly, Tx, y0); break;
+          case 5: add(k, x0, Ly, Tx, y0); add(k, Bx, Y1, X1, Ry); break;
+          case 10: add(k, Tx, y0, X1, Ry); add(k, x0, Ly, Bx, Y1); break;
+        }
+      }
+    }
+    // draw into a scratch layer so the halo around each body can be erased cleanly
+    var tmp = mk(g.canvas.width, g.canvas.height), t = tmp.getContext('2d');
+    t.setTransform(d * s, 0, 0, d * s, d * Pl.x, d * Pl.y);
+    t.strokeStyle = PAL.paper; t.lineCap = 'round';
+    var AL = [0.075, 0.12, 0.2], LW = [0.5, 0.55, 0.7];
+    for (var q = 0; q < 3; q++) {
+      var a = segs[q]; if (!a.length) continue;
+      t.globalAlpha = AL[q]; t.lineWidth = LW[q] / s; t.beginPath();
+      for (i = 0; i < a.length; i += 4) { t.moveTo(a[i], a[i + 1]); t.lineTo(a[i + 2], a[i + 3]); }
+      t.stroke();
+    }
+    t.globalAlpha = 1; t.globalCompositeOperation = 'destination-out'; t.fillStyle = '#000';
+    for (i = 0; i < fixed.length; i++) {
+      var fb = fixed[i], mr;
+      if (fb.mu > 0) {
+        mr = Math.max(fb.r * 1.25 + 4 / s, Math.sqrt(3 * fb.mu / (PHI0 * s)));   // keep ring spacing ≥ ~3 px
+        if (fb.kind === 'blackhole') mr = Math.max(mr, (fb.capture || fb.r * 3) * 1.85);
+      } else mr = fb.r * 1.6;
+      t.beginPath(); t.arc(fb.x, fb.y, mr, 0, TAU); t.fill();
+    }
+    t.globalCompositeOperation = 'source-over';
+    // clip to the inner neatline
+    t.setTransform(1, 0, 0, 1, 0, 0); t.globalCompositeOperation = 'destination-in';
+    t.fillRect(Math.round((Pl.x + 5) * d), Math.round((Pl.y + 5) * d), Math.round((Pl.w - 10) * d), Math.round((Pl.h - 10) * d));
+    t.globalCompositeOperation = 'source-over';
+    g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(tmp, 0, 0);
+  }
+
+  // ---------------------------------------------------------------- per-level layer & sprites
+  function paintLevel(g, lv) {
+    var d = layout.dpr, Pl = layout.plate, s = layout.scale, bs = lv.bodies, i, j;
+    paintContours(g, lv);
+    g.setTransform(d, 0, 0, d, 0, 0);
+    // orbit paths (dotted) and barycentre crosses
+    var seen = [];
+    for (i = 0; i < bs.length; i++) {
+      var o = bs[i].orbit; if (!o) continue;
+      var dup = false;
+      for (j = 0; j < seen.length; j++) if (Math.abs(seen[j].cx - o.cx) < 1 && Math.abs(seen[j].cy - o.cy) < 1 && Math.abs(seen[j].rad - o.rad) < 1) dup = true;
+      if (dup) continue; seen.push(o);
+      var cx = Pl.x + o.cx * s, cy = Pl.y + o.cy * s, R = o.rad * s, n = Math.max(24, Math.round(TAU * R / 3.4));
+      g.fillStyle = PAL.a('paper', bs[i].pair !== undefined || bs[i].kind === 'planet' ? 0.34 : 0.3);
+      g.beginPath();
+      for (j = 0; j < n; j++) { var a = j * TAU / n; g.moveTo(cx + R * Math.cos(a) + 0.55, cy + R * Math.sin(a)); g.arc(cx + R * Math.cos(a), cy + R * Math.sin(a), 0.55, 0, TAU); }
+      g.fill();
+    }
+    for (i = 0; i < bs.length; i++) {
+      var ob = bs[i].orbit;
+      if (!ob || (bs[i].pair === undefined && !isOrbitCentreEmpty(lv, ob))) continue;
+      var bx = Pl.x + ob.cx * s, by = Pl.y + ob.cy * s;
+      g.strokeStyle = PAL.a('paper', 0.55); g.lineWidth = 0.6; g.beginPath();
+      g.moveTo(bx - 3.2, by); g.lineTo(bx + 3.2, by); g.moveTo(bx, by - 3.2); g.lineTo(bx, by + 3.2); g.stroke();
+      g.lineWidth = 0.45; g.beginPath(); g.arc(bx, by, 1.4, 0, TAU); g.stroke();
+    }
+    // fixed bodies (baked)
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
+    // launch station: a small surveyor's benchmark at the probe start
+    var px = Pl.x + lv.probe.x * s, py = Pl.y + lv.probe.y * s;
+    g.strokeStyle = PAL.a('paper', 0.32); g.lineWidth = 0.5; g.beginPath();
+    g.arc(px, py, 7, 0, TAU);
+    for (j = 0; j < 4; j++) { var ta = j * Math.PI / 2; g.moveTo(px + Math.cos(ta) * 9, py + Math.sin(ta) * 9); g.lineTo(px + Math.cos(ta) * 12, py + Math.sin(ta) * 12); }
+    g.stroke();
+    // target catch circle (faint, dotted brass)
+    var tx = Pl.x + lv.target.x * s, ty = Pl.y + lv.target.y * s, tr = lv.target.r * s + 6;
+    g.fillStyle = PAL.a('brass', 0.35); g.beginPath();
+    var tn = Math.round(TAU * tr / 3);
+    for (j = 0; j < tn; j++) { var aa = j * TAU / tn; g.rect(tx + tr * Math.cos(aa) - 0.3, ty + tr * Math.sin(aa) - 0.3, 0.6, 0.6); }
+    g.fill();
+    // target crosshair (static; the bezel around it rotates)
+    var TR = lv.target.r * s;
+    g.globalAlpha = 0.85; g.strokeStyle = PAL.brass; g.lineWidth = 0.6; g.lineCap = 'round'; g.beginPath();
+    g.moveTo(tx - TR * 0.62, ty); g.lineTo(tx - TR * 0.2, ty); g.moveTo(tx + TR * 0.2, ty); g.lineTo(tx + TR * 0.62, ty);
+    g.moveTo(tx, ty - TR * 0.62); g.lineTo(tx, ty - TR * 0.2); g.moveTo(tx, ty + TR * 0.2); g.lineTo(tx, ty + TR * 0.62);
+    g.stroke(); g.lineCap = 'butt';
+    g.globalAlpha = 1; g.fillStyle = PAL.brass; g.beginPath(); g.arc(tx, ty, 0.8, 0, TAU); g.fill();
+    // caption (top band, centre)
+    var cap = lv.caption ? String(lv.caption).replace(/ · /g, '  ·  ') : 'PLATE ' + (lv.plate || toRoman((lv.index | 0) + 1)) + '  ·  ' + String(lv.name || '').toUpperCase();
+    hudAnchors();
+    var cxm = layout.w / 2, size, fit = false, sq = 1;
+    var maxW = 2 * Math.min(cxm - (hudGeo.xl + hudSpr.launchW + 12), (hudGeo.xr - STARS_W - 12) - cxm);
+    g.fillStyle = PAL.a('paper', 0.86); g.textBaseline = 'middle';
+    for (size = 12.5; size >= 10; size -= 0.5) { g.font = fnt('600', size, FONT.sc); if (spacedWidth(g, cap, size * 0.12) <= maxW) { fit = true; break; } }
+    hudGeo.two = !fit;
+    if (fit) hudGeo.yRow = hudGeo.yCap = Pl.y - 29;
+    else {
+      hudGeo.yRow = Pl.y - 41; hudGeo.yCap = Pl.y - 20; maxW = hudGeo.xr - hudGeo.xl;
+      for (size = 12; size >= 10; size -= 0.5) { g.font = fnt('600', size, FONT.sc); if (spacedWidth(g, cap, size * 0.12) <= maxW) { fit = true; break; } }
+      if (!fit) { size = 10; g.font = fnt('600', size, FONT.sc); sq = maxW / spacedWidth(g, cap, size * 0.12); }
+    }
+    g.translate(cxm, hudGeo.yCap); g.scale(sq, 1);
+    spacedText(g, cap, 0, 0, size * 0.12, 'center');
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.textBaseline = 'alphabetic';
+  }
+  function isOrbitCentreEmpty(lv, o) {
+    var bs = lv.bodies;
+    for (var i = 0; i < bs.length; i++) if (!bs[i].orbit && Math.abs(bs[i].x - o.cx) < 2 && Math.abs(bs[i].y - o.cy) < 2) return false;
+    return true;
+  }
+  // top band anchors: the plate edges, or the safe screen edges when the plate is narrow (landscape)
+  var STARS_W = 46, hudGeo = { xl: 0, xr: 0, yRow: 0, yCap: 0, two: false };
+  function hudAnchors() {
+    var Pl = layout.plate, sf = layout.safe;
+    if (Pl.w >= 300) { hudGeo.xl = Pl.x; hudGeo.xr = Pl.x + Pl.w; }
+    else { hudGeo.xl = sf.left + 12; hudGeo.xr = layout.w - sf.right - 12; }
+    hudGeo.yRow = hudGeo.yCap = Pl.y - 29;
+  }
+  function readoutY() { return layout.plate.y + layout.plate.h + 29; }
+
+  function buildPlay() {
+    if (!cv || !level) return;
+    if (dirtyHud) buildHud();
+    var lv = level, s = layout.scale, i;
+    Lplate = ensureLayer(Lplate);
+    paintPlateBase(Lplate.getContext('2d'), lv.seed | 0, lv);
+    Lplay = ensureLayer(Lplay);
+    var g = Lplay.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(Lplate, 0, 0);
+    paintLevel(g, lv);
+    // sprites for bodies on rails; fixed repulsors keep animated rings
+    moving.length = 0; repulsors.length = 0;
+    for (i = 0; i < lv.bodies.length; i++) {
+      var b = lv.bodies[i];
+      if (b.orbit) {
+        (function (b, i) {
+          moving.push({ b: b, spr: makeSprite(bodyExtent(b) * s, function (sg, c) { drawBodyArt(sg, b, i, c, c, s, lv.seed); }) });
+        })(b, i);
+      } else if (b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
+    }
+    // target bezel sprite (rotated each frame)
+    var TR = lv.target.r * s;
+    tgtSpr = makeSprite(TR + 5, function (sg, c) { drawBezel(sg, c, c, TR); });
+    // fragment tails point away from the target, deterministic
+    var fr = lv.frags || [], r = rng((lv.seed | 0) + 555);
+    for (i = 0; i < fr.length && i < 8; i++) {
+      var a = Math.atan2(fr[i].y - lv.target.y, fr[i].x - lv.target.x) + (r() - 0.5) * 0.8;
+      fragTail[2 * i] = Math.cos(a); fragTail[2 * i + 1] = Math.sin(a);
+    }
+    dirtyPlay = false; playGen++;
+  }
+  function drawBezel(g, x, y, R) {
+    g.strokeStyle = PAL.brass; g.lineWidth = 1; g.beginPath(); g.arc(x, y, R, 0, TAU); g.stroke();
+    g.lineWidth = 0.55; g.globalAlpha = 0.85; g.beginPath(); g.arc(x, y, R - 3.4, 0, TAU); g.stroke();
+    var n = 72;
+    g.beginPath();
+    for (var i = 0; i < n; i++) {
+      var a = i * TAU / n, l = i % 6 === 0 ? 3.4 : i % 3 === 0 ? 2.3 : 1.5;
+      g.moveTo(x + Math.cos(a) * (R - 0.5), y + Math.sin(a) * (R - 0.5)); g.lineTo(x + Math.cos(a) * (R - l), y + Math.sin(a) * (R - l));
+    }
+    g.lineWidth = 0.45; g.stroke();
+    g.globalAlpha = 1; g.fillStyle = PAL.brass; g.beginPath();              // cardinal pips outside the ring
+    for (var k = 0; k < 4; k++) {
+      var b = k * Math.PI / 2, cb = Math.cos(b), sb = Math.sin(b), w = k === 0 ? 1.6 : 1.1;
+      g.moveTo(x + cb * (R + 0.8), y + sb * (R + 0.8));
+      g.lineTo(x + cb * (R + 4) - sb * w, y + sb * (R + 4) + cb * w);
+      g.lineTo(x + cb * (R + 4) + sb * w, y + sb * (R + 4) - cb * w);
+      g.closePath();
+    }
+    g.fill();
+  }
+
+  function buildHud() {
+    var d = layout.dpr, i;
+    for (i = 1; i <= 3; i++) {
+      var str = 'LAUNCH  ' + i + ' / ' + K.MAX_LAUNCHES;
+      (function (str) {
+        var probe = mk(4, 4).getContext('2d'); probe.font = fnt('600', 10, FONT.sc);
+        var w = spacedWidth(probe, str, 1.4) + 4, c = mk(w * d, 16 * d), g = c.getContext('2d');
+        g.setTransform(d, 0, 0, d, 0, 0); g.font = fnt('600', 10, FONT.sc); g.textBaseline = 'middle';
+        g.fillStyle = PAL.a('paper', 0.68); spacedText(g, str, 1, 8.5, 1.4, 'left');
+        hudSpr.launch[i] = { c: c, h: c.height / 2 }; hudSpr.launchW = w;
+      })(str);
+    }
+    for (i = 0; i < 3; i++) {
+      (function (mode) { hudSpr.star[mode] = makeSprite(6, function (g, c) { drawStar(g, c, c, 5.2, mode); }); })(i);
+    }
+    starRow.length = 0; roCv = null; ro.dirty = true;
+    dirtyHud = false;
+  }
+
+  // ---------------------------------------------------------------- title plate (orrery)
+  var ORR = { cx: 450, cy: 820, sunR: 34, ring0: 386, ring1: 404,
+    pl: [ { rad: 104, r: 9, ph: 0.6 }, { rad: 162, r: 15, ph: 2.5 }, { rad: 226, r: 21, ph: 4.2, moon: 1 },
+          { rad: 296, r: 27, ph: 1.1, ring: 1 }, { rad: 352, r: 13, ph: 5.4 } ] };
+  // Where the orrery goes: between the DOM title header and menu (portrait), or beside the text column (landscape).
+  // Reads the title DOM rects read-only when available; falls back to fixed fractions.
+  var titleGeo = { cx: 0, cy: 0, k: 0, land: false, on: false, key: '', t: -1e9 };
+  function titleRects() {
+    var r = { hb: -1, mt: -1, cl: -1, key: '' };
+    try {
+      var h = document.querySelector('#scr-title .t-head'), m = document.querySelector('#scr-title .t-menu');
+      if (h && m) {
+        var a = h.getBoundingClientRect(), b = m.getBoundingClientRect();
+        if (a.height > 0 && b.height > 0) { r.hb = a.bottom; r.mt = b.top; r.cl = Math.min(a.left, b.left); }
+      }
+    } catch (e) {}
+    r.key = Math.round(r.hb / 4) + ',' + Math.round(r.mt / 4) + ',' + Math.round(r.cl / 4);
+    return r;
+  }
+  function placeTitle() {
+    var w = layout.w, h = layout.h, sf = layout.safe, Pl = layout.plate, r = titleRects(), R, cx, cy;
+    titleGeo.key = r.key; titleGeo.land = w > h;
+    if (!titleGeo.land) {
+      var top = (r.hb > 0 ? r.hb : sf.top + h * 0.3) + 14, bot = (r.mt > 0 ? r.mt : h * 0.65) - 14;
+      R = Math.min((bot - top) / 2, Pl.w / 2 - 14, 200); cx = w / 2; cy = (top + bot) / 2;
+    } else {
+      var cl = r.cl > 0 ? r.cl : w / 2 - 210, space = cl - sf.left - 20;
+      R = Math.min((h - sf.top - sf.bottom) * 0.42, space / 2 - 4); cx = sf.left + 10 + space / 2; cy = sf.top + (h - sf.top - sf.bottom) / 2;
+    }
+    titleGeo.on = R >= 36; titleGeo.cx = cx; titleGeo.cy = cy; titleGeo.k = Math.max(0, R) / ORR.ring1;
+  }
+  function buildTitle() {
+    Ltitle = ensureLayer(Ltitle);
+    var g = Ltitle.getContext('2d'), d = layout.dpr, i, a;
+    placeTitle();
+    if (!titleGeo.land) paintPlateBase(g, 1832, null);
+    else {
+      // landscape: no narrow plate behind the title — a full page of ink, grain and a sparse field of stars
+      g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      g.fillStyle = PAL.ink; g.fillRect(0, 0, Ltitle.width, Ltitle.height);
+      g.fillStyle = g.createPattern(grain(), 'repeat'); g.fillRect(0, 0, Ltitle.width, Ltitle.height);
+      g.setTransform(d, 0, 0, d, 0, 0);
+      var rs = rng(1832); g.strokeStyle = PAL.paper; g.lineWidth = 0.45;
+      for (i = 0; i < 46; i++) {
+        var sx = rs() * layout.w, sy = rs() * layout.h, arm = rs() < 0.8 ? 1.2 : 2.2;
+        g.globalAlpha = 0.18 + 0.25 * rs(); g.beginPath();
+        g.moveTo(sx - arm, sy); g.lineTo(sx + arm, sy); g.moveTo(sx, sy - arm); g.lineTo(sx, sy + arm); g.stroke();
+      }
+      g.globalAlpha = 1;
+    }
+    titleSpr.length = 0; titleMoonSpr = null;
+    if (!titleGeo.on) { dirtyTitle = false; titleGen++; return; }
+    var s = titleGeo.k, cx = titleGeo.cx, cy = titleGeo.cy;
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(cx, cy, ORR.ring1 * s + 2, 0, TAU); g.fill();
+    // graduated zodiac ring
+    var r0 = ORR.ring0 * s, r1 = ORR.ring1 * s;
+    g.strokeStyle = PAL.a('paper', 0.55); g.lineWidth = 0.7;
+    g.beginPath(); g.arc(cx, cy, r1, 0, TAU); g.stroke();
+    g.lineWidth = 0.5; g.beginPath(); g.arc(cx, cy, r0, 0, TAU); g.stroke();
+    g.strokeStyle = PAL.a('paper', 0.4); g.beginPath();
+    for (i = 0; i < 180; i++) {
+      a = i * TAU / 180; var l = i % 15 === 0 ? r1 - r0 : i % 5 === 0 ? (r1 - r0) * 0.6 : (r1 - r0) * 0.3;
+      g.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); g.lineTo(cx + Math.cos(a) * (r1 - l), cy + Math.sin(a) * (r1 - l));
+    }
+    g.stroke();
+    if (r0 > 90) {
+      g.fillStyle = PAL.a('paper', 0.42); g.font = fnt('600', 6.5, FONT.sc); g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (i = 0; i < 12; i++) {
+        a = -Math.PI / 2 + (i + 0.5) * TAU / 12;
+        g.save(); g.translate(cx + Math.cos(a) * (r0 - 6), cy + Math.sin(a) * (r0 - 6)); g.rotate(a + Math.PI / 2);
+        g.fillText(toRoman(i + 1), 0, 0); g.restore();
+      }
+    }
+    // orbits
+    for (i = 0; i < ORR.pl.length; i++) {
+      var R = ORR.pl[i].rad * s;
+      if (i & 1) {
+        var n = Math.round(TAU * R / 3.2); g.fillStyle = PAL.a('paper', 0.32); g.beginPath();
+        for (var j = 0; j < n; j++) { a = j * TAU / n; g.rect(cx + R * Math.cos(a) - 0.3, cy + R * Math.sin(a) - 0.3, 0.6, 0.6); }
+        g.fill();
+      } else { g.strokeStyle = PAL.a('paper', 0.24); g.lineWidth = 0.55; g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.stroke(); }
+    }
+    // the sun: engraved radiant disc
+    var sr = Math.max(4, ORR.sunR * s);
+    g.strokeStyle = PAL.paper; g.lineCap = 'round';
+    g.globalAlpha = 0.55; g.lineWidth = 0.5; g.beginPath();
+    for (i = 0; i < 48; i++) {
+      a = i * TAU / 48; var l1 = sr * 1.2, l2 = sr * (i % 4 === 0 ? 1.95 : i % 2 === 0 ? 1.6 : 1.4);
+      g.moveTo(cx + Math.cos(a) * l1, cy + Math.sin(a) * l1); g.lineTo(cx + Math.cos(a) * l2, cy + Math.sin(a) * l2);
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+    hatchSphere(g, cx, cy, sr, { sp: 1.6, lw: 0.5, bands: 0, bf: 0, bp: 0 });
+    g.lineCap = 'butt';
+    // planet sprites
+    for (i = 0; i < ORR.pl.length; i++) {
+      (function (p, i) {
+        var R = Math.max(2.5, p.r * s);
+        titleSpr.push(makeSprite(p.ring ? R * 2.3 : R, function (sg, c) {
+          if (p.ring) ringedPlanet(sg, c, c, R); else hatchSphere(sg, c, c, R, sphereOpts(R, true, 40 + i));
+        }));
+      })(ORR.pl[i], i);
+    }
+    var mr = Math.max(1.6, 4.5 * s);
+    titleMoonSpr = makeSprite(mr + 1, function (sg, c) { hatchSphere(sg, c, c, mr, sphereOpts(mr, false, 9)); });
+    dirtyTitle = false; titleGen++;
+  }
+  function ringedPlanet(g, x, y, R) {
+    var tilt = -0.32, rx = R * 2.05, ry = R * 0.5, k;
+    g.strokeStyle = PAL.paper;
+    for (k = 0; k < 3; k++) { g.globalAlpha = 0.75 - k * 0.15; g.lineWidth = k === 1 ? 0.8 : 0.45; g.beginPath(); g.ellipse(x, y, rx * (1 - k * 0.1), ry * (1 - k * 0.1), tilt, Math.PI, TAU); g.stroke(); }
+    g.globalAlpha = 1;
+    hatchSphere(g, x, y, R, sphereOpts(R, true, 77));
+    g.strokeStyle = PAL.ink; g.lineWidth = 2.6; g.beginPath(); g.ellipse(x, y, rx * 0.9, ry * 0.9, tilt, 0, Math.PI); g.stroke();
+    g.strokeStyle = PAL.paper;
+    for (k = 0; k < 3; k++) { g.globalAlpha = 0.85 - k * 0.15; g.lineWidth = k === 1 ? 0.8 : 0.45; g.beginPath(); g.ellipse(x, y, rx * (1 - k * 0.1), ry * (1 - k * 0.1), tilt, 0, Math.PI); g.stroke(); }
+    g.globalAlpha = 1;
+  }
+
+  // ---------------------------------------------------------------- effects state (preallocated)
+  var crashes = [], CR = 2, NRAY = 22, NFRAG = 6;
+  for (var ci = 0; ci < CR; ci++) crashes.push({ on: false, t0: -1, x: 0, y: 0, ray: new Float32Array(NRAY * 2), frag: new Float32Array(NFRAG * 5) });
+  var crashIdx = 0, shakeT0 = -2, shakePending = false, crashSeed = 1;
+  var succ = { on: false, t0: -1, n: 0, pts: null, seal: null, sx: 0, sy: 0, stars: 0 };
+  var popT = new Float64Array(8), prevCol = new Uint8Array(8);
+  for (var q = 0; q < 8; q++) popT[q] = -1;
+
+  var fx = {
+    crash: function (x, y) {
+      var c = crashes[crashIdx]; crashIdx = (crashIdx + 1) % CR;
+      var r = rng(crashSeed++ * 7717 + 3), i;
+      c.on = true; c.t0 = -1; c.x = x; c.y = y;
+      for (i = 0; i < NRAY; i++) { c.ray[2 * i] = (i + r() * 0.8) * TAU / NRAY; c.ray[2 * i + 1] = 7 + r() * 11; }
+      for (i = 0; i < NFRAG; i++) {
+        var f = 5 * i;
+        c.frag[f] = r() * TAU; c.frag[f + 1] = 14 + r() * 20; c.frag[f + 2] = r() * TAU; c.frag[f + 3] = (r() - 0.5) * 7; c.frag[f + 4] = 2.2 + r() * 2.2;
+      }
+      shakePending = true;
+    },
+    success: function (pts, n) {
+      n = Math.max(0, Math.min(n | 0, pts ? (pts.length >> 1) : 0));
+      if (!succ.pts || succ.pts.length < n * 2) succ.pts = new Float32Array(Math.max(n * 2, K.MAX_STEPS * 2 + 8));
+      for (var i = 0; i < n * 2; i++) succ.pts[i] = pts[i];
+      succ.n = n; succ.on = true; succ.t0 = -1; succ.seal = null;
+    },
+    reset: function () {
+      for (var i = 0; i < CR; i++) crashes[i].on = false;
+      shakePending = false; shakeT0 = -2; succ.on = false; succ.seal = null; succ.n = 0;
+      for (i = 0; i < 8; i++) { popT[i] = -1; prevCol[i] = 0; }
+    }
+  };
+
+  function buildSeal(state) {
+    var lv = level, s = layout.scale, Pl = layout.plate;
+    var stars = state && state.result && state.result.stars ? state.result.stars : 3;
+    var R = SEAL_R, plate = lv.plate || toRoman((lv.index | 0) + 1);
+    var spr = makeSprite(R + 2, function (g, c) {
+      g.strokeStyle = PAL.brass; g.fillStyle = PAL.brass;
+      g.fillStyle = PAL.ink; g.beginPath(); g.arc(c, c, R, 0, TAU); g.fill();
+      g.fillStyle = PAL.brass;
+      g.lineWidth = 1.4; g.beginPath(); g.arc(c, c, R - 0.7, 0, TAU); g.stroke();
+      g.lineWidth = 0.55; g.beginPath(); g.arc(c, c, R - 3, 0, TAU); g.stroke();
+      g.beginPath(); g.arc(c, c, R - 7.5, 0, TAU); g.stroke();
+      g.lineWidth = 0.45; g.beginPath();
+      for (var i = 0; i < 90; i++) { var a = i * TAU / 90, l = i % 3 === 0 ? 7.1 : 5.6; g.moveTo(c + Math.cos(a) * (R - 3.6), c + Math.sin(a) * (R - 3.6)); g.lineTo(c + Math.cos(a) * (R - l), c + Math.sin(a) * (R - l)); }
+      g.stroke();
+      g.lineWidth = 0.5; g.beginPath(); g.arc(c, c, R - 19.5, 0, TAU); g.stroke();
+      // OBSERVED along the upper arc
+      var txt = 'OBSERVED', rr = R - 13.2, fs = 7.2, sp = 1.3;
+      g.font = fnt('700', fs, FONT.sc); g.textAlign = 'center'; g.textBaseline = 'middle';
+      var ws = [], tot = 0, k;
+      for (k = 0; k < txt.length; k++) { ws.push(g.measureText(txt[k]).width); tot += ws[k] + (k ? sp : 0); }
+      var ang = -Math.PI / 2 - tot / rr / 2, acc = 0;
+      for (k = 0; k < txt.length; k++) {
+        var aa = ang + (acc + ws[k] / 2) / rr; acc += ws[k] + sp;
+        g.save(); g.translate(c + Math.cos(aa) * rr, c + Math.sin(aa) * rr); g.rotate(aa + Math.PI / 2); g.fillText(txt[k], 0, 0.3); g.restore();
+      }
+      // stars along the lower arc
+      for (k = 0; k < 3; k++) {
+        var sa = Math.PI / 2 + (1 - k) * 0.36;
+        drawStar(g, c + Math.cos(sa) * rr, c + Math.sin(sa) * rr, 2.9, k < stars ? 2 : 0);
+      }
+      // side pips
+      g.fillStyle = PAL.brass;
+      for (k = 0; k < 2; k++) { g.beginPath(); g.arc(c + (k ? 1 : -1) * rr, c, 0.9, 0, TAU); g.fill(); }
+      // roman numeral
+      var pf = plate.length > 5 ? 9.5 : plate.length > 3 ? 12 : 14;
+      g.font = fnt('700', pf, FONT.sc); g.fillStyle = PAL.brass;
+      g.fillText(plate, c, c + 0.6);
+      g.lineWidth = 0.45; g.beginPath(); g.moveTo(c - 7, c - 8); g.lineTo(c + 7, c - 8); g.moveTo(c - 7, c + 9); g.lineTo(c + 7, c + 9); g.stroke();
+    });
+    // place near the target where the winning path crosses it least, kept inside the plate
+    var t = lv.target, tx = Pl.x + t.x * s, ty = Pl.y + t.y * s, off = t.r * s + R + 14, m = R + 10;
+    var best = 1e9, bx = tx, by = ty;
+    for (var c = 0; c < 8; c++) {
+      var a = c * Math.PI / 4, cx = tx + Math.cos(a) * off, cy = ty + Math.sin(a) * off;
+      var ccx = Math.max(Pl.x + m, Math.min(Pl.x + Pl.w - m, cx)), ccy = Math.max(Pl.y + m, Math.min(Pl.y + Pl.h - m, cy));
+      var dxt = ccx - tx, dyt = ccy - ty, score = Math.abs(Math.sqrt(dxt * dxt + dyt * dyt) - off) * 0.5 + (Math.sin(a) < -0.1 ? 3 : 0);
+      if (Math.sqrt(dxt * dxt + dyt * dyt) < t.r * s + R + 4) score += 100;       // would cover the target
+      for (var i = 0; i < succ.n; i += 3) {
+        var px = Pl.x + succ.pts[2 * i] * s - ccx, py = Pl.y + succ.pts[2 * i + 1] * s - ccy;
+        if (px * px + py * py < (R + 5) * (R + 5)) score += 1;
+      }
+      if (score < best) { best = score; bx = ccx; by = ccy; }
+    }
+    succ.sx = bx; succ.sy = by; succ.stars = stars; succ.seal = spr;
+  }
+
+  // ---------------------------------------------------------------- public: init / resize / level
+  function init(canvas) {
+    cv = canvas; ctx = canvas.getContext('2d');
+    LSP = 'letterSpacing' in ctx;
+    try {
+      if (canvas.parentNode && !bgCv) {
+        bgCv = document.createElement('canvas'); bgCv.setAttribute('aria-hidden', 'true');
+        var st = bgCv.style; st.position = 'fixed'; st.left = '0'; st.top = '0'; st.display = 'block';
+        st.pointerEvents = 'none'; st.background = PAL.ink;
+        canvas.parentNode.insertBefore(bgCv, canvas);
+        bgCtx = bgCv.getContext('2d');
+        canvas.style.background = 'transparent';
+      }
+    } catch (e) { bgCv = bgCtx = null; }
+    fontsReady = !(typeof document !== 'undefined' && document.fonts);
+    if (!fontsReady) {
+      var done = function () { fontsReady = true; dirtyPlay = dirtyTitle = dirtyHud = true; succ.seal = null; };
+      try {
+        var f = document.fonts, specs = ['600 12px "Cormorant SC"', '700 12px "Cormorant SC"', '400 12px "JetBrains Mono"', 'italic 500 12px "Cormorant Garamond"'];
+        var loads = []; for (var i = 0; i < specs.length; i++) loads.push(f.load(specs[i]).catch(function () {}));
+        Promise.all(loads).then(function () { return f.ready; }).then(done, done);
+        if (f.addEventListener) f.addEventListener('loadingdone', done);
+      } catch (e) { fontsReady = true; }
+    }
+  }
+  function resize(w, h, dpr, safe) {
+    safe = safe || {}; var st = +safe.top || 0, sb = +safe.bottom || 0;
+    dpr = dpr || 1;
+    if (cv) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px'; }
+    if (bgCv) { bgCv.width = Math.round(w * dpr); bgCv.height = Math.round(h * dpr); bgCv.style.width = w + 'px'; bgCv.style.height = h + 'px'; bgKey = ''; }
+    roCv = null; starRow.length = 0;
+    var s = Math.min((w - 24) / K.WORLD_W, (h - st - sb - 112) / K.WORLD_H);
+    var pw = K.WORLD_W * s, ph = K.WORLD_H * s;
+    layout = { dpr: dpr, w: w, h: h, scale: s,
+      plate: { x: (w - pw) / 2, y: st + 56 + ((h - st - sb - 112) - ph) / 2, w: pw, h: ph },
+      safe: { top: st, right: +safe.right || 0, bottom: sb, left: +safe.left || 0 } };
+    layout.top = { x: 0, y: st, w: w, h: layout.plate.y - st };
+    layout.bottom = { x: 0, y: layout.plate.y + ph, w: w, h: h - sb - (layout.plate.y + ph) };
+    DASH_A[0] = 1.6 / s; DASH_A[1] = 3.4 / s;     // repulsor rings
+    DASH_B[0] = 2.4 / s; DASH_B[1] = 2.6 / s;     // cancel ring
+    DASH_C[0] = 0.8 / s; DASH_C[1] = 3.2 / s;     // idle ring
+    dirtyPlay = dirtyTitle = dirtyHud = true; succ.seal = null;
+  }
+  function worldToScreen(x, y) { return { x: layout.plate.x + x * layout.scale, y: layout.plate.y + y * layout.scale }; }
+  function screenToWorld(px, py) { return { x: (px - layout.plate.x) / layout.scale, y: (py - layout.plate.y) / layout.scale }; }
+  function setLevel(lv) {
+    level = lv || null; fx.reset(); dirtyPlay = true;
+    if (cv && level && cv.width > 1) { if (dirtyHud) buildHud(); buildPlay(); }
+  }
+
+  // ---------------------------------------------------------------- frame
+  var ro = { str: '', t: -1e9, phase: '', italic: false, dirty: true };
+  function readout(state, now) {
+    var ph = state.phase, aim = state.aim, hd = state.hud || {};
+    var key = ph + (aim && aim.active ? (aim.cancel ? 'c' : 'a') : '');
+    if (key === ro.phase && now - ro.t < 100) return;
+    var prevS = ro.str, prevI = ro.italic;
+    ro.phase = key; ro.t = now; ro.italic = false;
+    if (ph === 'aim' && aim && aim.active) {
+      if (aim.cancel) { ro.str = 'release to cancel'; ro.italic = true; }
+      else ro.str = 'v₀ ' + Math.round(Math.sqrt(aim.vx * aim.vx + aim.vy * aim.vy)) + ' u/s  ·  power ' + Math.round((aim.power || 0) * 100) + '%';
+    } else if (ph === 'aim' && !state.launches) { ro.str = 'pull back anywhere to aim'; ro.italic = true; }
+    else {
+      var c = hd.closest;
+      ro.str = 'v ' + Math.round(hd.speed || 0) + ' u/s  ·  closest ' + (isFinite(c) ? Math.round(c) : '—') + ' u';
+    }
+    if (ro.str !== prevS || ro.italic !== prevI) ro.dirty = true;
+  }
+
+  function frame(state, nowMs) {
+    if (!ctx) return;
+    var now = +nowMs || 0;
+    if (dirtyHud) buildHud();
+    if (!state || state.screen !== 'play' || !state.level) { backdrop(state, now); return; }
+    if (state.level !== level) setLevel(state.level);
+    if (dirtyPlay) buildPlay();
+    var d = layout.dpr, s = layout.scale, Pl = layout.plate, lv = level, u = 1 / s, i;
+
+    // screen shake from the latest crash
+    if (shakePending) { shakeT0 = now; shakePending = false; }
+    var shx = 0, shy = 0, sp = (now - shakeT0) / 250;
+    if (sp >= 0 && sp < 1) { var A = 4 * (1 - sp) * (1 - sp); shx = A * Math.sin(now * 0.11 + 1.3); shy = A * Math.cos(now * 0.137); }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    showBg(Lplay, 'p' + playGen, shx, shy);
+    var ox = Pl.x + shx, oy = Pl.y + shy;
+
+    // bodies on rails (sprites) at the physics step's time
+    var t = (state.step | 0) * K.DT;
+    for (i = 0; i < moving.length; i++) {
+      Physics.bodyPos(moving[i].b, t, P);
+      var spr = moving[i].spr;
+      ctx.drawImage(spr.c, (ox + P.x * s) * d - spr.h, (oy + P.y * s) * d - spr.h);
+    }
+    // target bezel, slowly rotating
+    var tg = lv.target, rot = now * 0.00011, cr = Math.cos(rot), sr = Math.sin(rot);
+    ctx.setTransform(cr, sr, -sr, cr, (ox + tg.x * s) * d, (oy + tg.y * s) * d);
+    ctx.drawImage(tgtSpr.c, -tgtSpr.h, -tgtSpr.h);
+
+    // ---- world-space line work, clipped to the plate mark
+    ctx.save();
+    ctx.setTransform(d, 0, 0, d, 0, 0); ctx.beginPath(); ctx.rect(ox + 0.9, oy + 0.9, Pl.w - 1.8, Pl.h - 1.8); ctx.clip();
+    ctx.setTransform(d * s, 0, 0, d * s, d * ox, d * oy);
+    ctx.lineCap = 'round';
+    // repulsor rings drifting outward
+    if (repulsors.length) {
+      // dashes built by hand (1.6 px on / 3.4 px off, drifting): far cheaper to raster than setLineDash on arcs
+      ctx.strokeStyle = PAL.paper; ctx.lineWidth = 0.6 * u; ctx.lineCap = 'butt';
+      for (i = 0; i < repulsors.length; i++) {
+        var rp = repulsors[i];
+        for (var k = 0; k < 3; k++) {
+          var ph = (now * 0.00022 + k / 3) % 1, rr = rp.r * (1.5 + 2.6 * ph), rc = rr * s;
+          ctx.globalAlpha = 0.42 * (1 - ph) * Math.min(1, ph * 6);
+          var nd = Math.max(8, Math.round(TAU * rc / 5)), step = TAU / nd, on = step * 0.32, a0 = ph * 12 / rc;
+          ctx.beginPath();
+          for (var q = 0; q < nd; q++) {
+            var aa = a0 + q * step;
+            ctx.moveTo(rp.x + rr * Math.cos(aa), rp.y + rr * Math.sin(aa)); ctx.lineTo(rp.x + rr * Math.cos(aa + on), rp.y + rr * Math.sin(aa + on));
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.lineCap = 'round';
+    }
+
+    drawFrags(state, now, u);
+    drawGhosts(state, u);
+    var showTrail = state.phase === 'flight' || state.phase === 'result';
+    if (showTrail) drawTrail(state.trail, u, succ.on ? 0.45 : 1);
+    if (succ.on || (state.phase === 'result' && state.result && state.result.success)) drawSuccessPath(state, now, u);
+    aimLbl.on = false;
+    if (state.phase === 'aim') drawAim(state, now, u, d, ox, oy);
+    drawProbe(state, u);
+    drawCrashes(now, u);
+    ctx.restore();
+    aimLabel(d);
+    ctx.lineCap = 'butt'; ctx.globalAlpha = 1;
+    if (state.phase === 'flight' && state.sim) offPlate(state.sim, d, ox, oy);
+    drawSeal(state, now, d, shx, shy);
+    drawHud(state, now, d, shx, shy);
+  }
+
+  // Put a static layer on screen: once onto the background canvas (then just clear the game canvas),
+  // or, without a background canvas, blit it every frame.
+  function showBg(layer, key, shx, shy) {
+    var d = layout.dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!bgCv) {
+      if (shx || shy) { ctx.fillStyle = PAL.ink; ctx.fillRect(0, 0, cv.width, cv.height); }
+      ctx.drawImage(layer, Math.round(shx * d), Math.round(shy * d));
+      return;
+    }
+    if (bgKey !== key) { bgCtx.setTransform(1, 0, 0, 1, 0, 0); bgCtx.drawImage(layer, 0, 0); bgKey = key; }
+    var sh = (shx || shy) ? 'translate(' + Math.round(shx * d) / d + 'px,' + Math.round(shy * d) / d + 'px)' : '';
+    if (sh !== bgShift) { bgCv.style.transform = sh; bgShift = sh; }
+    ctx.clearRect(0, 0, cv.width, cv.height);
+  }
+  function drawFrags(state, now, u) {
+    var fr = level.frags; if (!fr || !fr.length) return;
+    var col = state.collected, i;
+    for (i = 0; i < fr.length && i < 8; i++) {
+      var c = col && col[i] ? 1 : 0;
+      if (c && !prevCol[i]) popT[i] = now;
+      if (!c) popT[i] = -1;
+      prevCol[i] = c;
+    }
+    ctx.strokeStyle = PAL.brass; ctx.fillStyle = PAL.brass; ctx.lineWidth = 0.55 * u; ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    var wob = Math.sin(now * 0.002) * 0.06;
+    for (i = 0; i < fr.length && i < 8; i++) {
+      if (prevCol[i]) continue;
+      var x = fr[i].x, y = fr[i].y, tx = fragTail[2 * i], ty = fragTail[2 * i + 1];
+      for (var k = -1; k <= 1; k++) {
+        var a = k * (0.2 + wob), ca = Math.cos(a), sa = Math.sin(a), L = (k ? 8 : 11) * u;
+        var dx = tx * ca - ty * sa, dy = tx * sa + ty * ca;
+        ctx.moveTo(x + dx * 2.6 * u, y + dy * 2.6 * u); ctx.lineTo(x + dx * L, y + dy * L);
+      }
+    }
+    ctx.stroke(); ctx.beginPath();
+    for (i = 0; i < fr.length && i < 8; i++) {
+      if (prevCol[i]) continue;
+      ctx.moveTo(fr[i].x + 1.9 * u, fr[i].y); ctx.arc(fr[i].x, fr[i].y, 1.9 * u, 0, TAU);
+    }
+    ctx.fill();
+    // collection pop: brass ring + radiating ticks
+    for (i = 0; i < fr.length && i < 8; i++) {
+      if (popT[i] < 0) continue;
+      var p = (now - popT[i]) / 480; if (p >= 1) continue;
+      var e = easeOutCubic(p), R = (3 + 13 * e) * u;
+      ctx.globalAlpha = 1 - p; ctx.lineWidth = 0.7 * u; ctx.beginPath(); ctx.arc(fr[i].x, fr[i].y, R, 0, TAU);
+      for (var j = 0; j < 6; j++) { var aj = j * TAU / 6 + 0.3, cj = Math.cos(aj), sj = Math.sin(aj); ctx.moveTo(fr[i].x + cj * (R + 2 * u), fr[i].y + sj * (R + 2 * u)); ctx.lineTo(fr[i].x + cj * (R + 5 * u), fr[i].y + sj * (R + 5 * u)); }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawGhosts(state, u) {
+    var gs = state.ghosts; if (!gs || !gs.length) return;
+    ctx.fillStyle = PAL.paper;
+    for (var gi = 0; gi < gs.length; gi++) {
+      var gp = gs[gi], n = gp.n | 0, pts = gp.pts; if (!pts || n < 2) continue;
+      ctx.globalAlpha = gi === gs.length - 1 ? 0.3 : 0.2;
+      ctx.beginPath();
+      var r = 0.55 * u;
+      for (var i = 0; i < n; i += 2) ctx.rect(pts[2 * i] - r, pts[2 * i + 1] - r, 2 * r, 2 * r);
+      ctx.fill();
+      // "×" where that observation ended
+      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], c = 2.6 * u;
+      ctx.strokeStyle = PAL.paper; ctx.lineWidth = 0.6 * u; ctx.beginPath();
+      ctx.moveTo(ex - c, ey - c); ctx.lineTo(ex + c, ey + c); ctx.moveTo(ex + c, ey - c); ctx.lineTo(ex - c, ey + c); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  var TRAIL_B = 6;
+  function drawTrail(tr, u, mul) {
+    if (!tr || !tr.pts || tr.n < 2) return;
+    var cap = tr.pts.length >> 1, n = Math.min(tr.n, cap), start = ((tr.head - n) % cap + cap) % cap, pts = tr.pts;
+    ctx.strokeStyle = PAL.vermilion; ctx.lineJoin = 'round';
+    for (var b = 0; b < TRAIL_B; b++) {
+      var i0 = Math.floor(b * (n - 1) / TRAIL_B), i1 = Math.floor((b + 1) * (n - 1) / TRAIL_B);
+      if (i1 <= i0) continue;
+      var f = (b + 1) / TRAIL_B;
+      ctx.globalAlpha = mul * (0.06 + 0.84 * f * f);
+      ctx.lineWidth = (0.55 + 0.6 * f) * u;
+      ctx.beginPath();
+      var k = (start + i0) % cap; ctx.moveTo(pts[2 * k], pts[2 * k + 1]);
+      for (var i = i0 + 1; i <= i1; i++) { k = (start + i) % cap; ctx.lineTo(pts[2 * k], pts[2 * k + 1]); }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.lineJoin = 'miter';
+  }
+
+  function drawSuccessPath(state, now, u) {
+    var pts, n;
+    if (succ.on) { pts = succ.pts; n = succ.n; if (succ.t0 < 0) succ.t0 = now; }
+    else { pts = state.result.pts; n = state.result.n | 0; }
+    if (!pts || n < 2) return;
+    var p = succ.on ? (now - succ.t0) / 620 : 1, m = Math.max(1, Math.floor((n - 1) * easeOutCubic(p)));
+    ctx.strokeStyle = PAL.brass; ctx.lineWidth = 1.3 * u; ctx.globalAlpha = 0.95; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(level.probe.x, level.probe.y);
+    for (var i = 0; i <= m; i++) ctx.lineTo(pts[2 * i], pts[2 * i + 1]);
+    ctx.stroke();
+    if (p < 1) { ctx.fillStyle = PAL.brass; ctx.beginPath(); ctx.arc(pts[2 * m], pts[2 * m + 1], 1.8 * u, 0, TAU); ctx.fill(); }
+    ctx.globalAlpha = 1; ctx.lineJoin = 'miter';
+  }
+
+  var PRED_B = 5, aimLbl = { on: false, x: 0, y: 0, i: 0 };
+  function aimLabel(d) {
+    if (!aimLbl.on) return;
+    aimLbl.on = false;
+    ctx.setTransform(d, 0, 0, d, 0, 0); ctx.globalAlpha = 1;
+    ctx.font = MONO9; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = PAL.a('paper', 0.8);
+    ctx.fillText(PCT[aimLbl.i], aimLbl.x, aimLbl.y);
+  }
+  function drawAim(state, now, u, d, ox, oy) {
+    var aim = state.aim, px = level.probe.x, py = level.probe.y, i;
+    if (!aim || !aim.active) {
+      // idle: a faint rotating dotted ring invites the pull
+      ctx.strokeStyle = PAL.paper; ctx.globalAlpha = 0.28; ctx.lineWidth = 0.9 * u; ctx.setLineDash(DASH_C);
+      ctx.lineDashOffset = now * 0.004 * u;
+      ctx.beginPath(); ctx.arc(px, py, K.DRAG_CANCEL, 0, TAU); ctx.stroke();
+      ctx.setLineDash(DASH_NONE); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
+      return;
+    }
+    var cancel = !!aim.cancel;
+    // prediction: dotted vermilion, one dot every 4 steps, fading toward its end
+    var pr = state.predict;
+    if (!cancel && pr && pr.n > 4) {
+      var n = pr.n, pts = pr.pts, r = 1.05 * u;
+      ctx.fillStyle = PAL.vermilion;
+      for (var b = 0; b < PRED_B; b++) {
+        var i0 = Math.floor(b * n / PRED_B), i1 = Math.floor((b + 1) * n / PRED_B);
+        ctx.globalAlpha = 0.95 - 0.8 * (b / (PRED_B - 1));
+        ctx.beginPath();
+        for (i = i0 - (i0 % 4) + 3; i < i1; i += 4) { var x = pts[2 * i], y = pts[2 * i + 1]; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); }
+        ctx.fill();
+      }
+      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], qx = pts[2 * (n - 5)], qy = pts[2 * (n - 5) + 1];
+      var tx = ex - qx, ty = ey - qy, tl = Math.sqrt(tx * tx + ty * ty) || 1, c = 4 * u;
+      ctx.strokeStyle = PAL.vermilion; ctx.globalAlpha = 0.45; ctx.lineWidth = 0.7 * u; ctx.beginPath();
+      ctx.moveTo(ex - ty / tl * c, ey + tx / tl * c); ctx.lineTo(ex + ty / tl * c, ey - tx / tl * c); ctx.stroke();
+    }
+    // pull line with engraved graduation, power arcs
+    var dx = aim.dx || 0, dy = aim.dy || 0, len = Math.sqrt(dx * dx + dy * dy);
+    ctx.strokeStyle = cancel ? PAL.vermilion : PAL.paper;
+    if (len > 0.5) {
+      var ux = dx / len, uy = dy / len, L = Math.min(len, K.DRAG_MAX), ang = Math.atan2(uy, ux);
+      ctx.globalAlpha = cancel ? 0.5 : 0.75; ctx.lineWidth = 0.7 * u; ctx.beginPath();
+      ctx.moveTo(px + ux * K.DRAG_CANCEL, py + uy * K.DRAG_CANCEL);
+      if (L > K.DRAG_CANCEL) ctx.lineTo(px + ux * L, py + uy * L);
+      for (var tk = 30; tk <= L + 0.01; tk += 30) {
+        var tl2 = (tk % 150 === 0 ? 4 : 2.2) * u;
+        ctx.moveTo(px + ux * tk - uy * tl2, py + uy * tk + ux * tl2); ctx.lineTo(px + ux * tk + uy * tl2, py + uy * tk - ux * tl2);
+      }
+      ctx.stroke();
+      if (!cancel) {
+        ctx.globalAlpha = 0.9; ctx.lineWidth = 0.9 * u; ctx.beginPath(); ctx.arc(px, py, L, ang - 0.15, ang + 0.15); ctx.stroke();
+        var mx = px + ux * K.DRAG_MAX, my = py + uy * K.DRAG_MAX;
+        if (mx > 10 && mx < K.WORLD_W - 10 && my > 10 && my < K.WORLD_H - 10) {
+          ctx.globalAlpha = 0.3; ctx.lineWidth = 0.6 * u; ctx.beginPath(); ctx.arc(px, py, K.DRAG_MAX, ang - 0.22, ang + 0.22); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        // % label: drawn after the plate clip is released (see aimLabel), kept inside the plate
+        var Pl = layout.plate, x0 = ox + 10, x1 = ox + Pl.w - 10, y0 = oy + 10, y1 = oy + Pl.h - 10;
+        var lx = ox + (px + ux * (L + 14 * u)) * layout.scale, ly = oy + (py + uy * (L + 14 * u)) * layout.scale;
+        var cx0 = Math.max(x0, Math.min(x1, lx)), cy0 = Math.max(y0, Math.min(y1, ly));
+        if (cx0 !== lx || cy0 !== ly) {
+          var sg = (-uy * (ox + Pl.w / 2 - cx0) + ux * (oy + Pl.h / 2 - cy0)) >= 0 ? 1 : -1;   // nudge toward the plate
+          cx0 = Math.max(x0, Math.min(x1, cx0 - uy * 12 * sg)); cy0 = Math.max(y0, Math.min(y1, cy0 + ux * 12 * sg));
+        }
+        aimLbl.on = true; aimLbl.x = cx0; aimLbl.y = cy0;
+        aimLbl.i = Math.max(0, Math.min(100, Math.round((aim.power || L / K.DRAG_MAX) * 100)));
+      }
+    }
+    // cancel ring
+    ctx.strokeStyle = cancel ? PAL.vermilion : PAL.paper; ctx.globalAlpha = cancel ? 0.9 : 0.4; ctx.lineWidth = 0.7 * u;
+    ctx.setLineDash(DASH_B); ctx.beginPath(); ctx.arc(px, py, K.DRAG_CANCEL, 0, TAU); ctx.stroke(); ctx.setLineDash(DASH_NONE);
+    ctx.globalAlpha = 1;
+  }
+  var MONO9 = '500 9px ' + FONT.mono, MONO10 = '400 10px ' + FONT.mono, ITAL11 = 'italic 500 11.5px ' + FONT.serif;
+
+  function drawProbe(state, u) {
+    var x = level.probe.x, y = level.probe.y, ax = 0, ay = -1, sim = state.sim;
+    if (state.phase === 'flight' && sim) {
+      x = sim.x; y = sim.y; var vl = Math.sqrt(sim.vx * sim.vx + sim.vy * sim.vy);
+      if (vl > 1e-6) { ax = sim.vx / vl; ay = sim.vy / vl; }
+    } else if (state.phase === 'result' && state.result && state.result.success) {
+      var r = succ.on ? succ : state.result, n = r.n | 0;
+      if (r.pts && n > 1) { x = r.pts[2 * (n - 1)]; y = r.pts[2 * (n - 1) + 1]; ax = x - r.pts[2 * (n - 2)]; ay = y - r.pts[2 * (n - 2) + 1]; var l = Math.sqrt(ax * ax + ay * ay) || 1; ax /= l; ay /= l; }
+    } else if (state.phase === 'aim' && state.aim && state.aim.active && !state.aim.cancel) {
+      var al = Math.sqrt(state.aim.dx * state.aim.dx + state.aim.dy * state.aim.dy) || 1; ax = -state.aim.dx / al; ay = -state.aim.dy / al;
+    }
+    var f = 5.4 * u, b = 3.4 * u, w = 3.1 * u;
+    ctx.fillStyle = PAL.vermilion; ctx.globalAlpha = 1; ctx.beginPath();
+    ctx.moveTo(x + ax * f, y + ay * f); ctx.lineTo(x - ay * w, y + ax * w); ctx.lineTo(x - ax * b, y - ay * b); ctx.lineTo(x + ay * w, y - ax * w);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.arc(x, y, 0.7 * u, 0, TAU); ctx.fill();
+  }
+
+  // probe beyond the plate mark: a small vermilion pointer on the neatline
+  function offPlate(sim, d, ox, oy) {
+    var x = sim.x, y = sim.y, W = K.WORLD_W, H = K.WORLD_H;
+    if (x >= 0 && x <= W && y >= 0 && y <= H) return;
+    var s = layout.scale, cx = Math.max(0, Math.min(W, x)), cy = Math.max(0, Math.min(H, y));
+    var dx = x - cx, dy = y - cy, l = Math.sqrt(dx * dx + dy * dy) || 1; dx /= l; dy /= l;
+    var X = ox + cx * s, Y = oy + cy * s;
+    ctx.setTransform(d, 0, 0, d, 0, 0); ctx.fillStyle = PAL.vermilion; ctx.globalAlpha = 0.9; ctx.beginPath();
+    ctx.moveTo(X + dx * 1, Y + dy * 1); ctx.lineTo(X - dx * 6 - dy * 3.2, Y - dy * 6 + dx * 3.2); ctx.lineTo(X - dx * 6 + dy * 3.2, Y - dy * 6 - dx * 3.2);
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  function drawCrashes(now, u) {
+    for (var ci = 0; ci < CR; ci++) {
+      var c = crashes[ci]; if (!c.on) continue;
+      if (c.t0 < 0) c.t0 = now;
+      var p = (now - c.t0) / 560; if (p >= 1) { c.on = false; continue; }
+      var e = easeOutCubic(p), a = 1 - p, i;
+      for (var pass = 0; pass < 2; pass++) {
+        ctx.strokeStyle = pass ? PAL.vermilion : PAL.paper; ctx.globalAlpha = a * (pass ? 0.95 : 0.75);
+        ctx.lineWidth = (pass ? 0.8 : 0.6) * u; ctx.beginPath();
+        for (i = pass; i < NRAY; i += 2) {
+          var an = c.ray[2 * i], len = c.ray[2 * i + 1], r0 = (2.5 + 15 * e) * u, r1 = r0 + len * (1 - 0.7 * e) * u;
+          var ca = Math.cos(an), sa = Math.sin(an);
+          ctx.moveTo(c.x + ca * r0, c.y + sa * r0); ctx.lineTo(c.x + ca * r1, c.y + sa * r1);
+        }
+        ctx.stroke();
+      }
+      // hatched fragments
+      ctx.strokeStyle = PAL.paper; ctx.globalAlpha = a * 0.9; ctx.lineWidth = 0.5 * u; ctx.beginPath();
+      for (i = 0; i < NFRAG; i++) {
+        var f = 5 * i, dist = c.frag[f + 1] * e * u, fx0 = c.x + Math.cos(c.frag[f]) * dist, fy0 = c.y + Math.sin(c.frag[f]) * dist;
+        var ro2 = c.frag[f + 2] + c.frag[f + 3] * p, sz = c.frag[f + 4] * u;
+        var x0 = fx0 + Math.cos(ro2) * sz, y0 = fy0 + Math.sin(ro2) * sz;
+        var x1 = fx0 + Math.cos(ro2 + 2.3) * sz * 0.8, y1 = fy0 + Math.sin(ro2 + 2.3) * sz * 0.8;
+        var x2 = fx0 + Math.cos(ro2 + 4.2) * sz * 0.9, y2 = fy0 + Math.sin(ro2 + 4.2) * sz * 0.9;
+        ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x0, y0);
+        ctx.moveTo((x0 + x1) / 2, (y0 + y1) / 2); ctx.lineTo((x0 + x2) / 2, (y0 + y2) / 2);
+        ctx.moveTo(x0 * 0.2 + x1 * 0.8, y0 * 0.2 + y1 * 0.8); ctx.lineTo(x0 * 0.2 + x2 * 0.8, y0 * 0.2 + y2 * 0.8);
+      }
+      ctx.stroke();
+      // impact ring
+      ctx.strokeStyle = PAL.vermilion; ctx.globalAlpha = a * 0.6; ctx.lineWidth = 0.6 * u;
+      ctx.beginPath(); ctx.arc(c.x, c.y, (2 + 9 * e) * u, 0, TAU); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSeal(state, now, d, shx, shy) {
+    if (!succ.on || succ.t0 < 0) return;
+    var q = (now - succ.t0 - 700) / 460; if (q <= 0) return;
+    if (!succ.seal) buildSeal(state);
+    var sc = 1.75 - 0.75 * easeOutBack(q), rot = -0.16 + 0.1 * (1 - easeOutCubic(q)), cr = Math.cos(rot) * sc, sr = Math.sin(rot) * sc;
+    ctx.globalAlpha = clamp01(q * 3);
+    ctx.setTransform(cr, sr, -sr, cr, (succ.sx + shx) * d, (succ.sy + shy) * d);
+    ctx.drawImage(succ.seal.c, -succ.seal.h, -succ.seal.h);
+    // impression ripple at the moment of contact
+    var rp = (q - 0.3) / 1.1;
+    if (rp > 0 && rp < 1) {
+      ctx.setTransform(d, 0, 0, d, (succ.sx + shx) * d, (succ.sy + shy) * d);
+      ctx.globalAlpha = 0.5 * (1 - rp); ctx.strokeStyle = PAL.brass; ctx.lineWidth = 0.7;
+      ctx.beginPath(); ctx.arc(0, 0, SEAL_R * (1.02 + 0.45 * easeOutCubic(rp)), 0, TAU); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawHud(state, now, d, shx, shy) {
+    var y = hudGeo.yRow + shy, i;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // LAUNCH n / 3
+    var ln = state.launches | 0;
+    if (state.phase === 'aim') ln += 1;
+    ln = Math.max(1, Math.min(3, ln));
+    var ls = hudSpr.launch[ln];
+    if (ls) ctx.drawImage(ls.c, Math.round((hudGeo.xl + shx) * d), Math.round(y * d - ls.h));
+    // stars (right)
+    var res = state.phase === 'result' ? state.result : null, earned = 0, pot = 0;
+    var failed = state.phase === 'flight' && state.sim && state.sim.status !== 'flying' && state.sim.status !== 'hit';
+    if (res) earned = res.success ? (res.stars | 0) : 0; else pot = Math.max(0, 4 - ln - (failed ? 1 : 0));
+    var rk = res ? 4 + Math.min(3, earned) : Math.min(3, pot), row = starRow[rk] || (starRow[rk] = buildStarRow(res, earned, pot));
+    ctx.drawImage(row, Math.round((hudGeo.xr - 41 + shx) * d), Math.round((y - 8) * d));
+    // bottom readout (centre 50% only), re-rendered only when its text changes
+    readout(state, now);
+    var rw = layout.w * 0.5 - 12;
+    if (!roCv || ro.dirty) paintReadout(rw);
+    ctx.drawImage(roCv, Math.round((layout.w / 2 - rw / 2 + shx) * d), Math.round((readoutY() - 10 + shy) * d));
+  }
+  var starRow = [], roCv = null;
+  function buildStarRow(res, earned, pot) {
+    var d = layout.dpr, c = mk(44 * d, 15 * d), g = c.getContext('2d');
+    g.setTransform(d, 0, 0, d, 0, 0);
+    for (var i = 0; i < 3; i++) drawStar(g, 7 + i * 14, 7.5, 5.2, res ? (i < earned ? 2 : 0) : (i < pot ? 1 : 0));
+    return c;
+  }
+  function paintReadout(rw) {
+    var d = layout.dpr;
+    if (!roCv) roCv = mk(rw * d, 20 * d);
+    var g = roCv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, roCv.width, roCv.height);
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = ro.italic ? ITAL11 : MONO10;
+    g.fillStyle = ro.italic ? PAL.a('paper', 0.5) : PAL.a('paper', 0.62);
+    g.fillText(ro.str, rw / 2, 10, rw);
+    ro.dirty = false;
+  }
+
+  // ---------------------------------------------------------------- non-play screens
+  function backdrop(state, now) {
+    var scr = state && state.screen;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    if (scr === 'select' && level) {
+      if (dirtyPlay) buildPlay();
+      showBg(Lplate, 'l' + playGen, 0, 0);
+      return;
+    }
+    if (now - titleGeo.t > 500 || now < titleGeo.t) {          // follow the DOM title layout (fonts, rotation)
+      titleGeo.t = now;
+      if (!dirtyTitle && titleRects().key !== titleGeo.key) dirtyTitle = true;
+    }
+    if (dirtyTitle) buildTitle();
+    showBg(Ltitle, 't' + titleGen, 0, 0);
+    if (!titleGeo.on) return;
+    var d = layout.dpr, s = titleGeo.k, T = now / 1000;
+    var cx = titleGeo.cx, cy = titleGeo.cy;
+    for (var i = 0; i < ORR.pl.length; i++) {
+      var p = ORR.pl[i], w = 0.16 * Math.pow(104 / p.rad, 1.5), a = p.ph + w * T, R = p.rad * s;
+      var x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R, spr = titleSpr[i];
+      ctx.drawImage(spr.c, x * d - spr.h, y * d - spr.h);
+      if (p.moon) {
+        var ma = 1.3 + T * 0.7, mr = (p.r + 16) * s;
+        ctx.drawImage(titleMoonSpr.c, (x + Math.cos(ma) * mr) * d - titleMoonSpr.h, (y + Math.sin(ma) * mr) * d - titleMoonSpr.h);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- thumbnails (level select)
+  function drawThumbnail(c, lv, w, h) {
+    if (!c || !lv) return;
+    c.save();
+    var s = Math.min((w - 6) / K.WORLD_W, (h - 6) / K.WORLD_H), pw = K.WORLD_W * s, ph = K.WORLD_H * s;
+    var ox = (w - pw) / 2, oy = (h - ph) / 2, bs = lv.bodies, i, j, o, x, y;
+    c.globalAlpha = 1; c.setLineDash(DASH_NONE);
+    c.fillStyle = PAL.ink; c.fillRect(0, 0, w, h);
+    c.fillStyle = PAL.a('paper', 0.02); c.fillRect(ox, oy, pw, ph);
+    c.strokeStyle = PAL.graphite; c.lineWidth = 0.5; c.beginPath();
+    for (i = 300; i < K.WORLD_W; i += 300) { c.moveTo(ox + i * s, oy + 2); c.lineTo(ox + i * s, oy + ph - 2); }
+    for (i = 400; i < K.WORLD_H; i += 400) { c.moveTo(ox + 2, oy + i * s); c.lineTo(ox + pw - 2, oy + i * s); }
+    c.stroke();
+    c.strokeStyle = PAL.a('paper', 0.5); c.lineWidth = 0.6; c.strokeRect(ox + 0.3, oy + 0.3, pw - 0.6, ph - 0.6);
+    c.strokeStyle = PAL.a('paper', 0.28); c.lineWidth = 0.4; c.strokeRect(ox + 2, oy + 2, pw - 4, ph - 4);
+    c.beginPath(); c.rect(ox + 2, oy + 2, pw - 4, ph - 4); c.clip();
+    // wells as simple equal-potential circles
+    c.strokeStyle = PAL.a('paper', 0.12); c.lineWidth = 0.4; c.beginPath();
+    for (i = 0; i < bs.length; i++) {
+      var b = bs[i]; if (b.orbit || b.mu <= 0) continue;
+      var mr = b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.85 : b.r * 1.3;
+      for (var k = 1; k < 8; k++) { var rr = b.mu / (k * PHI0); if (rr < mr) break; c.moveTo(ox + (b.x + rr) * s, oy + b.y * s); c.arc(ox + b.x * s, oy + b.y * s, rr * s, 0, TAU); }
+    }
+    c.stroke();
+    // orbits
+    c.strokeStyle = PAL.a('paper', 0.3); c.lineWidth = 0.4; c.setLineDash([0.6, 1.6]); c.beginPath();
+    for (i = 0; i < bs.length; i++) { o = bs[i].orbit; if (!o) continue; c.moveTo(ox + (o.cx + o.rad) * s, oy + o.cy * s); c.arc(ox + o.cx * s, oy + o.cy * s, o.rad * s, 0, TAU); }
+    c.stroke(); c.setLineDash(DASH_NONE);
+    for (i = 0; i < bs.length; i++) {
+      Physics.bodyPos(bs[i], 0, P);
+      drawBodyArt(c, bs[i], i, ox + P.x * s, oy + P.y * s, s, lv.seed);
+    }
+    // fragments, target, probe
+    var fr = lv.frags || [];
+    c.fillStyle = PAL.brass; c.beginPath();
+    for (i = 0; i < fr.length; i++) { c.moveTo(ox + fr[i].x * s + 1, oy + fr[i].y * s); c.arc(ox + fr[i].x * s, oy + fr[i].y * s, 1, 0, TAU); }
+    c.fill();
+    var t = lv.target, tx = ox + t.x * s, ty = oy + t.y * s, tr = Math.max(2.5, t.r * s);
+    c.strokeStyle = PAL.brass; c.lineWidth = 0.7; c.beginPath(); c.arc(tx, ty, tr, 0, TAU); c.stroke();
+    c.lineWidth = 0.4; c.beginPath();
+    for (j = 0; j < 12; j++) { var a = j * TAU / 12; c.moveTo(tx + Math.cos(a) * tr, ty + Math.sin(a) * tr); c.lineTo(tx + Math.cos(a) * (tr - 1.2), ty + Math.sin(a) * (tr - 1.2)); }
+    c.moveTo(tx - tr * 0.5, ty); c.lineTo(tx + tr * 0.5, ty); c.moveTo(tx, ty - tr * 0.5); c.lineTo(tx, ty + tr * 0.5);
+    c.stroke();
+    x = ox + lv.probe.x * s; y = oy + lv.probe.y * s;
+    c.fillStyle = PAL.vermilion; c.beginPath(); c.moveTo(x, y - 2.6); c.lineTo(x + 1.7, y); c.lineTo(x, y + 2); c.lineTo(x - 1.7, y); c.closePath(); c.fill();
+    c.restore();
+  }
+
+  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx,
+           worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; } };
+})();
+
+// ===================== MODULE: 40-audio.js =====================
+/* PERIHELION — audio (owner: INPUT & FEEL AGENT).
+   Web Audio synthesis only. Nothing is created or played before the first user gesture calls Sound.unlock().
+   Graph: voices -> master gain -> compressor -> destination. */
+var Sound = (function () {
+  var AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
+  var ctx = null, master = null, comp = null, noiseBuf = null;
+  var muted = false, unlocked = false, suspendedByApp = false;
+  var drone = null, droneLast = -1;
+  var ksCache = {};
+  var MASTER = 0.8;
+  var PLUCK_NOTES = [659.26, 783.99, 880.0, 987.77, 1174.66];   // E5 G5 A5 B5 D6 (pentatonic, ascending pickups)
+
+  function now() { return ctx.currentTime; }
+
+  function ensure() {
+    if (ctx) return ctx;
+    if (!AC) return null;
+    try { ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { try { ctx = new AC(); } catch (e2) { ctx = null; return null; } }
+    try {
+      comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -20; comp.knee.value = 14; comp.ratio.value = 4;
+      comp.attack.value = 0.003; comp.release.value = 0.25;
+      master = ctx.createGain();
+      master.gain.value = muted ? 0 : MASTER;
+      master.connect(comp); comp.connect(ctx.destination);
+      // 1.5 s of white noise shared by thump / launch
+      var n = Math.floor(ctx.sampleRate * 1.5);
+      noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
+      var d = noiseBuf.getChannelData(0);
+      for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    } catch (e) { ctx = null; }
+    return ctx;
+  }
+
+  // iOS routes Web Audio through the "ambient" session, which the ringer/silent switch mutes. Playing a silent
+  // HTML <audio> element (and asking for a 'playback' session where supported) makes Web Audio audible even
+  // with the switch on silent. The element is paused whenever the app is suspended.
+  var keepEl = null;
+  function silentWavUri() {
+    var n = 8000, s = '', i;   // 1 s, 8-bit mono, 8 kHz, value 128 = silence
+    function u32(v) { return String.fromCharCode(v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >> 24) & 255); }
+    function u16(v) { return String.fromCharCode(v & 255, (v >> 8) & 255); }
+    s += 'RIFF' + u32(36 + n) + 'WAVEfmt ' + u32(16) + u16(1) + u16(1) + u32(8000) + u32(8000) + u16(1) + u16(8) + 'data' + u32(n);
+    for (i = 0; i < n; i++) s += '\x80';
+    return 'data:audio/wav;base64,' + btoa(s);
+  }
+  function primeSession() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+    try {
+      if (!keepEl) {
+        keepEl = new Audio();
+        keepEl.src = silentWavUri();
+        keepEl.loop = true; keepEl.preload = 'auto';
+        keepEl.setAttribute('playsinline', ''); keepEl.setAttribute('webkit-playsinline', '');
+      }
+      if (keepEl.paused && !suspendedByApp) { var p = keepEl.play(); if (p && p.catch) p.catch(function () {}); }
+    } catch (e) { keepEl = null; }
+  }
+
+  function silentBlip(c) {   // a silent buffer started inside the gesture fully unlocks output on older iOS
+    try { var b = c.createBuffer(1, 1, 22050), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } catch (e) {}
+  }
+
+  // Call from inside user-gesture handlers (pointerup/touchend/click/keydown; iOS ignores pointerdown/touchstart).
+  // Safe to call on every gesture: it does work until the context is actually running. Optional cb fires once audio runs.
+  function unlock(cb) {
+    var c = ensure();
+    if (!c) return;
+    primeSession();
+    if (c.state !== 'running' && !suspendedByApp) {
+      silentBlip(c);
+      try {
+        var p = c.resume();
+        if (p && p.then) p.then(function () { unlocked = true; if (cb) cb(); }, function () {});
+      } catch (e) {}
+    } else if (c.state === 'running') {
+      unlocked = true;
+      if (cb) cb();
+    }
+  }
+
+  function ready() { return !!(ctx && !muted && ctx.state === 'running'); }
+
+  function env(g, t, peak, attack, decay) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+  }
+
+  function setMuted(b, noPersist) {
+    muted = !!b;
+    if (master) {
+      try { master.gain.cancelScheduledValues(now()); master.gain.setTargetAtTime(muted ? 0 : MASTER, now(), 0.04); } catch (e) {}
+    }
+    if (muted) droneStop();
+    if (!noPersist && typeof Save !== 'undefined' && Save.setMuted) Save.setMuted(muted);
+  }
+  function isMuted() { return muted; }
+
+  // App-level suspend (tab hidden / paused). resume() must come from a gesture on iOS.
+  function suspend() {
+    suspendedByApp = true;
+    droneStop();
+    if (keepEl) { try { keepEl.pause(); } catch (e) {} }
+    if (ctx && ctx.state === 'running') { try { var p = ctx.suspend(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
+  }
+  function resume() {
+    suspendedByApp = false;
+    if (keepEl && keepEl.paused) { try { var k = keepEl.play(); if (k && k.catch) k.catch(function () {}); } catch (e) {} }
+    if (ctx && ctx.state !== 'running') { try { var p = ctx.resume(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
+  }
+
+  // ---- drone: two detuned sines + a lowpassed fifth; pitch glides with speed ----
+  var DRONE_F = 110;
+  function droneStart() {
+    if (!ready() || drone) return;
+    try {
+      var t = now();
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.045, t + 0.5);
+      g.connect(master);
+      var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.4;
+      var g5 = ctx.createGain(); g5.gain.value = 0.35;
+      lp.connect(g5); g5.connect(g);
+      var o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), o3 = ctx.createOscillator();
+      o1.type = 'sine'; o2.type = 'sine'; o3.type = 'triangle';
+      o1.frequency.value = DRONE_F; o2.frequency.value = DRONE_F * 1.0065; o3.frequency.value = DRONE_F * 1.5;
+      o1.connect(g); o2.connect(g); o3.connect(lp);
+      o1.start(t); o2.start(t); o3.start(t);
+      drone = { g: g, lp: lp, o: [o1, o2, o3], r: [1, 1.0065, 1.5] };
+      droneLast = -1;
+    } catch (e) { drone = null; }
+  }
+  function droneSpeed(s01) {
+    if (!drone || !ctx) return;
+    var s = s01 < 0 ? 0 : s01 > 1 ? 1 : s01;
+    if (droneLast >= 0 && Math.abs(s - droneLast) < 0.015) return;   // throttle automation events
+    droneLast = s;
+    var t = now(), f = DRONE_F * (1 + 0.9 * s);
+    for (var i = 0; i < 3; i++) {
+      var p = drone.o[i].frequency;
+      p.cancelScheduledValues(t); p.setTargetAtTime(f * drone.r[i], t, 0.12);
+    }
+    drone.lp.frequency.cancelScheduledValues(t);
+    drone.lp.frequency.setTargetAtTime(380 + 900 * s, t, 0.15);
+  }
+  function droneStop() {
+    if (!drone) return;
+    var d = drone; drone = null;
+    try {
+      var t = now();
+      d.g.gain.cancelScheduledValues(t);
+      d.g.gain.setValueAtTime(Math.max(0.0001, d.g.gain.value), t);
+      d.g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      for (var i = 0; i < 3; i++) d.o[i].stop(t + 0.5);
+      d.o[0].onended = function () { try { d.g.disconnect(); } catch (e) {} };
+    } catch (e) {}
+  }
+
+  // ---- chime: brass bell, additive inharmonic partials ----
+  function bell(t, f0, level) {
+    var ratios = [1, 2.76, 5.4, 8.93], amps = [0.55, 0.3, 0.14, 0.07], decs = [1.8, 1.15, 0.6, 0.32];
+    for (var i = 0; i < 4; i++) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f0 * ratios[i];
+      o.connect(g); g.connect(master);
+      env(g, t, amps[i] * level, 0.004, decs[i]);
+      o.start(t); o.stop(t + decs[i] + 0.05);
+    }
+  }
+  function chime() {
+    if (!ready()) return;
+    try { var t = now() + 0.01; bell(t, 392, 0.5); bell(t + 0.14, 587.33, 0.3); } catch (e) {}
+  }
+
+  // ---- thump: filtered noise burst + low sine drop. soft (0..1] scales it for lost/timeout ----
+  function thump(soft) {
+    if (!ready()) return;
+    var k = soft == null ? 1 : Math.max(0.1, Math.min(1, soft));
+    try {
+      var t = now() + 0.005;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(300 + 900 * k, t);
+      lp.frequency.exponentialRampToValueAtTime(160, t + 0.25);
+      var gn = ctx.createGain(); env(gn, t, 0.5 * k, 0.004, 0.26);
+      src.connect(lp); lp.connect(gn); gn.connect(master);
+      src.start(t, Math.random() * 1.0); src.stop(t + 0.32);
+      var o = ctx.createOscillator(), go = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.3);
+      env(go, t, 0.7 * k, 0.006, 0.34);
+      o.connect(go); go.connect(master); o.start(t); o.stop(t + 0.4);
+    } catch (e) {}
+  }
+
+  // ---- pluck: Karplus-Strong, rendered once per pitch and cached ----
+  function ksBuffer(f) {
+    var key = Math.round(f);
+    if (ksCache[key]) return ksCache[key];
+    var sr = ctx.sampleRate, len = Math.floor(sr * 0.8), N = Math.max(2, Math.round(sr / f));
+    var buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+    var line = new Float32Array(N), prev = 0, i;
+    for (i = 0; i < N; i++) { var r = Math.random() * 2 - 1; prev = prev * 0.5 + r * 0.5; line[i] = prev; }
+    var p = 0;
+    for (i = 0; i < len; i++) {
+      var a = line[p], b = line[(p + 1) % N];
+      d[i] = a;
+      line[p] = 0.4985 * (a + b);
+      p = (p + 1) % N;
+    }
+    ksCache[key] = buf;
+    return buf;
+  }
+  function pluck(n) {
+    if (!ready()) return;
+    try {
+      var f = PLUCK_NOTES[Math.max(0, Math.min(PLUCK_NOTES.length - 1, n | 0))];
+      var t = now() + 0.005;
+      var s = ctx.createBufferSource(); s.buffer = ksBuffer(f);
+      var g = ctx.createGain(); g.gain.setValueAtTime(0.42, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      s.connect(g); g.connect(master); s.start(t); s.stop(t + 0.75);
+    } catch (e) {}
+  }
+
+  // ---- tick: tiny UI click ----
+  function tick() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.002;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'triangle'; o.frequency.setValueAtTime(2100, t); o.frequency.exponentialRampToValueAtTime(1200, t + 0.03);
+      env(g, t, 0.07, 0.002, 0.035);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.05);
+    } catch (e) {}
+  }
+
+  // ---- launch: soft whoosh, bandpassed noise sweep ----
+  function launch(power) {
+    if (!ready()) return;
+    var p = Math.max(0, Math.min(1, power || 0));
+    try {
+      var t = now() + 0.005;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.3;
+      bp.frequency.setValueAtTime(320, t);
+      bp.frequency.exponentialRampToValueAtTime(700 + 1700 * p, t + 0.32);
+      bp.frequency.exponentialRampToValueAtTime(420, t + 0.7);
+      var g = ctx.createGain(); env(g, t, 0.18 + 0.32 * p, 0.07, 0.6);
+      src.connect(bp); bp.connect(g); g.connect(master);
+      src.start(t, Math.random() * 0.6); src.stop(t + 0.75);
+    } catch (e) {}
+  }
+
+  return {
+    unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
+    droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
+    chime: chime, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    get state() { return ctx ? ctx.state : 'none'; }
+  };
+})();
+
+// ===================== MODULE: 50-save.js =====================
+/* PERIHELION — save (owner: INPUT & FEEL AGENT).
+   localStorage key 'perihelion.v1'. Every storage access is wrapped in try/catch; if storage is unavailable
+   (private mode, sandboxed iframe, quota) the game keeps working from the in-memory copy. */
+var Save = (function () {
+  var KEY = 'perihelion.v1', N = 30;
+  var persistent = false;
+
+  function zeros(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
+  function fresh() { return { v: 1, stars: zeros(N), frags: zeros(N), unlocked: 1, endlessBest: 0, muted: false }; }
+  function int(x, lo, hi) {
+    x = Number(x);
+    if (!isFinite(x)) return lo;
+    x = Math.floor(x);
+    return x < lo ? lo : x > hi ? hi : x;
+  }
+  // Defensive merge of whatever JSON we find: unknown/garbage fields are dropped, ranges clamped.
+  function merge(raw) {
+    var d = fresh();
+    if (!raw || typeof raw !== 'object') return d;
+    var i;
+    if (Array.isArray(raw.stars)) for (i = 0; i < N; i++) d.stars[i] = int(raw.stars[i], 0, 3);
+    if (Array.isArray(raw.frags)) for (i = 0; i < N; i++) d.frags[i] = int(raw.frags[i], 0, 9);
+    d.unlocked = int(raw.unlocked, 1, N);
+    // a plate with stars implies the next is open, even if 'unlocked' was lost
+    for (i = 0; i < N; i++) if (d.stars[i] > 0) d.unlocked = Math.max(d.unlocked, Math.min(N, i + 2));
+    d.endlessBest = int(raw.endlessBest, 0, 1e6);
+    d.muted = raw.muted === true;
+    return d;
+  }
+
+  var data = fresh();
+
+  function load() {
+    var s = null;
+    try { s = window.localStorage.getItem(KEY); persistent = true; } catch (e) { persistent = false; }
+    if (s) { try { data = merge(JSON.parse(s)); } catch (e) { data = fresh(); } }
+    return data;
+  }
+  function write() {
+    try { window.localStorage.setItem(KEY, JSON.stringify(data)); persistent = true; return true; }
+    catch (e) { persistent = false; return false; }
+  }
+
+  // Record a sealed plate; keeps the best stars / fragments and opens the next plate.
+  function recordPlate(i, stars, frags) {
+    if (!(i >= 0 && i < N)) return { improved: false };
+    var prev = data.stars[i];
+    data.stars[i] = Math.max(prev, int(stars, 0, 3));
+    data.frags[i] = Math.max(data.frags[i], int(frags, 0, 9));
+    data.unlocked = Math.min(N, Math.max(data.unlocked, i + 2));
+    write();
+    return { improved: data.stars[i] > prev, first: prev === 0 };
+  }
+  function recordEndless(score) {
+    if (score > data.endlessBest) { data.endlessBest = int(score, 0, 1e6); write(); return true; }
+    return false;
+  }
+  function setMuted(b) { data.muted = !!b; write(); }
+  function totals() {
+    var s = 0, f = 0;
+    for (var i = 0; i < N; i++) { s += data.stars[i]; f += data.frags[i]; }
+    return { stars: s, frags: f };
+  }
+  function reset() { data = fresh(); write(); return data; }
+
+  load();
+
+  return {
+    KEY: KEY, N: N,
+    get data() { return data; },
+    get persistent() { return persistent; },
+    load: load, write: write, merge: merge,
+    recordPlate: recordPlate, recordEndless: recordEndless, setMuted: setMuted, totals: totals, reset: reset
+  };
+})();
+
+// ===================== MODULE: 60-main.js =====================
+/* PERIHELION — main loop, input, flow & menus (owner: INPUT & FEEL AGENT).
+   Fixed-step accumulator at K.DT; state.step advances by exactly one per physics step while the play screen is
+   live, in lockstep with Physics.stepSim, so moving bodies drawn at state.step are where physics has them. */
+(function () {
+  var doc = document;
+  function $(id) { return doc.getElementById(id); }
+  var cv = $('game'), ui = $('ui');
+  var elTitle = $('scr-title'), elSelect = $('scr-select'), elPlay = $('play-ui'), elSheet = $('sheet');
+  var elCard = $('card'), elHint = $('hint'), elNote = $('note'), elGrid = $('grid'), elTally = $('tally');
+  var elZoneL = $('zone-l'), elZoneR = $('zone-r'), elProbe = $('safe-probe');
+
+  var CAMP = Levels.CAMPAIGN || [];
+  var NPL = Math.min(Save.N, CAMP.length);
+  var STEP_HZ = Math.round(1 / K.DT);
+  var FAIL_TEXT = {
+    crash: 'Struck a body.', captured: 'Taken by the dark star.', lost: 'Lost beyond the plate.', timeout: 'Drifted past the hour.'
+  };
+
+  Sound.setMuted(Save.data.muted, true);
+
+  // ------------------------------------------------------------------ state (contract §6)
+  var state = {
+    screen: 'title',
+    paused: false,
+    mode: 'campaign',
+    level: CAMP[0] || null, levelIndex: 0,
+    step: 0,
+    phase: 'aim',
+    aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
+    predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
+    sim: null,
+    trail: { pts: new Float32Array(K.TRAIL_MAX * 2), head: 0, n: 0 },
+    ghosts: [],
+    launches: 0,
+    collected: new Uint8Array(0),
+    result: null,
+    hud: { speed: 0, closest: Infinity },
+    endless: { round: 0, score: 0, best: Save.data.endlessBest }
+  };
+  // full path of the current flight (pooled). result.pts points at it until the next launch.
+  var path = { pts: new Float32Array((K.MAX_STEPS + 1) * 2), n: 0 };
+  var runSeed = 0;
+  var hintShown = false, hintDone = false;
+  var timers = [];          // step-based timers: {at: step, fn} — pause with the game, advance under fastForward
+  var safe = { top: 0, right: 0, bottom: 0, left: 0 };
+  var L = null;             // last Render.layout
+  var reduceMotion = false;
+  try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+
+  function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+  function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
+
+  // ------------------------------------------------------------------ timers (in physics steps)
+  function after(steps, fn) { timers.push({ at: state.step + Math.max(1, Math.round(steps)), fn: fn }); }
+  function afterMs(ms, fn) { after(ms / 1000 * STEP_HZ, fn); }
+  function runTimers() {
+    for (var i = 0; i < timers.length; i++) {
+      if (state.step >= timers[i].at) { var t = timers[i]; timers.splice(i, 1); i--; t.fn(); }
+    }
+  }
+
+  // ------------------------------------------------------------------ attempt / flight
+  function clearAim() {
+    var a = state.aim;
+    a.active = false; a.dx = 0; a.dy = 0; a.power = 0; a.vx = 0; a.vy = 0; a.cancel = true;
+    state.predict.n = 0;
+    ptr.id = null;
+  }
+  function clearTrail() { state.trail.head = 0; state.trail.n = 0; }
+  function pushTrail(x, y) {
+    var t = state.trail, h = t.head;
+    t.pts[2 * h] = x; t.pts[2 * h + 1] = y;
+    t.head = (h + 1) % K.TRAIL_MAX;
+    if (t.n < K.TRAIL_MAX) t.n++;
+  }
+  function pushPath(x, y) {
+    if (path.n > K.MAX_STEPS) return;
+    path.pts[2 * path.n] = x; path.pts[2 * path.n + 1] = y; path.n++;
+  }
+
+  function resetAttempt() {
+    timers.length = 0;
+    state.step = 0;
+    state.phase = 'aim';
+    clearAim();
+    state.sim = null;
+    clearTrail();
+    path.n = 0;
+    state.ghosts.length = 0;
+    state.launches = 0;
+    state.collected = new Uint8Array(state.level && state.level.frags ? state.level.frags.length : 0);
+    state.result = null;
+    state.hud.speed = 0; state.hud.closest = Infinity;
+    try { Render.fx.reset(); } catch (e) {}
+    Sound.droneStop();
+    hideCard();
+    showNote('');
+    updateHint();
+  }
+
+  function resetProbe() {
+    if (state.phase === 'result') return;
+    state.phase = 'aim';
+    state.sim = null;
+    clearTrail();
+    clearAim();
+    state.hud.speed = 0; state.hud.closest = Infinity;
+  }
+
+  function doLaunch(vx, vy, power) {
+    var lv = state.level;
+    if (!lv || state.phase !== 'aim' || state.launches >= K.MAX_LAUNCHES) return false;
+    state.launches++;
+    var sim = Physics.createSim(lv, vx, vy, state.step);
+    if (sim.collected && sim.collected.length === state.collected.length) sim.collected.set(state.collected);
+    state.sim = sim;
+    state.phase = 'flight';
+    clearAim();
+    clearTrail();
+    path.n = 0;
+    pushTrail(sim.x, sim.y); pushPath(sim.x, sim.y);
+    state.hud.speed = Physics.speed(sim); state.hud.closest = Infinity;
+    if (power == null) power = Math.min(1, Math.sqrt(vx * vx + vy * vy) / K.VMAX);
+    Sound.launch(power);
+    Sound.droneStart();
+    vibrate(12);
+    if (!hintDone && hintShown) { hintDone = true; updateHint(); }
+    showNote('');
+    return true;
+  }
+
+  function onFrag(i) {
+    if (i < 0 || i >= state.collected.length || state.collected[i]) return;
+    state.collected[i] = 1;
+    var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k];
+    Sound.pluck(c - 1);
+    vibrate(10);
+  }
+
+  function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
+
+  function endFlight(status) {
+    var sim = state.sim;
+    Sound.droneStop();
+    if (status === 'hit') {
+      var stars = Math.max(1, 4 - state.launches);
+      state.phase = 'result';
+      state.result = { success: true, stars: stars, status: status, pts: path.pts, n: path.n, at: nowMs() };
+      state.hud.closest = 0;
+      try { Render.fx.success(path.pts, path.n); } catch (e) {}
+      Sound.chime();
+      vibrate([12, 60, 24]);
+      if (state.mode === 'campaign') {
+        state.result.record = Save.recordPlate(state.levelIndex, stars, countFrags());
+      } else {
+        state.endless.score += stars;
+        if (Save.recordEndless(state.endless.score)) state.endless.best = state.endless.score;
+      }
+      afterMs(1200, showSuccessCard);
+      return;
+    }
+    // failure: crash/captured get the hatched burst; lost/timeout a softer cue
+    if (status === 'crash' || status === 'captured') {
+      try { Render.fx.crash(sim.x, sim.y); } catch (e) {}
+      Sound.thump(1);
+      vibrate(30);
+    } else {
+      Sound.thump(0.35);
+      vibrate(8);
+    }
+    // ghost of this launch: every 3rd point, keep the 2 most recent
+    var gn = Math.ceil(path.n / 3), g = new Float32Array(gn * 2), j = 0;
+    for (var i = 0; i < path.n; i += 3) { g[2 * j] = path.pts[2 * i]; g[2 * j + 1] = path.pts[2 * i + 1]; j++; }
+    state.ghosts.push({ pts: g, n: j });
+    while (state.ghosts.length > 2) state.ghosts.shift();
+
+    if (state.launches >= K.MAX_LAUNCHES) {
+      state.phase = 'result';
+      state.result = { success: false, stars: 0, status: status, pts: path.pts, n: path.n, at: nowMs() };
+      afterMs(900, showFailCard);
+    } else {
+      var left = K.MAX_LAUNCHES - state.launches;
+      showNote(FAIL_TEXT[status] + ' ' + (left === 1 ? 'One launch remains.' : 'Two launches remain.'));
+      afterMs(600, resetProbe);
+      afterMs(2600, function () { if (state.phase === 'aim') showNote(''); });
+    }
+  }
+
+  // one fixed physics step
+  function physStep() {
+    state.step++;
+    var s = state.sim;
+    if (state.phase === 'flight' && s && s.status === 'flying') {
+      var st = Physics.stepSim(s, state.level);
+      pushTrail(s.x, s.y); pushPath(s.x, s.y);
+      if (s.events.length) {
+        for (var i = 0; i < s.events.length; i++) if (s.events[i].type === 'frag') onFrag(s.events[i].i);
+        s.events.length = 0;
+      }
+      state.hud.speed = Physics.speed(s);
+      state.hud.closest = s.minDist;
+      if (st !== 'flying') endFlight(st);
+    }
+    if (timers.length) runTimers();
+  }
+
+  function updatePrediction() {
+    var a = state.aim;
+    if (state.phase !== 'aim' || !a.active || a.cancel) { state.predict.n = 0; if (state.phase === 'aim') { state.hud.speed = 0; state.hud.closest = Infinity; } return; }
+    var sim = Physics.predict(state.level, a.vx, a.vy, state.step, state.predict.pts);
+    state.predict.n = sim.n;
+    state.hud.speed = Math.sqrt(a.vx * a.vx + a.vy * a.vy);
+    state.hud.closest = sim.minDist;
+  }
+
+  // ------------------------------------------------------------------ loading levels
+  function loadCampaign(i) {
+    i = Math.max(0, Math.min(CAMP.length - 1, i | 0));
+    state.mode = 'campaign';
+    state.levelIndex = i;
+    state.level = CAMP[i];
+    Render.setLevel(state.level);
+    resetAttempt();
+    setScreen('play');
+    return state.level;
+  }
+  function roundSeed(r) { return (runSeed + Math.imul(r, 0x9E3779B1)) >>> 0; }
+  // Next Endless round is generated while the success card shows (same seed & difficulty => same level).
+  var preGen = null;
+  function genRound(r) {
+    var seed = roundSeed(r), d = Math.min(1, r / 25);
+    if (preGen && preGen.seed === seed && preGen.d === d && preGen.run === runSeed) { var l = preGen.lv; preGen = null; return l; }
+    return Levels.generate(seed, d);
+  }
+  function preGenerate(r) {
+    var seed = roundSeed(r), d = Math.min(1, r / 25), run = runSeed;
+    if (preGen && preGen.seed === seed && preGen.run === run) return;
+    setTimeout(function () {
+      if (state.mode !== 'endless' || runSeed !== run || state.endless.round !== r - 1) return;
+      try { preGen = { seed: seed, d: d, run: run, lv: Levels.generate(seed, d) }; } catch (e) { preGen = null; }
+    }, reduceMotion ? 0 : 380);
+  }
+  function endlessRound() {
+    var r = state.endless.round;
+    var lv = genRound(r);
+    lv.plate = toRoman(r);
+    lv.caption = 'ENDLESS · PLATE ' + lv.plate;
+    state.mode = 'endless';
+    state.levelIndex = r - 1;
+    state.level = lv;
+    Render.setLevel(lv);
+    resetAttempt();
+    setScreen('play');
+    return lv;
+  }
+  function startEndless(seed) {
+    runSeed = (seed == null || !isFinite(seed)) ? ((Math.random() * 4294967296) >>> 0) : (seed >>> 0);
+    state.endless.round = 1; state.endless.score = 0; state.endless.best = Save.data.endlessBest;
+    return endlessRound();
+  }
+  function nextEndless() { state.endless.round++; return endlessRound(); }
+
+  // ------------------------------------------------------------------ screens
+  function setScreen(name) {
+    if (name === 'play' && !state.level) name = 'title';
+    var prev = state.screen;
+    state.screen = name;
+    elTitle.classList.toggle('on', name === 'title');
+    elSelect.classList.toggle('on', name === 'select');
+    elPlay.classList.toggle('on', name === 'play');
+    elTitle.setAttribute('aria-hidden', name !== 'title');
+    elSelect.setAttribute('aria-hidden', name !== 'select');
+    if (name !== 'play') {
+      Sound.droneStop();
+      clearAim();
+      hideCard();
+      showNote('');
+      timers.length = 0;
+      if (state.phase === 'flight') state.phase = 'aim';
+    }
+    hideSheet();
+    state.paused = false;
+    if (name === 'title') refreshTitle();
+    if (name === 'select') refreshSelect(prev !== 'select');
+    if (name === 'play') placeDom();
+    updateHint();
+    acc = 0;
+    snapshot();
+  }
+
+  function soundLabel() { return 'Sound: ' + (Sound.isMuted() ? 'Off' : 'On'); }
+  function refreshSoundButtons() {
+    var bs = ui.querySelectorAll('[data-sound]');
+    for (var i = 0; i < bs.length; i++) { bs[i].textContent = soundLabel(); bs[i].setAttribute('aria-pressed', String(!Sound.isMuted())); }
+  }
+  function refreshTitle() {
+    var b = Save.data.endlessBest;
+    $('t-best').innerHTML = b > 0 ? 'Best survey &middot; <b>' + b + '</b> stars' : '';
+    refreshSoundButtons();
+  }
+
+  // ---- inline svg glyphs
+  var STAR_D = (function () {
+    var s = 'M', i, a, r;
+    for (i = 0; i < 10; i++) {
+      a = -Math.PI / 2 + i * Math.PI / 5; r = i % 2 ? 3.9 : 9;
+      s += (i ? ' L' : '') + (r * Math.cos(a)).toFixed(2) + ',' + (r * Math.sin(a)).toFixed(2);
+    }
+    return s + 'Z';
+  })();
+  function starSvg(on, size) {
+    return '<svg class="star' + (on ? ' on' : '') + '" viewBox="-10.5 -10.5 21 21" width="' + size + '" height="' + size +
+      '" aria-hidden="true"><path d="' + STAR_D + '"/></svg>';
+  }
+  function starsRow(n, size) { return starSvg(n >= 1, size) + starSvg(n >= 2, size) + starSvg(n >= 3, size); }
+  function cometSvg(on) {
+    return '<svg class="comet' + (on ? '' : ' off') + '" viewBox="0 0 14 10" width="14" height="10" aria-hidden="true">' +
+      '<circle cx="10.5" cy="3.5" r="1.8"/><path d="M9 4.6 L1.5 9 M9.6 5.3 L4.5 9.6 M8.4 3.9 L1 6.6"/></svg>';
+  }
+
+  // ---- level select
+  var cards = [], thumbW = 0, thumbsDrawn = false;
+  function buildGrid() {
+    var html = '';
+    for (var i = 0; i < CAMP.length; i++) {
+      var lv = CAMP[i];
+      html += '<button class="plate" data-i="' + i + '" aria-label="Plate ' + toRoman(i + 1) + '">' +
+        '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Sealed</span></span></span>' +
+        '<span class="pl-num">' + toRoman(i + 1) + '</span>' +
+        '<span class="pl-name">' + escapeHtml(lv.name || '') + '</span>' +
+        '<span class="pl-meta"></span></button>';
+    }
+    elGrid.innerHTML = html;
+    cards = [];
+    var bs = elGrid.querySelectorAll('.plate');
+    for (var j = 0; j < bs.length; j++) cards.push({ el: bs[j], cv: bs[j].querySelector('canvas'), sealed: bs[j].querySelector('.sealed'), meta: bs[j].querySelector('.pl-meta') });
+  }
+  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function drawThumbs(force) {
+    if (!cards.length) return;
+    var r = cards[0].cv.parentNode.getBoundingClientRect();
+    var w = Math.round(r.width) - 2, h = Math.round(w * 16 / 9);
+    if (w <= 0) return;
+    if (!force && thumbsDrawn && w === thumbW) return;
+    thumbW = w; thumbsDrawn = true;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i].cv;
+      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      c.style.height = h + 'px';
+      var g = c.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.fillStyle = PAL.ink; g.fillRect(0, 0, c.width, c.height);
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      try { Render.drawThumbnail(g, CAMP[i], w, h); } catch (e) { if (!drawThumbs.err) { drawThumbs.err = 1; console.warn('drawThumbnail failed', e); } }
+    }
+  }
+  function refreshSelect(entering) {
+    if (!cards.length) buildGrid();
+    var d = Save.data, tot = Save.totals(), fragTotal = 0;
+    for (var i = 0; i < cards.length; i++) {
+      var lv = CAMP[i], nf = lv.frags ? lv.frags.length : 0, locked = i >= d.unlocked;
+      fragTotal += nf;
+      var c = cards[i];
+      c.el.classList.toggle('locked', locked);
+      c.el.classList.toggle('done', d.stars[i] > 0);
+      c.el.setAttribute('aria-disabled', String(locked));
+      c.sealed.hidden = !locked;
+      var meta = starsRow(d.stars[i], 12);
+      if (nf) meta += cometSvg(d.frags[i] >= nf) + '<span class="fr">' + Math.min(d.frags[i], nf) + '/' + nf + '</span>';
+      c.meta.innerHTML = meta;
+    }
+    elTally.innerHTML = 'Stars <b>' + tot.stars + '</b>/<b>' + (cards.length * 3) + '</b><span class="sep">&middot;</span>' +
+      'Fragments <b>' + tot.frags + '</b>/<b>' + fragTotal + '</b>';
+    // draw after the page is laid out
+    requestAnimationFrame(function () { drawThumbs(false); });
+    if (entering) {
+      var sc = $('s-scroll'), cur = cards[Math.max(0, Math.min(cards.length - 1, d.unlocked - 1))];
+      if (sc && cur && state.mode === 'campaign' && state.levelIndex > 5) {
+        requestAnimationFrame(function () { try { sc.scrollTop = Math.max(0, cards[state.levelIndex].el.offsetTop - 80); } catch (e) {} });
+      }
+    }
+  }
+
+  // ---- hint & marginal notes (positioned in world coords via Render)
+  function updateHint() {
+    var want = state.screen === 'play' && state.mode === 'campaign' && state.levelIndex === 0 &&
+      !hintDone && state.launches === 0 && !(Save.data.stars[0] > 0);
+    if (want) hintShown = true;
+    elHint.classList.toggle('on', !!want);
+  }
+  var noteTimer = 0;
+  function showNote(text) {
+    if (text) { elNote.textContent = text; elNote.classList.add('on'); }
+    else elNote.classList.remove('on');
+  }
+
+  // ---- result cards
+  var cardShownAt = 0;
+  function showCard(html) {
+    elCard.innerHTML = html;
+    placeCard();
+    elCard.classList.add('on');
+    cardShownAt = nowMs();
+    showNote('');
+  }
+  function hideCard() { elCard.classList.remove('on'); }
+  function cardVisible() { return elCard.classList.contains('on'); }
+  function kicker() { return state.mode === 'endless' ? 'Endless &middot; Plate ' + toRoman(state.endless.round) : 'Plate ' + toRoman(state.levelIndex + 1); }
+  function statsLine() {
+    var nf = state.level.frags ? state.level.frags.length : 0;
+    var s = 'Launches <b>' + state.launches + '</b>/<b>' + K.MAX_LAUNCHES + '</b>';
+    if (nf) s += '<span class="sep"> &middot; </span>Fragments <b>' + countFrags() + '</b>/<b>' + nf + '</b>';
+    return s;
+  }
+  function showSuccessCard() {
+    if (state.screen !== 'play' || !state.result || !state.result.success) return;
+    var r = state.result, h;
+    if (state.mode === 'campaign') {
+      var last = state.levelIndex >= CAMP.length - 1;
+      var rec = r.record || {};
+      var note = last ? 'The atlas is complete.' : (r.stars === 3 ? 'A clean passage, in a single launch.' : (rec.improved && !rec.first ? 'A finer record than before.' : escapeHtml(state.level.name || '')));
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Sealed</h3>' +
+        '<p class="note">' + note + '</p>' +
+        '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
+        '<p class="c-stats">' + statsLine() + '</p>' +
+        (last ? '<div class="c-btns"><button class="btn" data-act="replay">Replay</button>' +
+                '<button class="btn primary" data-act="atlas">Atlas</button></div>'
+              : '<div class="c-btns three"><button class="btn" data-act="replay">Replay</button>' +
+                '<button class="btn" data-act="atlas">Atlas</button>' +
+                '<button class="btn primary" data-act="next">Next plate</button></div>');
+    } else {
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Surveyed</h3>' +
+        '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
+        '<p class="c-stats">Score <b>' + state.endless.score + '</b><span class="sep"> &middot; </span>Best <b>' + Math.max(state.endless.best, state.endless.score) + '</b></p>' +
+        '<div class="c-btns"><button class="btn" data-act="end">End survey</button>' +
+        '<button class="btn primary" data-act="next">Next plate</button></div>';
+    }
+    showCard(h);
+    if (state.mode === 'endless') preGenerate(state.endless.round + 1);
+  }
+  function showFailCard() {
+    if (state.screen !== 'play' || !state.result || state.result.success) return;
+    var h, why = FAIL_TEXT[state.result.status] || '';
+    if (state.mode === 'campaign') {
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title">Unsealed</h3>' +
+        '<p class="note">' + why + ' Three launches spent.</p>' +
+        '<div class="c-stars">' + starsRow(0, 20) + '</div>' +
+        '<div class="c-btns"><button class="btn" data-act="atlas">Atlas</button>' +
+        '<button class="btn primary" data-act="retry">Retry plate</button></div>';
+    } else {
+      var rounds = state.endless.round - 1;
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title">Survey Concluded</h3>' +
+        '<p class="note">' + why + ' ' + (rounds === 1 ? 'One plate' : (rounds ? toRoman(rounds) + ' plates' : 'No plates')) + ' surveyed.</p>' +
+        '<p class="c-stats">Score <b>' + state.endless.score + '</b><span class="sep"> &middot; </span>Best <b>' + Math.max(state.endless.best, state.endless.score) + '</b></p>' +
+        '<div class="c-btns"><button class="btn" data-act="title">Title</button>' +
+        '<button class="btn primary" data-act="newrun">New survey</button></div>';
+    }
+    showCard(h);
+  }
+
+  // ---- pause sheet
+  function showSheet() {
+    $('sheet-kicker').innerHTML = kicker();
+    $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : 'Return to the Atlas';
+    refreshSoundButtons();
+    elSheet.classList.add('on');
+  }
+  function hideSheet() { elSheet.classList.remove('on'); }
+  function pause() {
+    if (state.screen !== 'play' || state.paused) return;
+    state.paused = true;
+    clearAim();
+    Sound.droneStop();
+    showSheet();
+    snapshot();
+  }
+  function resume() {
+    if (!state.paused) return;
+    state.paused = false;
+    hideSheet();
+    Sound.resume();
+    last = 0; acc = 0;
+    if (state.phase === 'flight' && state.sim && state.sim.status === 'flying') Sound.droneStart();
+  }
+
+  // ------------------------------------------------------------------ actions (buttons)
+  function act(name, el) {
+    Sound.tick();
+    switch (name) {
+      case 'begin': setScreen('select'); break;
+      case 'endless': startEndless(); break;
+      case 'sound': Sound.setMuted(!Sound.isMuted()); if (!Sound.isMuted()) { Sound.unlock(function () { Sound.chime(); }); } refreshSoundButtons(); break;
+      case 'title': setScreen('title'); break;
+      case 'plate':
+        var i = +el.getAttribute('data-i');
+        if (i >= Save.data.unlocked) { vibrate(6); return; }
+        loadCampaign(i); break;
+      case 'reset': if (state.screen === 'play') { if (state.mode === 'endless' && state.phase === 'result' && !state.result.success) startEndless(); else resetAttempt(); } break;
+      case 'menu': pause(); break;
+      case 'resume': resume(); break;
+      case 'restart': resume(); resetAttempt(); break;
+      case 'atlas': setScreen(state.mode === 'endless' ? 'title' : 'select'); break;
+      case 'next':
+        if (state.mode === 'endless') nextEndless();
+        else if (state.levelIndex + 1 < CAMP.length) loadCampaign(state.levelIndex + 1);
+        else setScreen('select');
+        break;
+      case 'replay': case 'retry': resetAttempt(); break;
+      case 'end': setScreen('title'); break;
+      case 'newrun': startEndless(); break;
+    }
+  }
+  ui.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-act], .plate') : null;
+    if (!t) {
+      if (state.paused && elSheet.contains(e.target)) { Sound.tick(); resume(); }
+      return;
+    }
+    if (t.classList.contains('plate')) act('plate', t);
+    else act(t.getAttribute('data-act'), t);
+  });
+
+  // ------------------------------------------------------------------ input: aiming
+  var ptr = { id: null, sx: 0, sy: 0 };
+  function canAim() {
+    return state.screen === 'play' && !state.paused && state.phase === 'aim' && !cardVisible() &&
+      state.launches < K.MAX_LAUNCHES && !!state.level;
+  }
+  function aimStart(id, x, y) {
+    if (ptr.id !== null || !canAim()) return false;
+    ptr.id = id; ptr.sx = x; ptr.sy = y;
+    var a = state.aim;
+    a.active = true; a.dx = 0; a.dy = 0; a.power = 0; a.vx = 0; a.vy = 0; a.cancel = true;
+    return true;
+  }
+  function aimMove(x, y) {
+    var a = state.aim;
+    if (!a.active) return;
+    var sc = (Render.layout && Render.layout.scale) || 1;
+    var dx = (x - ptr.sx) / sc, dy = (y - ptr.sy) / sc;
+    var lv = Physics.launchVelocity(dx, dy);
+    var wasCancel = a.cancel;
+    a.dx = dx; a.dy = dy; a.power = lv.power; a.vx = lv.vx; a.vy = lv.vy; a.cancel = lv.cancel;
+    if (wasCancel !== lv.cancel) { Sound.tick(); if (!lv.cancel) vibrate(4); }
+  }
+  function aimEnd(x, y, cancelled) {
+    var a = state.aim;
+    if (!a.active) { ptr.id = null; return; }
+    if (!cancelled && x != null) aimMove(x, y);
+    var go = !cancelled && !a.cancel && canAim();
+    var vx = a.vx, vy = a.vy, p = a.power;
+    clearAim();
+    if (go) doLaunch(vx, vy, p);
+  }
+
+  if (window.PointerEvent) {
+    cv.addEventListener('pointerdown', function (e) {
+      gesture();
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (!e.isPrimary && ptr.id !== null) return;          // ignore extra fingers
+      if (aimStart(e.pointerId, e.clientX, e.clientY)) {
+        e.preventDefault();
+        try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+    });
+    cv.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== ptr.id) return;
+      e.preventDefault();
+      aimMove(e.clientX, e.clientY);
+    });
+    cv.addEventListener('pointerup', function (e) {
+      gesture();
+      if (e.pointerId !== ptr.id) return;
+      aimEnd(e.clientX, e.clientY, false);
+    });
+    cv.addEventListener('pointercancel', function (e) { if (e.pointerId === ptr.id) aimEnd(null, null, true); });
+    cv.addEventListener('lostpointercapture', function (e) { if (e.pointerId === ptr.id && state.aim.active) aimEnd(null, null, true); });
+  } else {
+    // legacy touch fallback
+    cv.addEventListener('touchstart', function (e) {
+      gesture();
+      var t = e.changedTouches[0];
+      if (e.touches.length > 1) return;
+      if (aimStart(t.identifier, t.clientX, t.clientY)) e.preventDefault();
+    }, { passive: false });
+    cv.addEventListener('touchmove', function (e) {
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        var t = e.changedTouches[i];
+        if (t.identifier === ptr.id) { e.preventDefault(); aimMove(t.clientX, t.clientY); }
+      }
+    }, { passive: false });
+    cv.addEventListener('touchend', function (e) {
+      gesture();
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        var t = e.changedTouches[i];
+        if (t.identifier === ptr.id) aimEnd(t.clientX, t.clientY, false);
+      }
+    });
+    cv.addEventListener('touchcancel', function () { aimEnd(null, null, true); });
+    cv.addEventListener('mousedown', function (e) { gesture(); if (aimStart('m', e.clientX, e.clientY)) e.preventDefault(); });
+    window.addEventListener('mousemove', function (e) { if (ptr.id === 'm') aimMove(e.clientX, e.clientY); });
+    window.addEventListener('mouseup', function (e) { if (ptr.id === 'm') aimEnd(e.clientX, e.clientY, false); });
+  }
+
+  // audio unlock on any gesture (iOS: touchend/pointerup/click count as activation, pointerdown for mouse)
+  function gesture() { if (!state.paused) Sound.resume(); Sound.unlock(); }
+  ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(function (t) {
+    window.addEventListener(t, gesture, { capture: true, passive: true });
+  });
+
+  // keyboard (desktop QA)
+  window.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k === 'Escape' || k === 'p' || k === 'P') {
+      if (state.screen === 'play') { if (state.paused) resume(); else pause(); e.preventDefault(); }
+      else if (state.screen === 'select') setScreen('title');
+    } else if ((k === 'r' || k === 'R') && state.screen === 'play' && !state.paused) {
+      resetAttempt();
+    } else if ((k === 'Enter' || k === ' ') && cardVisible() && doc.activeElement === doc.body) {
+      var p = elCard.querySelector('.primary'); if (p) { e.preventDefault(); p.click(); }
+    }
+  });
+
+  // ------------------------------------------------------------------ iOS hardening
+  function pd(e) { if (e.cancelable) e.preventDefault(); }
+  doc.addEventListener('touchmove', function (e) {
+    var inScroll = e.target && e.target.closest && e.target.closest('.scroll');
+    if (e.touches.length > 1 || !inScroll) pd(e);
+  }, { passive: false });
+  ['gesturestart', 'gesturechange', 'gestureend', 'dblclick', 'contextmenu', 'selectstart'].forEach(function (t) {
+    doc.addEventListener(t, pd, { passive: false });
+  });
+  var lastTouchEnd = 0;
+  doc.addEventListener('touchend', function (e) {   // stop double-tap zoom outside controls
+    var n = Date.now();
+    var ctl = e.target && e.target.closest && e.target.closest('button, .scroll');
+    if (!ctl && n - lastTouchEnd < 350) pd(e);
+    lastTouchEnd = n;
+  }, { passive: false });
+
+  doc.addEventListener('visibilitychange', function () {
+    if (doc.hidden) {
+      if (state.screen === 'play') pause();
+      Sound.suspend();
+    } else {
+      last = 0; acc = 0;
+    }
+  });
+  window.addEventListener('pagehide', function () { if (state.screen === 'play') pause(); Sound.suspend(); });
+
+  // ------------------------------------------------------------------ layout
+  function readSafe() {
+    var s = { top: 0, right: 0, bottom: 0, left: 0 };
+    try {
+      var cs = getComputedStyle(elProbe);
+      s.top = parseFloat(cs.paddingTop) || 0; s.right = parseFloat(cs.paddingRight) || 0;
+      s.bottom = parseFloat(cs.paddingBottom) || 0; s.left = parseFloat(cs.paddingLeft) || 0;
+    } catch (e) {}
+    return s;
+  }
+  var lastSize = '';
+  function doResize(force) {
+    var w = Math.round(window.innerWidth || doc.documentElement.clientWidth || 0);
+    var h = Math.round(window.innerHeight || doc.documentElement.clientHeight || 0);
+    if (w < 2 || h < 2) return;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    safe = readSafe();
+    var key = w + 'x' + h + '@' + dpr + ':' + safe.top + ',' + safe.right + ',' + safe.bottom + ',' + safe.left;
+    if (!force && key === lastSize) return;
+    lastSize = key;
+    Render.resize(w, h, dpr, safe);
+    L = Render.layout;
+    placeDom();
+    if (state.screen === 'select') requestAnimationFrame(function () { drawThumbs(false); });
+  }
+  function px(v) { return Math.round(v) + 'px'; }
+  function placeDom() {
+    L = Render.layout;
+    if (!L || !L.bottom || !L.plate) return;
+    var b = L.bottom, p = L.plate, zw = b.w * 0.25;
+    var zl = Math.max(b.x, safe.left), zr = Math.min(b.x + b.w, L.w - safe.right);
+    elZoneL.style.left = px(zl); elZoneL.style.top = px(b.y); elZoneL.style.width = px(b.x + zw - zl); elZoneL.style.height = px(Math.max(44, b.h));
+    elZoneR.style.left = px(b.x + b.w - zw); elZoneR.style.top = px(b.y); elZoneR.style.width = px(zr - (b.x + b.w - zw)); elZoneR.style.height = px(Math.max(44, b.h));
+    // hint: marginal note on the wider side of the probe, anchored from the bottom so it grows upward
+    var lv = state.level, sc = L.scale;
+    if (lv) {
+      var pr = Render.worldToScreen(lv.probe.x, lv.probe.y);
+      var spaceR = p.x + p.w - 14 - (pr.x + 24), spaceL = pr.x - 24 - (p.x + 14);
+      var onRight = spaceR >= spaceL, hw = Math.min(p.w - 28, Math.max(180, Math.min(260, onRight ? spaceR : spaceL)));
+      elHint.classList.toggle('right', onRight); elHint.classList.toggle('left', !onRight);
+      elHint.style.width = px(hw);
+      if (onRight) { elHint.style.left = 'auto'; elHint.style.right = px(L.w - (p.x + p.w - 14)); }
+      else { elHint.style.right = 'auto'; elHint.style.left = px(p.x + 14); }
+      elHint.style.top = 'auto';
+      elHint.style.bottom = px(Math.max(L.h - (pr.y - 18), L.h - b.y + 6));
+      elNote.style.left = px(p.x + 16); elNote.style.width = px(p.w - 32);
+      elNote.style.top = px(Math.min(pr.y + 30 * sc + 14, p.y + p.h - 34));
+    }
+    placeCard();
+  }
+  // result card: sized from the viewport & safe areas; beside the plate in landscape, otherwise in the lower
+  // part of the plate (the target and seal sit near the top). Never extends past the viewport.
+  function placeCard() {
+    L = Render.layout;
+    if (!L || !L.plate) return;
+    var p = L.plate, W = L.w, H = L.h;
+    var minTop = safe.top + 10, maxBottom = H - safe.bottom - 10, availH = Math.max(120, maxBottom - minTop);
+    var spR = W - safe.right - (p.x + p.w) - 32, spL = p.x - safe.left - 32;
+    var side = W > H && Math.max(spR, spL) >= 200;
+    var cw = side ? Math.min(340, Math.max(spR, spL)) : Math.min(340, W - 24 - safe.left - safe.right);
+    elCard.style.width = px(cw);
+    elCard.classList.toggle('narrow', cw < 320);
+    elCard.style.maxHeight = px(availH);
+    elCard.style.bottom = 'auto';
+    var ch = elCard.offsetHeight || 230, top, left;
+    if (side) {
+      left = spR >= spL ? p.x + p.w + 16 : p.x - 16 - cw;
+      top = (H - ch) / 2;
+    } else {
+      left = safe.left + (W - safe.left - safe.right - cw) / 2;
+      top = Math.min(p.y + p.h - 10, maxBottom) - ch;
+    }
+    top = Math.max(minTop, Math.min(top, maxBottom - ch));
+    elCard.style.left = px(left);
+    elCard.style.top = px(top);
+  }
+  window.addEventListener('resize', function () { doResize(false); });
+  window.addEventListener('orientationchange', function () { setTimeout(function () { doResize(true); }, 250); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { doResize(false); });
+
+  // ------------------------------------------------------------------ main loop
+  var last = 0, acc = 0;
+  var ft = new Float32Array(60), ftI = 0, ftN = 0, renderErr = 0;
+  function loop(t) {
+    requestAnimationFrame(loop);
+    var dt = last ? (t - last) / 1000 : 0;
+    last = t;
+    if (dt > 0 && dt < 1) { ft[ftI] = dt; ftI = (ftI + 1) % 60; if (ftN < 60) ftN++; }
+    if (dt > 0.25 || dt < 0) dt = K.DT;                        // tab switch / clock jump: don't catch up
+    if (state.screen === 'play' && !state.paused) {
+      acc += dt;
+      var n = 0;
+      while (acc >= K.DT && n < K.MAX_STEPS_PER_FRAME) { physStep(); acc -= K.DT; n++; }
+      if (n >= K.MAX_STEPS_PER_FRAME && acc > K.DT) acc = 0;    // drop the backlog rather than spiral
+      if (state.phase === 'aim') updatePrediction();
+      else if (state.phase === 'flight' && state.sim && state.sim.status === 'flying') Sound.droneSpeed(Physics.speed(state.sim) / K.VMAX / 1.4);
+    } else acc = 0;
+    try { Render.frame(state, t); }
+    catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
+  }
+
+  // ------------------------------------------------------------------ QA hooks (§10)
+  function findSolution(lv, step) {
+    function hits(v) { return v && Physics.simulate(lv, v.vx, v.vy, step, K.MAX_STEPS).status === 'hit'; }
+    var s = null;
+    try { s = Levels.solve(lv, { t0Step: step }); } catch (e) { s = null; }
+    if (hits(s)) return { vx: s.vx, vy: s.vy, t0Step: step };
+    // coarse → fine brute force (QA only; never used in normal play)
+    var powers = [1, 0.85, 0.7, 0.92, 0.78, 0.62, 0.55, 0.48, 0.4, 0.34, 0.97, 0.66, 0.74, 0.82, 0.58, 0.88, 0.52, 0.44];
+    for (var pi = 0; pi < powers.length; pi++) {
+      for (var a = 0; a < 720; a++) {
+        var ang = a * Math.PI / 360, v = K.VMAX * powers[pi];
+        var c = { vx: Math.cos(ang) * v, vy: Math.sin(ang) * v };
+        if (hits(c)) return { vx: c.vx, vy: c.vy, t0Step: step };
+      }
+    }
+    return null;
+  }
+  function hookPrepare() {
+    if (state.screen !== 'play') return false;
+    if (state.paused) resume();
+    if (state.phase === 'result') resetAttempt();
+    else if (state.phase === 'flight') { timers.length = 0; state.sim = null; state.phase = 'aim'; }
+    hideCard();
+    return true;
+  }
+  function fastForward(n) {
+    n = Math.max(0, n | 0);
+    for (var i = 0; i < n; i++) {
+      if (state.screen !== 'play') break;
+      physStep();
+    }
+    if (state.phase === 'aim') updatePrediction();
+    return state.step;
+  }
+  function fps() {
+    if (!ftN) return 0;
+    var s = 0; for (var i = 0; i < ftN; i++) s += ft[i];
+    return s > 0 ? ftN / s : 0;
+  }
+  window.__peri = {
+    state: state, Physics: Physics, Levels: Levels, Render: Render, Sound: Sound, Save: Save,
+    loadLevel: function (i) { return loadCampaign(i); },
+    loadEndless: function (seed) { return startEndless(seed); },
+    launch: function (vx, vy) {
+      if (!hookPrepare()) return false;
+      if (state.launches >= K.MAX_LAUNCHES) resetAttempt();
+      return doLaunch(+vx, +vy);
+    },
+    fastForward: fastForward,
+    solveCurrent: function () {
+      if (!hookPrepare()) return null;
+      if (state.launches >= K.MAX_LAUNCHES) resetAttempt();
+      var lv = state.level, sol = lv.solution;
+      if (sol) {
+        var t0 = sol.t0Step | 0;
+        if (hasMoving(lv) && t0 !== state.step) { timers.length = 0; state.step = t0; }
+      } else {
+        sol = findSolution(lv, state.step);
+      }
+      if (!sol) return null;
+      doLaunch(sol.vx, sol.vy);
+      return { vx: sol.vx, vy: sol.vy, t0Step: state.step };
+    },
+    fps: fps,
+    screen: function (name) {
+      if (name == null) return state.screen;
+      if (name === 'play' && state.screen !== 'play') { if (state.mode === 'endless' && state.endless.round > 0) setScreen('play'); else loadCampaign(state.levelIndex); }
+      else setScreen(name);
+      return state.screen;
+    },
+    pause: pause, resume: resume
+  };
+
+  function snapshot() {
+    try {
+      var hot = window.claude && window.claude.hot;
+      if (hot && typeof hot.snapshot === 'function' && !snapshot.done) {
+        snapshot.done = true;
+        hot.snapshot(function () { return { screen: state.screen, levelIndex: state.levelIndex, mode: state.mode }; });
+      }
+    } catch (e) {}
+  }
+
+  // ------------------------------------------------------------------ boot
+  Render.init(cv);
+  doResize(true);
+  if (state.level) { try { Render.setLevel(state.level); } catch (e) { console.error('Render.setLevel', e); } }
+  buildGrid();
+  refreshTitle();
+  setScreen('title');
+  try {
+    if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(function () {
+      if (thumbsDrawn) drawThumbs(true);
+      placeDom();
+    });
+  } catch (e) {}
+  requestAnimationFrame(loop);
+})();
+
+</script>
+<script>
+/* Offline support: only on http(s), never inside a host iframe. All URLs are relative so a project site under
+   /<repo>/ works. */
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && window.top === window.self) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('./sw.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
