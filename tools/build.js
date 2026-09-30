@@ -10,7 +10,7 @@
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..');
 const S = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
-const ORDER = ['00-const.js', '10-physics.js', '20-levels.js', '30-render.js', '40-audio.js', '50-save.js', '60-main.js'];
+const ORDER = ['00-const.js', '10-physics.js', '20-levels.js', '30-render.js', '40-audio.js', '50-save.js', '55-log.js', '56-logui.js', '60-main.js'];
 
 const js = ORDER.map(f => `// ===================== MODULE: ${f} =====================\n` + S(f)).join('\n');
 const head = S('shell.head.html'), body = S('shell.body.html');

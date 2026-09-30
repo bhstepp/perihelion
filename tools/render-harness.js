@@ -1,224 +1,220 @@
-// Render harness (owner: RENDER AGENT). Builds a standalone test page from src/00,10,20,30 plus a tiny driver that
-// fakes game state, screenshots each scene at iPhone 14 emulation, and measures frame time.
-// usage: node tools/render-harness.js [--nofonts] [--only scene,scene]
-const fs = require('fs'), path = require('path');
+// Render-agent harness: node tools/render-harness.js
+// Builds a tiny page (K, Physics, Levels, Render + a canvas), drives `state` by hand (the new v2 fields: hint, frozen,
+// spotlight, daily caption, hint-used stars), screenshots the scenes to qa/render-*.png and prints timings.
+// Runs at iPhone 14 emulation (390x844, DPR 3) with Render at dpr 2 (the game caps dpr at 2).
+process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
 const { chromium } = require('playwright');
+const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..'), QA = path.join(ROOT, 'qa');
-const args = process.argv.slice(2), NOFONTS = args.includes('--nofonts') || args.includes('--nols'), NOLS = args.includes('--nols');
-const onlyIx = args.indexOf('--only'), ONLY = onlyIx >= 0 ? args[onlyIx + 1].split(',') : null;
-const src = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
+fs.mkdirSync(QA, { recursive: true });
+const S = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
+const SCENES = process.argv.slice(2);           // optional filter: scene names
 
-const DRIVER = `
-(function () {
-  var cv = document.getElementById('game'), SAFE = { top: 47, bottom: 34, left: 0, right: 0 };
-  Render.init(cv); Render.resize(innerWidth, innerHeight, 2, SAFE);
-  // the lead's three sample levels (planet / binary+moon / black hole+repulsor+moon+fragments), embedded so the
-  // harness doesn't depend on the level agent's in-progress campaign
-  var L = [
-    { id: 'c01', index: 0, seed: 1, difficulty: 0, name: 'First Light', plate: 'I',
-      probe: { x: 450, y: 1420 }, target: { x: 520, y: 220, r: 44 },
-      bodies: [ { kind: 'planet', x: 330, y: 780, r: 70, mu: 2.4e7, orbit: null } ], frags: [], solution: null },
-    { id: 'c02', index: 1, seed: 2, difficulty: 0.4, name: 'The Binary', plate: 'II',
-      probe: { x: 200, y: 1400 }, target: { x: 700, y: 240, r: 40 },
-      bodies: [
-        { kind: 'planet', r: 46, mu: 7.5e6, pair: 1, orbit: { cx: 470, cy: 820, rad: 120, omega: 0.9, phase: 0 } },
-        { kind: 'planet', r: 40, mu: 5.2e6, pair: 1, orbit: { cx: 470, cy: 820, rad: 120, omega: 0.9, phase: Math.PI } },
-        { kind: 'moon', r: 16, mu: 6e5, orbit: { cx: 700, cy: 480, rad: 110, omega: -1.4, phase: 1 } } ],
-      frags: [ { x: 640, y: 1050 } ], solution: null },
-    { id: 'c03', index: 2, seed: 3, difficulty: 0.9, name: 'Event Horizon', plate: 'III',
-      probe: { x: 450, y: 1440 }, target: { x: 450, y: 180, r: 36 },
-      bodies: [
-        { kind: 'blackhole', x: 450, y: 800, r: 14, capture: 44, mu: 3.2e7, orbit: null },
-        { kind: 'repulsor', x: 220, y: 520, r: 26, mu: -1.1e7, orbit: null },
-        { kind: 'planet', x: 700, y: 1100, r: 55, mu: 1.1e7, orbit: null },
-        { kind: 'moon', r: 14, mu: 4e5, orbit: { cx: 700, cy: 1100, rad: 105, omega: 1.2, phase: 0 } } ],
-      frags: [ { x: 300, y: 1000 }, { x: 640, y: 420 } ], solution: null }
-  ];
-  var THUMBS = (Levels.CAMPAIGN && Levels.CAMPAIGN.length >= 30) ? Levels.CAMPAIGN : L;
-  function blank(level) {
+const HARNESS = `
+window.H = (function () {
+  var cv = document.getElementById('game'), NOW = 5000;
+  Render.init(cv);
+  Render.resize(390, 844, 2, { top: 47, bottom: 34, left: 0, right: 0 });
+  function lv(i) { return Levels.CAMPAIGN[i]; }
+  function mkState(level) {
     return { screen: 'play', paused: false, mode: 'campaign', level: level, levelIndex: level.index, step: 0, phase: 'aim',
       aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
       predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 }, sim: null,
       trail: { pts: new Float32Array(K.TRAIL_MAX * 2), head: 0, n: 0 }, ghosts: [], launches: 0,
-      collected: new Uint8Array((level.frags || []).length), result: null, hud: { speed: 0, closest: Infinity },
+      collected: new Uint8Array(8), result: null, hud: { speed: 0, closest: Infinity },
       endless: { round: 0, score: 0, best: 0 } };
   }
-  // brute-force search for launches with a given outcome (harness only)
-  function find(level, t0, want, minSteps) {
-    var best = null, buf = new Float32Array(K.MAX_STEPS * 2);
-    for (var ai = 0; ai < 360; ai++) for (var pw = 0.3; pw <= 1.0001; pw += 0.035) {
-      var ang = ai * Math.PI / 180, vx = Math.cos(ang) * K.VMAX * pw, vy = Math.sin(ang) * K.VMAX * pw;
-      var sim = Physics.simulate(level, vx, vy, t0, K.MAX_STEPS, buf);
-      if (sim.status === want && sim.n >= (minSteps || 0)) return { vx: vx, vy: vy, pts: buf.slice(0, sim.n * 2), n: sim.n, sim: sim };
+  // pull the sling so the launch velocity is (vx, vy) (world units of pull = -v / VMAX * DRAG_MAX)
+  function pullFor(st, vx, vy) {
+    var dx = -vx / K.VMAX * K.DRAG_MAX, dy = -vy / K.VMAX * K.DRAG_MAX;
+    setPull(st, dx, dy);
+  }
+  function setPull(st, dx, dy) {
+    var a = st.aim, v = Physics.launchVelocity(dx, dy);
+    a.active = true; a.dx = dx; a.dy = dy; a.cancel = !!v.cancel; a.vx = v.vx || 0; a.vy = v.vy || 0; a.power = v.power || 0;
+    if (!a.cancel) { var sim = Physics.predict(st.level, a.vx, a.vy, st.step, st.predict.pts); st.predict.n = sim.n; } else st.predict.n = 0;
+  }
+  function pullDir(st, ang, len) { setPull(st, Math.cos(ang) * len, Math.sin(ang) * len); }
+  var hbuf = new Float32Array(K.HINT_MAX * 2 + 4);
+  function setHint(st, on, t0) {
+    var sol = st.level.solution, sim = Physics.simulate(st.level, sol.vx, sol.vy, sol.t0Step || 0, K.MAX_STEPS, hbuf);
+    var n = Math.min(K.HINT_MAX, Math.floor(0.55 * sim.n));
+    var pts = new Float32Array(K.HINT_MAX * 2); for (var i = 0; i < n * 2; i++) pts[i] = hbuf[i];
+    st.hint = { on: on !== false, used: true, pts: pts, n: n, t0: t0 === undefined ? NOW - 1000 : t0 };
+  }
+  function draw(st, now) { Render.frame(st, now === undefined ? NOW : now); }
+  function scene(name, opt) {
+    opt = opt || {};
+    var level = opt.level || lv(opt.i || 0), st = mkState(level);
+    if (opt.caption) { level = Object.assign({}, level, { caption: opt.caption }); st.level = level; }
+    if (opt.pull) pullFor(st, opt.pull[0], opt.pull[1]);
+    if (opt.pullDir) pullDir(st, opt.pullDir[0], opt.pullDir[1]);
+    if (opt.hint) setHint(st, true, opt.hintT0);
+    if (opt.hintUsedOnly) { setHint(st, false); }
+    if (opt.frozen) st.frozen = true;
+    if (opt.spotlight) st.spotlight = level.frags.map(function (f) { return { x: f.x, y: f.y }; });
+    if (opt.launches) st.launches = opt.launches;
+    st.step = opt.step || 0;
+    Render.setLevel(level);
+    draw(st); draw(st, NOW + 16);
+    return st;
+  }
+  // 300 frames with prediction + hint + spotlight all on, moving bodies advancing 2 steps per frame
+  function timeFrames(opt) {
+    var level = lv(opt.i), st = mkState(level);
+    pullFor(st, level.solution.vx, level.solution.vy); setHint(st, true);
+    st.spotlight = (level.frags || []).map(function (f) { return { x: f.x, y: f.y }; });
+    st.frozen = !!opt.frozen; st.level = level;
+    if (opt.flight) {    // real mid-flight: live sim stepping + trail (hint/predict are aim-phase items and drop out)
+      st.phase = 'flight'; st.launches = 1; st.hint.on = false;
+      st.sim = Physics.createSim(level, level.solution.vx, level.solution.vy, 0);
     }
-    return null;
-  }
-  function aimFor(st, vx, vy) {
-    var sp = Math.sqrt(vx * vx + vy * vy), power = sp / K.VMAX, L = power * K.DRAG_MAX;
-    st.aim = { active: true, dx: -vx / sp * L, dy: -vy / sp * L, power: power, vx: vx, vy: vy, cancel: false };
-    var s = Physics.predict(st.level, vx, vy, st.step, st.predict.pts); st.predict.n = s.n;
-  }
-  function flyTo(st, shot, k) {
-    var sim = Physics.createSim(st.level, shot.vx, shot.vy, st.step);
-    st.trail.head = 0; st.trail.n = 0;
-    for (var i = 0; i < k && sim.status === 'flying'; i++) {
-      Physics.stepSim(sim, st.level);
-      var h = st.trail.head; st.trail.pts[2 * h] = sim.x; st.trail.pts[2 * h + 1] = sim.y;
-      st.trail.head = (h + 1) % K.TRAIL_MAX; st.trail.n = Math.min(K.TRAIL_MAX, st.trail.n + 1);
-      for (var j = 0; j < sim.collected.length; j++) if (sim.collected[j]) st.collected[j] = 1;
+    Render.setLevel(level);
+    for (var w = 0; w < 30; w++) { advance(st); draw(st, NOW + w * 16.7); }
+    var ts = [], t, now = NOW + 600;
+    for (var f = 0; f < 300; f++) {
+      advance(st); now += 16.7;
+      if (!opt.flight) setPull(st, st.aim.dx, st.aim.dy);
+      t = performance.now(); draw(st, now); ts.push(performance.now() - t);
     }
-    st.sim = sim; st.phase = 'flight'; st.step = sim.abs;
-    st.hud.speed = Physics.speed(sim); st.hud.closest = sim.minDist;
-    return sim;
+    function advance(st) {
+      if (opt.flight) {
+        for (var k = 0; k < 2 && st.sim.status === 'flying'; k++) Physics.stepSim(st.sim, level);
+        var tr = st.trail, cap = tr.pts.length >> 1;
+        tr.pts[2 * tr.head] = st.sim.x; tr.pts[2 * tr.head + 1] = st.sim.y; tr.head = (tr.head + 1) % cap; tr.n = Math.min(cap, tr.n + 1);
+        st.step = st.sim.step;
+        if (st.sim.status !== 'flying') { st.sim = Physics.createSim(level, level.solution.vx, level.solution.vy, 0); tr.n = 0; }
+      } else st.step += 2;
+    }
+    ts.sort(function (a, b) { return a - b; });
+    var sum = 0; for (var i = 0; i < ts.length; i++) sum += ts[i];
+    return { avg: sum / ts.length, p95: ts[Math.floor(ts.length * 0.95)], max: ts[ts.length - 1] };
   }
-  function ghost(shot) { var n = Math.floor(shot.n / 3), p = new Float32Array(n * 2); for (var i = 0; i < n; i++) { p[2*i] = shot.pts[6*i]; p[2*i+1] = shot.pts[6*i+1]; } return { pts: p, n: n }; }
-  var T = 1000;
-  window.H = {
-    scene: function (name) {
-      Render.fx.reset();
-      var st, lv, shot, c;
-      if (name === 'aim') {
-        lv = L[1]; st = blank(lv); Render.setLevel(lv); st.step = 240; st.launches = 1;
-        c = find(lv, 0, 'crash', 80); if (c) st.ghosts.push(ghost(c));
-        shot = find(lv, st.step, 'hit') || find(lv, st.step, 'lost', 300);
-        aimFor(st, shot.vx * 1.0, shot.vy * 1.0);
-        Render.frame(st, T);
-      } else if (name === 'cancel') {
-        lv = L[0]; st = blank(lv); Render.setLevel(lv);
-        st.aim = { active: true, dx: 14, dy: 24, power: 0, vx: 0, vy: 0, cancel: true };
-        Render.frame(st, T);
-      } else if (name === 'idle') {
-        lv = L[0]; st = blank(lv); Render.setLevel(lv); Render.frame(st, T);
-      } else if (name === 'flight' || name === 'crash') {
-        lv = L[2]; st = blank(lv); Render.setLevel(lv); st.launches = 3;
-        var g1 = find(lv, 0, 'crash', 120), g2 = find(lv, 0, 'captured', 60) || find(lv, 0, 'lost', 200);
-        if (g1) st.ghosts.push(ghost(g1)); if (g2) st.ghosts.push(ghost(g2));
-        shot = find(lv, 0, 'hit') || find(lv, 0, 'timeout') || find(lv, 0, 'lost', 500);
-        window.__shot = shot;
-        if (name === 'flight') { flyTo(st, shot, Math.floor(shot.n * 0.6)); Render.frame(st, T); }
-        else {
-          var cr = find(lv, 0, 'crash', 150); flyTo(st, cr, cr.n); st.phase = 'aim'; st.sim = null;
-          st.ghosts = [ghost(cr)];
-          Render.fx.crash(cr.sim.x, cr.sim.y); Render.frame(st, T); Render.frame(st, T + 60);
-        }
-      } else if (name === 'success' || name === 'success-mid') {
-        lv = L[0]; st = blank(lv); Render.setLevel(lv); st.launches = 2;
-        c = find(lv, 0, 'crash', 60); if (c) st.ghosts.push(ghost(c));
-        shot = find(lv, 0, 'hit'); flyTo(st, shot, shot.n);
-        st.phase = 'result'; st.result = { success: true, stars: 2, status: 'hit', pts: shot.pts, n: shot.n, at: T };
-        Render.fx.success(shot.pts, shot.n); Render.frame(st, T);
-        Render.frame(st, name === 'success' ? T + 2200 : T + 300);
-      } else if (name === 'title') {
-        st = { screen: 'title' }; Render.frame(st, 4000);
-      } else if (name === 'select') {
-        st = { screen: 'select' }; Render.frame(st, 4000);
-      } else if (name === 'thumbs') {
-        document.getElementById('game').style.display = 'none';
-        var grid = document.getElementById('grid'); grid.style.display = 'grid'; grid.innerHTML = '';
-        var t0 = performance.now();
-        for (var i = 0; i < 30; i++) {
-          var cc = document.createElement('canvas'); cc.width = 200; cc.height = 340; cc.style.width = '100px'; cc.style.height = '170px';
-          grid.appendChild(cc); var x = cc.getContext('2d'); x.setTransform(2, 0, 0, 2, 0, 0);
-          Render.drawThumbnail(x, THUMBS[i % THUMBS.length], 100, 170);
-        }
-        return { thumbMs: performance.now() - t0 };
+  // thumbnails: 60 plates (the campaign cycled until the LEVEL agent's plates 31-60 exist)
+  function thumbTime(w, h, dpr) {
+    var list = Levels.CAMPAIGN, cs = [];
+    for (var i = 0; i < 60; i++) { var c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr; cs.push(c); }
+    function run() {
+      var t = performance.now();
+      for (var i = 0; i < 60; i++) { var g = cs[i].getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); Render.drawThumbnail(g, list[i % list.length], w, h); }
+      return performance.now() - t;
+    }
+    var first = run(), best = 1e9; for (var r = 0; r < 3; r++) best = Math.min(best, run());
+    return { first: first, warm: best, levels: list.length };
+  }
+  // caption fit for plate numbers 1..60 (roman numerals) with a set of names, incl. worst-case long ones
+  function captions() {
+    var names = ['First Light', 'The Retinue', 'A Wandering Moon', 'The Grand Procession of Moons', 'Two Lanterns'];
+    var out = [], worst = { size: 99 }, twoRows = 0, squeezed = 0, base = lv(0), n = 0;
+    Levels.CAMPAIGN.forEach(function (l) { names.push(l.name); });
+    for (var i = 1; i <= 60; i++) {
+      for (var j = 0; j < names.length; j++) {
+        var L = Object.assign({}, base, { index: i - 1, plate: toRoman(i), name: names[j], caption: undefined, seed: 100 + i * 7 + j });
+        var st = mkState(L); Render.setLevel(L); draw(st);
+        var c = Render.caption; n++;
+        if (c.two) twoRows++; if (c.squeeze < 0.999) squeezed++;
+        if (c.size < worst.size || (c.size === worst.size && c.squeeze < (worst.squeeze || 1))) worst = { text: c.text, size: c.size, two: c.two, squeeze: c.squeeze };
       }
-      window.__st = st;
-      return { layout: Render.layout };
-    },
-    perf: function (flush) {
-      var cx2 = cv.getContext('2d');
-      var lv = L[2], st = blank(lv); Render.setLevel(lv);
-      var g1 = find(lv, 0, 'crash', 120); if (g1) st.ghosts.push(ghost(g1)); st.ghosts.push(ghost(find(lv, 0, 'lost', 200)));
-      var shot = find(lv, 0, 'timeout') || find(lv, 0, 'lost', 600) || find(lv, 0, 'hit');
-      var sim = flyTo(st, shot, 250), times = [], now = 5000;
-      for (var f = 0; f < 300; f++) {
-        for (var k = 0; k < 2 && sim.status === 'flying'; k++) {
-          Physics.stepSim(sim, lv); var h = st.trail.head; st.trail.pts[2*h] = sim.x; st.trail.pts[2*h+1] = sim.y;
-          st.trail.head = (h + 1) % K.TRAIL_MAX; st.trail.n = Math.min(K.TRAIL_MAX, st.trail.n + 1); st.step = sim.abs;
-        }
-        if (sim.status !== 'flying') sim = flyTo(st, shot, 250);
-        st.hud.speed = Physics.speed(sim); st.hud.closest = sim.minDist; now += 16.667;
-        var t0 = performance.now(); Render.frame(st, now); if (flush) cx2.getImageData(0, 0, 1, 1); times.push(performance.now() - t0);
-      }
-      var px = cv.getContext('2d').getImageData(0, 0, 1, 1);  // flush
-      times.sort(function (a, b) { return a - b; });
-      var avg = times.reduce(function (a, b) { return a + b; }, 0) / times.length;
-      return { avg: avg, p50: times[150], p95: times[285], max: times[299], trailN: st.trail.n };
-    },
-    perfRaf: function () {
-      return new Promise(function (res) {
-        var lv = L[2], st = blank(lv); Render.setLevel(lv);
-        var shot = find(lv, 0, 'timeout') || find(lv, 0, 'lost', 600) || find(lv, 0, 'hit');
-        var sim = flyTo(st, shot, 250), n = 0, last = 0, iv = [], cpu = [];
-        function tick(now) {
-          for (var k = 0; k < 2 && sim.status === 'flying'; k++) {
-            Physics.stepSim(sim, lv); var h = st.trail.head; st.trail.pts[2*h] = sim.x; st.trail.pts[2*h+1] = sim.y;
-            st.trail.head = (h + 1) % K.TRAIL_MAX; st.trail.n = Math.min(K.TRAIL_MAX, st.trail.n + 1); st.step = sim.abs;
-          }
-          if (sim.status !== 'flying') sim = flyTo(st, shot, 250);
-          var t0 = performance.now(); Render.frame(st, now); cpu.push(performance.now() - t0);
-          if (last) iv.push(now - last); last = now;
-          if (++n < 300) requestAnimationFrame(tick);
-          else { iv.sort(function (a, b) { return a - b; }); cpu.sort(function (a, b) { return a - b; });
-            res({ intervalAvg: iv.reduce(function (a, b) { return a + b; }, 0) / iv.length, intervalP95: iv[Math.floor(iv.length * 0.95)],
-                  cpuAvg: cpu.reduce(function (a, b) { return a + b; }, 0) / cpu.length, cpuP95: cpu[Math.floor(cpu.length * 0.95)] }); }
-        }
-        requestAnimationFrame(tick);
-      });
     }
-  };
+    var daily = Object.assign({}, base, { caption: 'DAILY \\u00b7 30 SEP 2026', plate: 'DAILY' });
+    Render.setLevel(daily); draw(mkState(daily));
+    var d = Render.caption;
+    return { tested: n, twoRows: twoRows, squeezed: squeezed, worst: worst, daily: { text: d.text, size: d.size, two: d.two, squeeze: d.squeeze } };
+  }
+  return { scene: scene, timeFrames: timeFrames, thumbTime: thumbTime, captions: captions, draw: draw, mkState: mkState, lv: lv };
 })();
 `;
 
-function page(fonts) {
-  return `<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-${fonts ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Cormorant+SC:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">' : ''}
-<style>html,body{margin:0;background:#0E0D0B;overflow:hidden;height:100%}#game{position:fixed;inset:0}
-#grid{display:none;grid-template-columns:repeat(3,100px);gap:12px;padding:16px;justify-content:center}</style></head>
-<body><canvas id="game"></canvas><div id="grid"></div>
-<script>"use strict";
-${NOLS ? "delete CanvasRenderingContext2D.prototype.letterSpacing;" : ""}
-${['00-const.js', '10-physics.js', '20-levels.js', '30-render.js'].map(src).join('\n')}
-${DRIVER}
+function buildPage() {
+  const html = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Cormorant+SC:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>html,body{margin:0;background:#0E0D0B;overflow:hidden}#game{position:fixed;left:0;top:0;display:block}</style></head>
+<body><canvas id="game"></canvas>
+<script>
+"use strict";
+${['00-const.js', '10-physics.js', '20-levels.js', '30-render.js'].map(S).join('\n')}
+${HARNESS}
 </script></body></html>`;
+  const f = path.join(QA, 'render-harness.html');
+  fs.writeFileSync(f, html);
+  return f;
 }
 
+const IPHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' };
+
+// name, options for H.scene, clip (CSS px) or null for the full screen
+const PLATE = { x: 0, y: 40, width: 390, height: 700 };
+const BOTTOM = { x: 0, y: 540, width: 390, height: 300 };
+const LIST = [
+  ['aim-mid',        { i: 7, pull: null, pullDir: [Math.PI * 0.62, 140] }, null],
+  ['aim-low',        { i: 7, pullDir: [Math.PI * 0.62, 52] }, PLATE],
+  ['aim-max',        { i: 7, pullDir: [Math.PI * 0.62, 300] }, PLATE],
+  ['hint',           { i: 7, hint: true, frozen: true }, null],
+  ['hint-aim',       { i: 7, hint: true, frozen: true, pull: 'sol' }, null],
+  ['hint-fadein',    { i: 7, hint: true, frozen: true, hintT0: 'fade' }, PLATE],
+  ['frozen-note',    { i: 7, hintUsedOnly: true, frozen: true }, null],
+  ['spotlight',      { i: 5, spotlight: true }, null],
+  ['spotlight-multi',{ i: 11, spotlight: true }, null],
+  ['daily',          { i: 7, caption: 'DAILY · 30 SEP 2026' }, null],
+  ['pull-dl',        { i: 7, pullDir: [Math.PI * 0.75, 300] }, BOTTOM],
+  ['pull-dr',        { i: 7, pullDir: [Math.PI * 0.25, 300] }, BOTTOM],
+  ['pull-ul',        { i: 7, pullDir: [Math.PI * 1.25, 300] }, BOTTOM],
+  ['pull-ur',        { i: 7, pullDir: [Math.PI * 1.75, 300] }, BOTTOM],
+  ['pull-d',         { i: 7, pullDir: [Math.PI * 0.5, 300] }, BOTTOM],
+  ['pull-dl-edge',   { i: 2, pullDir: [Math.PI * 0.85, 300] }, BOTTOM],
+  ['pull-dr-edge',   { i: 3, pullDir: [Math.PI * 0.15, 300] }, BOTTOM],
+  ['pull-dr-mid',    { i: 3, pullDir: [Math.PI * 0.3, 170] }, BOTTOM],
+  ['hint-i1',        { i: 1, hint: true, frozen: true }, PLATE],
+  ['hint-i2',        { i: 2, hint: true, frozen: true }, PLATE],
+  ['hint-i6',        { i: 6, hint: true, frozen: true }, PLATE],
+  ['hint-i10',       { i: 10, hint: true, frozen: true }, PLATE],
+  ['hint-i3-aim',    { i: 3, hint: true, frozen: true, pull: 'sol' }, PLATE],
+  ['hint-i9-aim',    { i: 9, hint: true, frozen: true, pull: 'sol' }, PLATE],
+  ['hint-used-stars',{ i: 7, hintUsedOnly: true }, null],
+];
+
 (async () => {
-  fs.mkdirSync(QA, { recursive: true });
-  const file = path.join(QA, NOFONTS ? 'render-harness-nofonts.html' : 'render-harness.html');
-  fs.writeFileSync(file, page(!NOFONTS));
+  const file = buildPage();
   const browser = await chromium.launch();
-  const ctxB = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
-  const pg = await ctxB.newPage();
-  const errs = [];
-  pg.on('pageerror', e => errs.push(String(e))); pg.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await pg.goto('file://' + file);
-  if (!NOFONTS) { try { await pg.evaluate(() => Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 4000))])); } catch (e) {} await pg.waitForTimeout(600); }
-  const fontInfo = await pg.evaluate(() => ['Cormorant SC', 'JetBrains Mono', 'Cormorant Garamond'].map(f => f + ':' + document.fonts.check('12px "' + f + '"')).join(' '));
-  console.log('fonts', fontInfo);
-  const suffix = NOLS ? '-nols' : NOFONTS ? '-nofonts' : '';
-  const scenes = ['title', 'idle', 'aim', 'cancel', 'flight', 'crash', 'success-mid', 'success', 'select', 'thumbs'];
-  for (const sc of scenes) {
-    if (ONLY && !ONLY.includes(sc)) continue;
-    const info = await pg.evaluate(n => window.H.scene(n), sc);
-    const out = path.join(QA, `render-${sc}${suffix}.png`);
-    await pg.screenshot({ path: out });
-    console.log(sc, JSON.stringify(info && info.thumbMs !== undefined ? info : ''), '->', path.relative(ROOT, out));
-    if (sc === 'flight' || sc === 'success' || sc === 'aim') {
-      // zoomed detail crops
-      await pg.screenshot({ path: path.join(QA, `render-${sc}-zoom${suffix}.png`), clip: { x: 0, y: 100, width: 390, height: 420 } });
-    }
+  const ctx = await browser.newContext(IPHONE);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+  page.on('console', m => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)|ERR_|net::/i.test(m.text())) errors.push(m.text()); });
+  await page.goto('file://' + file);
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(1200);
+  console.log('fonts:', await page.evaluate(() => ['italic 500 11px "Cormorant Garamond"', '600 12px "Cormorant SC"', '400 10px "JetBrains Mono"'].map(f => document.fonts.check(f)).join(',')));
+
+  for (const [name, opt, clip] of LIST) {
+    if (SCENES.length && !SCENES.includes(name)) continue;
+    await page.evaluate(([o]) => {
+      const level = H.lv(o.i);
+      if (o.pull === 'sol') { o.pull = [level.solution.vx, level.solution.vy]; }
+      if (o.hintT0 === 'fade') o.hintT0 = 5000 + 16 - 130;        // 130 ms into the 300 ms fade-in
+      // hint-used-stars: two failed launches so the potential row is visibly short
+      window.__st = H.scene('x', Object.assign({}, o));
+    }, [opt]);
+    await page.waitForTimeout(60);
+    const out = path.join(QA, 'render-' + name + '.png');
+    await page.screenshot(clip ? { path: out, clip } : { path: out });
+    console.log('shot', out);
   }
-  if (!ONLY || ONLY.includes('perf')) {
-    const perf = await pg.evaluate(() => window.H.perf());
-    console.log('perf (300 sync frames, ms):', JSON.stringify(perf));
-    const perfF = await pg.evaluate(() => window.H.perf(true));
-    console.log('perf (300 sync frames + forced raster/readback, ms):', JSON.stringify(perfF));
-    const raf = await pg.evaluate(() => window.H.perfRaf());
-    console.log('perf (300 rAF frames, ms):', JSON.stringify(raf));
+  if (!SCENES.length || SCENES.includes('perf')) {
+    const t1 = await page.evaluate(() => H.timeFrames({ i: 7 }));
+    const t2 = await page.evaluate(() => H.timeFrames({ i: 7, frozen: true }));
+    const t3 = await page.evaluate(() => H.timeFrames({ i: 7, flight: true }));
+    const f = x => 'avg ' + x.avg.toFixed(3) + ' ms, p95 ' + x.p95.toFixed(3) + ', max ' + x.max.toFixed(3);
+    console.log('frames aim+predict+hint+spotlight (moving bodies): ' + f(t1));
+    console.log('frames aim+predict+hint+spotlight (frozen)       : ' + f(t2));
+    console.log('frames flight (live sim + trail)                 : ' + f(t3));
+    const th = await page.evaluate(() => H.thumbTime(72, 128, 2));
+    console.log('thumbnails x60 (72x128, dpr2, ' + th.levels + ' distinct levels): first ' + th.first.toFixed(1) + ' ms, warm ' + th.warm.toFixed(1) + ' ms');
+    console.log('captions:', JSON.stringify(await page.evaluate(() => H.captions())));
   }
-  if (errs.length) console.log('ERRORS:\n' + errs.join('\n'));
+  if (errors.length) console.log('ERRORS:', errors);
   await browser.close();
+  process.exit(errors.length ? 1 : 0);
 })();
