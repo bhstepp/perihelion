@@ -83,7 +83,14 @@ button { font: inherit; color: inherit; }
 .t-menu { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: min(78vw, 320px); }
 .t-best { font-size: 16px; min-height: 1.2em; text-align: center; margin-top: 2px; }
 .t-best b { font-family: var(--mono); font-style: normal; font-weight: 400; font-size: 13px; color: var(--paper); }
-.t-menu .txtbtn { align-self: center; margin-top: -6px; }
+.t-best:empty { min-height: 0; margin: -6px 0 0; }
+.t-foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 4px; margin-top: -4px; }
+.btn.daily { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 58px; padding: 7px 16px 8px; line-height: 1; }
+.d-sub { font-family: var(--serif); font-style: italic; font-weight: 500; font-variant-caps: normal; font-size: 15px; letter-spacing: 0;
+  color: var(--paper-60); line-height: 1.1; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.d-sub svg.star { display: block; }
+.d-sub .sep { padding: 0 2px; }
+.vh { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* select */
 #scr-select { background: var(--ink); display: flex; flex-direction: column; }
@@ -96,7 +103,14 @@ button { font: inherit; color: inherit; }
 .tally .sep { padding: 0 .5em; color: var(--paper-45); }
 .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain;
   padding: 16px calc(var(--sar) + 16px) calc(var(--sab) + 28px) calc(var(--sal) + 16px); }
-.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; max-width: 560px; margin: 0 auto; }
+.atlas { max-width: 560px; margin: 0 auto; }
+.vol-head { margin: 26px 0 0; text-align: center; font-family: var(--sc); font-weight: 600; font-size: 19px; letter-spacing: .2em; line-height: 1.1;
+  color: var(--paper); font-variant-caps: small-caps; }
+.vol-head:first-child { margin-top: 2px; }
+.vol-head .vs { padding: 0 .35em; color: var(--paper-45); }
+.vol-head i { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 16px; letter-spacing: .02em; color: var(--paper-60); font-variant-caps: normal; }
+.vol-rule { width: 100%; height: 4px; margin: 10px auto 14px; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair-faint); }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; margin: 0 auto; }
 .plate { -webkit-appearance: none; appearance: none; background: transparent; border: 1px solid var(--hair-faint); border-radius: 0;
   padding: 5px 5px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; min-height: 44px;
   color: var(--paper); text-align: center; cursor: pointer; touch-action: manipulation;
@@ -171,28 +185,74 @@ svg.comet.off circle { fill: var(--paper-45); }
 .card.narrow .c-btns.three { grid-template-columns: 1fr 1fr 1.45fr; gap: 6px; }
 .card.narrow .c-btns.three .btn { font-size: 14px; letter-spacing: .05em; padding: 0 2px 2px; }
 
+.card.held { opacity: 0 !important; pointer-events: none !important; }
+#ui.card-open .hud-btn { pointer-events: none; opacity: .3; }
+.card .note.sm, .panel .note.sm { font-size: 14.5px; color: var(--paper-60); line-height: 1.18; }
+.card .c-stats + .note.sm { margin-top: 1px; }
+
+/* popup cards (To Observe, Comet Fragments): same plate as the result card, plus a numbered list */
+.card.pop { z-index: 4; padding: 16px 18px 14px; gap: 9px; touch-action: pan-y; }
+.card.pop .c-title { font-size: 26px; }
+.pop .rule { width: 62%; margin: 1px auto 3px; }
+.pop .kicker { font-size: 12.5px; }
+.steps { list-style: none; counter-reset: n; margin: 4px 0 4px; padding: 0; text-align: left; display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.steps li { counter-increment: n; display: grid; grid-template-columns: 27px 1fr; align-items: start; column-gap: 0;
+  font-family: var(--serif); font-weight: 500; font-size: 17px; line-height: 1.2; color: var(--paper-90); }
+.steps li::before { content: counter(n); font-family: var(--mono); font-size: 11px; line-height: 1; color: var(--brass);
+  width: 19px; height: 19px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--brass-faint); margin-top: 1px; }
+.card.pop.wide .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
+.pop-text { font-family: var(--serif); font-weight: 500; font-size: 17.5px; line-height: 1.24; color: var(--paper-90); margin: 2px 0 4px; text-align: center; }
+.pop .c-btns { grid-template-columns: 1fr; margin-top: 6px; }
+
 /* pause sheet */
 .overlay { position: absolute; inset: 0; background: var(--ink-veil); display: flex; align-items: center; justify-content: center;
   padding: calc(var(--sat) + 16px) calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px);
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity var(--t) var(--ease), visibility 0s linear var(--t); }
 .overlay.on { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--t) var(--ease), visibility 0s linear 0s; }
-.panel { width: min(340px, 100%); padding: 24px 20px 14px; text-align: center; background: var(--ink);
+.panel { width: min(340px, 100%); max-height: 100%; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 24px 20px 14px; text-align: center; background: var(--ink);
   border: 1px solid var(--hair); outline: 1px solid var(--hair-faint); outline-offset: -6px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   transform: translateY(10px); transition: transform var(--t) var(--ease); }
 .overlay.on .panel { transform: none; }
 .panel .c-btns { grid-template-columns: 1fr; }
+.panel .c-btns .item { display: flex; flex-direction: column; gap: 4px; }
+.panel .c-btns .btn[aria-disabled="true"] { opacity: .38; cursor: default; }
+.panel .c-btns .btn[aria-disabled="true"]:active { background: transparent; transform: none; }
+.panel .why { color: var(--brass); opacity: .85; }
+.panel .why[hidden] { display: none; }
+.overlay.sub { background: transparent; pointer-events: none; }
+.overlay.sub .panel { visibility: hidden; }
 
 /* short landscape screens */
 @media (orientation: landscape) and (max-height: 520px) {
-  .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); max-width: 820px; }
+  .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .atlas { max-width: 820px; }
 }
 @media (max-height: 520px) {
-  #scr-title { padding-top: calc(var(--sat) + 18px); padding-bottom: calc(var(--sab) + 12px); }
+  #scr-title { padding-top: calc(var(--sat) + 12px); padding-bottom: calc(var(--sab) + 10px); }
   .t-head { gap: 8px; }
   .t-menu { gap: 8px; }
   .t-name { font-size: clamp(28px, 7vh, 48px); }
+  .btn.daily { min-height: 52px; padding: 5px 16px 6px; }
+  .panel { padding: 14px 16px 6px; gap: 6px; }
+  .panel .c-btns { gap: 8px; margin-top: 4px; }
+  #sheet-note { display: none; }
+  .card.pop { padding: 12px 16px 10px; gap: 6px; }
+  .card.pop .c-title { font-size: 22px; }
+  .steps { gap: 6px; }
+  .steps li { font-size: 15.5px; line-height: 1.15; grid-template-columns: 25px 1fr; }
+  .pop-text { font-size: 16px; line-height: 1.18; }
+  .pop .btn { min-height: 44px; }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  #scr-title { flex-direction: row; justify-content: center; align-items: center; gap: clamp(24px, 7vw, 72px); }
+  .t-head { flex: 1 1 0; min-width: 0; max-width: 46%; }
+  .t-head .rule { width: min(100%, 420px); max-width: 100%; }
+  .t-menu { flex: none; width: min(40vw, 320px); }
+  .panel { width: min(620px, 100%); }
+  .panel .c-btns { grid-template-columns: 1fr 1fr; align-items: start; }
+  .panel .c-btns .btn { font-size: 15px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .screen, .screen.on, .layer, .layer.on, .card, .card.on, .overlay, .overlay.on, .panel, .margin-note, .btn, .plate {
@@ -216,13 +276,17 @@ svg.comet.off circle { fill: var(--paper-45); }
       <h1 class="t-name">Perihelion</h1>
       <div class="rule"></div>
       <p class="t-sub">A Celestial Atlas of Slingshot Trajectories</p>
-      <p class="t-ed">Plates I&ndash;XXX &middot; Engraved MMXXVI</p>
+      <p class="t-ed" id="t-ed">Plates I&ndash;LX &middot; Engraved MMXXVI</p>
     </header>
     <nav class="t-menu">
       <button class="btn primary" data-act="begin">Begin the Atlas</button>
+      <button class="btn daily" data-act="daily"><span class="d-main">Daily Plate</span><span class="d-sub" id="t-daily">Today&rsquo;s plate</span></button>
       <button class="btn" data-act="endless">Endless Survey</button>
       <p class="t-best note" id="t-best"></p>
-      <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+      <div class="t-foot">
+        <button class="txtbtn" data-act="log">Observer&rsquo;s Log</button>
+        <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+      </div>
     </nav>
   </section>
 
@@ -234,7 +298,7 @@ svg.comet.off circle { fill: var(--paper-45); }
       <p class="tally" id="tally"></p>
     </header>
     <div class="scroll" id="s-scroll">
-      <div class="grid" id="grid"></div>
+      <div class="atlas" id="grid"></div>
       <p class="colophon note">Each plate admits three launches. Seal it in one for three stars.</p>
     </div>
   </section>
@@ -251,15 +315,24 @@ svg.comet.off circle { fill: var(--paper-45); }
     <div class="panel" id="sheet-panel">
       <p class="kicker" id="sheet-kicker">Plate I</p>
       <h3 class="c-title">Paused</h3>
-      <p class="note">Tap anywhere to resume.</p>
+      <p class="note" id="sheet-note">Tap anywhere to resume.</p>
       <div class="c-btns">
         <button class="btn primary" data-act="resume">Resume</button>
+        <div class="item">
+          <button class="btn" data-act="hint" id="sheet-hint" aria-disabled="false">Consult the Astronomer</button>
+          <p class="note sm" id="sheet-hint-note">Costs one star. Holds the heavens and shows the first part of a winning course.</p>
+          <p class="note sm why" id="sheet-hint-why" hidden></p>
+        </div>
+        <button class="btn" data-act="howto">How to play</button>
+        <button class="btn" data-act="fragments">About comet fragments</button>
         <button class="btn" data-act="restart">Restart plate</button>
         <button class="btn" data-act="atlas" id="sheet-exit">Return to the Atlas</button>
       </div>
       <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
     </div>
   </div>
+
+  <div class="card pop" id="pcard" role="dialog" aria-modal="true" aria-live="polite"></div>
 
 </div>
 
@@ -274,7 +347,7 @@ var K = {
   BOUNDS_MARGIN: 220,    // probe is "lost" once it is this far outside the world rect
   DT: 1 / 120,           // fixed physics step (120 Hz)
   MAX_STEPS: 1200,       // 10 s of simulated flight
-  PREDICT_STEPS: 420,    // 35% of flight shown while aiming
+  PREDICT_STEPS: 180,    // 15% of the flight (1.5 s) shown while aiming; was 420 (35%), cut to make plates harder
   EPS2: 400,             // gravity softening, eps = 20 units
   PROBE_R: 6,            // probe collision radius
   FRAG_R: 24,            // comet fragment pickup radius
@@ -283,6 +356,7 @@ var K = {
   VMAX: 640,             // launch speed at full power (units/s)
   MAX_LAUNCHES: 3,
   TRAIL_MAX: 720,        // pooled trail ring size (points)
+  HINT_MAX: 700,         // max points of the astronomer's line (55% of a winning flight, capped)
   MAX_STEPS_PER_FRAME: 16
 };
 
@@ -376,6 +450,8 @@ var Physics = (function () {
       hitBody: -1,
       collected: new Uint8Array(level.frags ? level.frags.length : 0),
       minDist: Infinity,                // closest approach to target centre
+      dist: 0,                          // path length travelled so far, in units
+      minGap: Infinity,                 // closest approach to any non-repulsor body SURFACE (within 60 u), for 'near miss' stats
       events: []                        // {type:'frag', i} pushed as they happen; consumer may clear
     };
   }
@@ -388,6 +464,7 @@ var Physics = (function () {
     sim.vx += _a.x * DT; sim.vy += _a.y * DT;
     sim.x += sim.vx * DT; sim.y += sim.vy * DT;
     sim.abs++; sim.step++;
+    sim.dist += sqrt(sim.vx * sim.vx + sim.vy * sim.vy) * DT;
     var t = sim.abs * DT, x = sim.x, y = sim.y, i, dx, dy, pr = C.PROBE_R, fr2 = C.FRAG_R * C.FRAG_R;
 
     var fr = level.frags, got = sim.collected;
@@ -403,6 +480,7 @@ var Physics = (function () {
       bodyPos(b, t, _q);
       dx = _q.x - x; dy = _q.y - y;
       var d2 = dx * dx + dy * dy;
+      if (b.kind !== 'repulsor') { var gl = b.r + 60; if (d2 < gl * gl) { var gp = sqrt(d2) - b.r; if (gp < sim.minGap) sim.minGap = gp; } }
       if (b.kind === 'blackhole' && b.capture && d2 < b.capture * b.capture) { sim.status = 'captured'; sim.hitBody = i; return sim.status; }
       var rr = b.r + pr;
       if (d2 < rr * rr) { sim.status = 'crash'; sim.hitBody = i; return sim.status; }
@@ -525,7 +603,9 @@ var Physics = (function () {
 /* PERIHELION — levels (owner: LEVEL AGENT).
    CAMPAIGN is baked offline by tools/levels-bake.js (same generator as generate() below, plus a brute-force
    angle x power solver); every baked number was verified AFTER rounding against the frozen Physics core.
-   generate(seed, difficulty) builds Endless plates at runtime with a fast, budgeted solver. */
+   generate(seed, difficulty) builds Endless plates at runtime with a fast, budgeted solver; daily(dateKey) is a seeded generate().
+   Plates 1-30 (Volume I) are frozen: players hold stars against them (tools/levels-golden.json pins their text).
+   Plates 31-60 (Volume II) are baked the same way at difficulty 1.02..1.6 (recipe/build have a d > 1 branch; Endless never gets there). */
 var Levels = (function () {
   function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
@@ -578,7 +658,11 @@ var Levels = (function () {
   // tokens: P planet, M moon (rides a planet / black hole), B binary pair, H black hole, R repulsor
   function recipe(rng, d) {
     var i = Math.round(d * 29), t = [], j, n, pick;
-    if (i <= 1) t = ['P'];
+    if (i >= 30) { // Volume II (difficulty > 1, campaign bake only): a blocking planet, a repulsor, then 2..5 more systems, moving ones favoured
+      t = ['P', 'R']; n = 2 + Math.min(3, Math.floor((i - 30) / 5));
+      var pool2 = ['M', 'B', 'H', 'M', 'B', 'P', 'M'];
+      for (j = 0; j < n; j++) { pick = pool2[Math.floor(rng() * pool2.length)]; t.push(pick === 'H' && t.indexOf('H') >= 0 ? 'M' : pick); }
+    } else if (i <= 1) t = ['P'];
     else if (i <= 4) t = (i === 3 && rng() < 0.5) ? ['P'] : ['P', 'P'];
     else if (i <= 8) { t = ['P', 'M']; if (i >= 7) t.push(rng() < 0.5 ? 'P' : 'M'); }
     else if (i <= 12) { t = ['B']; if (i >= 10) t.push('P'); if (i >= 12 || (i === 11 && rng() < 0.5)) t.push('M'); }
@@ -592,8 +676,8 @@ var Levels = (function () {
       if (i === 19) t = ['P', 'R'];
     }
     var cnt = 0; for (j = 0; j < t.length; j++) cnt += t[j] === 'B' ? 2 : 1;
-    while (cnt > 6) { t.pop(); cnt--; } // (only 'B' can overshoot by one; trimming the tail keeps it simple)
-    var frags = i < 3 ? 0 : i < 10 ? 1 : i < 20 ? 1 + (rng() < 0.5 ? 1 : 0) : 2 + (rng() < 0.5 ? 1 : 0);
+    while (cnt > (i >= 30 ? 7 : 6)) { t.pop(); cnt--; } // (only 'B' can overshoot by one; trimming the tail keeps it simple)
+    var frags = i >= 30 ? 2 + (rng() < 0.6 ? 1 : 0) : i < 3 ? 0 : i < 10 ? 1 : i < 20 ? 1 + (rng() < 0.5 ? 1 : 0) : 2 + (rng() < 0.5 ? 1 : 0);
     return { tokens: t, frags: frags, index: i };
   }
 
@@ -619,12 +703,12 @@ var Levels = (function () {
     return { kind: 'moon', r: r, mu: r3(60 * r * r * r),
       orbit: { cx: parent.x, cy: parent.y, rad: ri(reff(parent) + Math.max(50, r + 34) + rng() * 60 * shrink), omega: d3((rng() < 0.5 ? -1 : 1) * (0.5 + rng() * 1.1)), phase: d3(rng() * TAU) } };
   }
-  function clearOf(L, b, others) {
+  function clearOf(L, b, others, gap) {
     if (!inWorld(b)) return false;
     if (pointGap(b, L.probe.x, L.probe.y) < 140) return false;
     var g = pointGap(b, L.target.x, L.target.y);
     if (g < 110 || g - L.target.r < 70) return false;
-    for (var i = 0; i < others.length; i++) if (others[i] !== b && bodyGap(b, others[i]) < 36) return false;
+    for (var i = 0; i < others.length; i++) if (others[i] !== b && bodyGap(b, others[i]) < (gap || 36)) return false;
     return true;
   }
 
@@ -637,7 +721,7 @@ var Levels = (function () {
       probe: { x: ri(180 + rng() * 540), y: ri(1350 + rng() * 130) },
       target: { x: ri(140 + rng() * 620), y: ri(140 + rng() * 280), r: ri(46 - 12 * d) },
       bodies: [], frags: [], solution: null, _frags: rc.frags };
-    var P = L.probe, T = L.target, blocker = rc.index >= 5, pair = 1, parents = [], lane = null;
+    var P = L.probe, T = L.target, blocker = rc.index >= 5, pair = 1, parents = [], lane = null, cl = null, gap = d > 1 ? 32 : 36;
     // lane: probe -> a waypoint beside the blocker -> target. Later bodies keep clear of it, so a bending
     // route stays open (moons may still sweep across it, and attractors near the target sit on it on purpose).
     function laneGap(b) {
@@ -659,12 +743,16 @@ var Levels = (function () {
           // an attractor just below the target: gravity funnels near-misses into the bezel (gentler plates)
           var an = Math.atan2(P.y - T.y, P.x - T.x) + (rng() * 2 - 1) * 1.3, dd = s + 115 + rng() * 120;
           x = T.x + Math.cos(an) * dd; y = T.y + Math.sin(an) * dd;
-        } else { x = MARGIN + rng() * (W - 2 * MARGIN); y = T.y + 60 + rng() * (P.y - T.y - 120); free = true; }
+        } else {
+          x = MARGIN + rng() * (W - 2 * MARGIN); y = T.y + 60 + rng() * (P.y - T.y - 120); free = true;
+          if (d > 1 && cl) { x = Math.max(MARGIN, Math.min(W - MARGIN, cl.x + (rng() * 2 - 1) * 240)); y = Math.max(T.y + 60, Math.min(P.y - 60, cl.y + (rng() * 2 - 1) * 300)); } // Volume II: tighter clusters round the blocker
+        }
         setCentre(sys, ri(x), ri(y));
         ok = true;
-        for (i = 0; i < sys.length && ok; i++) ok = clearOf(L, sys[i], L.bodies) && (!lane || !free || laneGap(sys[i]) >= 80);
+        for (i = 0; i < sys.length && ok; i++) ok = clearOf(L, sys[i], L.bodies, gap) && (!lane || !free || laneGap(sys[i]) >= 80);
       }
       if (!ok) return null;
+      if (k === 0) cl = sweep(sys[0]);
       if (k === 0 && blocker) {
         var nx = -(T.y - P.y), ny = T.x - P.x, nl = Math.sqrt(nx * nx + ny * ny), sd = rng() < 0.5 ? -1 : 1, wd = sweep(sys[0]).R + 70 + rng() * 80, c = sweep(sys[0]);
         lane = [P.x, P.y, Math.max(80, Math.min(W - 80, c.x + nx / nl * sd * wd)), c.y + ny / nl * sd * wd, T.x, T.y];
@@ -677,7 +765,7 @@ var Levels = (function () {
         var par = parents[Math.floor(rng() * parents.length)];
         if (!par) return null;
         var m = moonFor(rng, par, 1 - tries / 40);
-        if (clearOf(L, m, L.bodies)) { L.bodies.push(m); placed = true; } // moons may cross the lane: a timing puzzle
+        if (clearOf(L, m, L.bodies, gap)) { L.bodies.push(m); placed = true; } // moons may cross the lane: a timing puzzle
       }
       if (!placed) return null;
     }
@@ -686,10 +774,12 @@ var Levels = (function () {
 
   /* ---------- solver ---------- */
   function launch(aDeg, p) { var a = aDeg * DEG, v = K.VMAX * p; return { vx: Math.cos(a) * v, vy: Math.sin(a) * v }; }
-  var nSims = 0, fast = false, FAST_STEPS = 720; // solver ignores routes longer than 6 s (rare, and hard to aim)
+  var nSims = 0, hardCap = Infinity, fast = false, FAST_STEPS = 720; // hardCap: daily() only; past it every flight counts as a miss (no further simulation)
+  // solver ignores routes longer than 6 s (rare, and hard to aim)
   // Exact flight (Physics.simulate). Inside solve() `fast` also drops flights that are >80 u outside the plate and
   // still heading out, and flights past FAST_STEPS: this can only turn a rare late hit into a miss, so every hit the solver reports is genuine.
   function shoot(L, aDeg, p, t0) {
+    if (nSims >= hardCap) return { status: 'timeout', minDist: Infinity };
     var v = launch(aDeg, p); nSims++;
     if (!fast) return Physics.simulate(L, v.vx, v.vy, t0, K.MAX_STEPS);
     var s = Physics.createSim(L, v.vx, v.vy, t0);
@@ -862,7 +952,7 @@ var Levels = (function () {
     L.name = NAMES[s % 30] + ' ' + SUFFIX[(s >>> 5) % SUFFIX.length];
     return finish(L);
   }
-  var genStats = { fallback: 0, empty: 0 };
+  var genStats = { fallback: 0, empty: 0, stage: [0, 0, 0, 0, 0, 0] };
   // Endless: deterministic for (seed, difficulty); never returns an unsolvable plate. Work is capped in simulated
   // flights (not ms) so results are identical on every device: candidates at the asked difficulty get CAND_SIMS each
   // within STAGE_CAPS[0]; if none proves finger-robust, cheaper archetypes follow (3-body repulsor plate at 0.69,
@@ -883,6 +973,40 @@ var Levels = (function () {
     genStats.empty++;
     L = { id: 'e' + seed, index: -1, seed: seed, difficulty: d3(d), name: 'Quiet Sky', plate: '\u221E',
       probe: { x: 450, y: 1420 }, target: { x: 450, y: 260, r: 44 }, bodies: [], frags: [], solution: { vx: 0, vy: -K.VMAX * 0.8, t0Step: 0 } };
+    return L;
+  }
+
+  /* ---------- Daily Plate: 'YYYY-MM-DD' -> the same Level for everyone, every call, every process ---------- */
+  var DOW_D = [0.85, 0.30, 0.38, 0.46, 0.55, 0.65, 0.75]; // Sun..Mon..Sat
+  var MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  function fnv1a(str) { var h = 0x811c9dc5; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function weekday(y, m, d) { var t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]; if (m < 3) y--; return (y + ((y / 4) | 0) - ((y / 100) | 0) + ((y / 400) | 0) + t[m - 1] + d) % 7; } // Sakamoto: 0 = Sunday
+  // Daily plates use the Endless generator (deterministic per (seed, difficulty), budgeted in flights) with a gentler fallback ladder:
+  // a day that misses at its own difficulty d retries at 0.75 d and 0.5 d before the easy archetype (0.2), so it lands close to the
+  // asked difficulty instead of on a trivial plate. `hardCap` stops the last candidate from overrunning a stage budget.
+  var DAILY_CAPS = [280, 110, 90, 80];
+  function dailyGen(seed, d) {
+    var ds = [d, d * 0.75, d * 0.5, Math.min(d, 0.2)], g, k, s, L, cap;
+    for (g = 0; g < ds.length; g++) {
+      if (g && ds[g] >= ds[g - 1]) continue;
+      cap = nSims + DAILY_CAPS[g]; hardCap = cap + 20;
+      try {
+        for (k = 0; k < 48 && nSims < cap; k++) {
+          s = (seed + Math.imul(k + 101 * g, 0x9E3779B1)) >>> 0;
+          if ((L = attempt(seed, s, ds[g], CAND_SIMS, cap))) { genStats.stage[g]++; return L; }
+        }
+      } finally { hardCap = Infinity; }
+    }
+    genStats.stage[5]++; // last resort: an empty plate, the straight shot is a guaranteed hit
+    return { id: 'e' + seed, index: -1, seed: seed, difficulty: d3(d), name: 'Quiet Sky', plate: '∞',
+      probe: { x: 450, y: 1420 }, target: { x: 450, y: 260, r: 44 }, bodies: [], frags: [], solution: { vx: 0, vy: -K.VMAX * 0.8, t0Step: 0 } };
+  }
+  function daily(dateKey) {
+    var key = String(dateKey), p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key), h = fnv1a(key), cap = key, dow = 1, L;
+    if (p && +p[2] >= 1 && +p[2] <= 12 && +p[3] >= 1 && +p[3] <= 31) { dow = weekday(+p[1], +p[2], +p[3]); cap = p[3] + ' ' + MON[p[2] - 1] + ' ' + p[1]; }
+    L = dailyGen(h, DOW_D[dow]);
+    L.id = 'd' + key; L.plate = 'DAILY'; L.caption = 'DAILY \u00b7 ' + cap; L.index = -1;
+    L.name = NAMES[h % 30] + ' ' + SUFFIX[(h >>> 5) % SUFFIX.length];
     return L;
   }
 
@@ -917,9 +1041,42 @@ var Levels = (function () {
     {id:"c28",index:27,seed:124537,difficulty:.931,name:"The Ascending Node",plate:"XXVIII",probe:{x:564,y:1370},target:{x:258,y:141,r:35},bodies:[{kind:"planet",r:70,mu:2.49e7,x:388,y:746,orbit:null},{kind:"repulsor",r:26,mu:-1.23e7,x:582,y:343,orbit:null},{kind:"blackhole",r:14,capture:45,mu:2.98e7,x:771,y:876,orbit:null},{kind:"planet",r:63,mu:1.41e7,x:673,y:502,orbit:null},{kind:"moon",r:16,mu:246000,orbit:{cx:388,cy:746,rad:131,omega:1.277,phase:6.061}}],frags:[{x:402,y:1160},{x:198,y:560}],solution:{vx:-77.59149465995459,vy:-489.89341693518827,t0Step:0},fragSolution:{vx:-415.6467509313174,vy:-486.6598179840199,t0Step:0}},
     {id:"c29",index:28,seed:42668,difficulty:.966,name:"Harmony of the Spheres",plate:"XXIX",probe:{x:493,y:1416},target:{x:439,y:186,r:34},bodies:[{kind:"planet",r:82,mu:3.61e7,x:481,y:944,orbit:null},{kind:"repulsor",r:27,mu:-1.09e7,x:254,y:415,orbit:null},{kind:"blackhole",r:13,capture:39,mu:3.23e7,x:150,y:555,orbit:null},{kind:"planet",r:52,mu:9.52e6,x:690,y:1283,orbit:null},{kind:"planet",r:58,mu:1.49e7,x:781,y:735,orbit:null}],frags:[{x:543,y:1227},{x:545,y:597},{x:476,y:374}],solution:{vx:-357.8834582212778,vy:-530.5840464352268,t0Step:0},fragSolution:{vx:157.36197942233235,vy:-587.2829023837536,t0Step:0}},
     {id:"c30",index:29,seed:50799,difficulty:1,name:"Perihelion",plate:"XXX",probe:{x:430,y:1369},target:{x:689,y:314,r:34},bodies:[{kind:"planet",r:68,mu:1.87e7,x:554,y:791,orbit:null},{kind:"repulsor",r:29,mu:-9.45e6,x:245,y:479,orbit:null},{kind:"planet",r:45,mu:6.24e6,orbit:{cx:232,cy:1054,rad:122,omega:.667,phase:.471},pair:1},{kind:"planet",r:37,mu:2.79e6,orbit:{cx:232,cy:1054,rad:122,omega:.667,phase:3.613},pair:1},{kind:"moon",r:13,mu:132000,orbit:{cx:554,cy:791,rad:128,omega:1.257,phase:5.964}}],frags:[{x:566,y:1142},{x:705,y:524}],solution:{vx:18.84357534182505,vy:-431.58883172336255,t0Step:0},fragSolution:{vx:348.56898240961704,vy:-536.7491634850716,t0Step:0}}
-  ];/*@END*/
+  ].concat([
+    {id:"c31",index:30,seed:59930,difficulty:1.02,name:"Argo Navis",plate:"XXXI",probe:{x:238,y:1396},target:{x:647,y:230,r:34},bodies:[{kind:"planet",r:49,mu:8.57e6,x:437,y:910,orbit:null},{kind:"repulsor",r:29,mu:-8.93e6,x:368,y:1172,orbit:null},{kind:"planet",r:64,mu:1.47e7,x:669,y:1011,orbit:null},{kind:"blackhole",r:14,capture:47,mu:2.77e7,x:541,y:1164,orbit:null}],frags:[{x:201,y:976},{x:243,y:571},{x:370,y:395}],solution:{vx:66.898,vy:-636.494,t0Step:0},fragSolution:{vx:55.4,vy:-298.909,t0Step:0}},
+    {id:"c32",index:31,seed:67061,difficulty:1.04,name:"Quadrans Muralis",plate:"XXXII",probe:{x:544,y:1353},target:{x:228,y:250,r:34},bodies:[{kind:"planet",r:72,mu:2.55e7,x:378,y:707,orbit:null},{kind:"repulsor",r:24,mu:-1.18e7,x:392,y:419,orbit:null},{kind:"planet",r:49,mu:9.79e6,x:533,y:659,orbit:null},{kind:"planet",r:37,mu:3.26e6,orbit:{cx:615,cy:940,rad:99,omega:-.638,phase:2.284},pair:1},{kind:"planet",r:36,mu:3.29e6,orbit:{cx:615,cy:940,rad:99,omega:-.638,phase:5.426},pair:1}],frags:[{x:174,y:1205},{x:51,y:395}],solution:{vx:-305.47,vy:-305.47,t0Step:0},fragSolution:{vx:-255.523,vy:-15.628,t0Step:0}},
+    {id:"c33",index:32,seed:43192,difficulty:1.06,name:"Custos Messium",plate:"XXXIII",probe:{x:552,y:1383},target:{x:205,y:242,r:33},bodies:[{kind:"planet",r:59,mu:1.41e7,x:388,y:898,orbit:null},{kind:"repulsor",r:29,mu:-1.21e7,x:582,y:851,orbit:null},{kind:"planet",r:84,mu:4.39e7,x:543,y:682,orbit:null},{kind:"blackhole",r:12,capture:40,mu:3.95e7,x:257,y:1174,orbit:null}],frags:[{x:560,y:1129},{x:355,y:664},{x:295,y:531}],solution:{vx:270.416,vy:-508.578,t0Step:0},fragSolution:{vx:94.598,vy:-632.97,t0Step:0}},
+    {id:"c34",index:33,seed:61323,difficulty:1.08,name:"Honores Frederici",plate:"XXXIV",probe:{x:338,y:1438},target:{x:422,y:342,r:33},bodies:[{kind:"planet",r:57,mu:1.12e7,x:405,y:889,orbit:null},{kind:"repulsor",r:28,mu:-1.25e7,x:487,y:785,orbit:null},{kind:"planet",r:41,mu:4.64e6,orbit:{cx:644,cy:1015,rad:128,omega:.562,phase:3.949},pair:1},{kind:"planet",r:32,mu:2.42e6,orbit:{cx:644,cy:1015,rad:128,omega:.562,phase:7.091},pair:1},{kind:"planet",r:48,mu:6.57e6,x:609,y:711,orbit:null}],frags:[{x:135,y:1291},{x:42,y:670},{x:204,y:474}],solution:{vx:-66.898,vy:-636.494,t0Step:0},fragSolution:{vx:-147.281,vy:-62.517,t0Step:0}},
+    {id:"c35",index:34,seed:36454,difficulty:1.1,name:"Globus Aerostaticus",plate:"XXXV",probe:{x:423,y:1457},target:{x:713,y:349,r:33},bodies:[{kind:"planet",r:41,mu:5.84e6,x:591,y:869,orbit:null},{kind:"repulsor",r:29,mu:-9.06e6,x:530,y:705,orbit:null},{kind:"planet",r:59,mu:1.43e7,x:361,y:839,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:361,cy:839,rad:117,omega:-.589,phase:2.095}}],frags:[{x:719,y:1269},{x:852,y:774},{x:772,y:616}],solution:{vx:209.438,vy:-377.836,t0Step:0},fragSolution:{vx:152.595,vy:-48.113,t0Step:0}},
+    {id:"c36",index:35,seed:93585,difficulty:1.12,name:"Brandenburg Sceptre",plate:"XXXVI",probe:{x:582,y:1433},target:{x:320,y:419,r:33},bodies:[{kind:"planet",r:54,mu:9.71e6,x:459,y:931,orbit:null},{kind:"repulsor",r:29,mu:-9.51e6,x:598,y:991,orbit:null},{kind:"blackhole",r:15,capture:38,mu:2.98e7,x:696,y:1065,orbit:null},{kind:"planet",r:40,mu:3.9e6,orbit:{cx:666,cy:799,rad:96,omega:-.537,phase:2.088},pair:1},{kind:"planet",r:40,mu:4.77e6,orbit:{cx:666,cy:799,rad:96,omega:-.537,phase:5.23},pair:1}],frags:[{x:365,y:1027},{x:324,y:891}],solution:{vx:-135.058,vy:-609.209,t0Step:0},fragSolution:{vx:-380.687,vy:-514.468,t0Step:0}},
+    {id:"c37",index:36,seed:129716,difficulty:1.14,name:"Mons Maenalus",plate:"XXXVII",probe:{x:301,y:1395},target:{x:685,y:403,r:32},bodies:[{kind:"planet",r:77,mu:3.72e7,x:462,y:1049,orbit:null},{kind:"repulsor",r:26,mu:-1.23e7,x:400,y:1175,orbit:null},{kind:"blackhole",r:14,capture:40,mu:2.99e7,x:632,y:1299,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:632,cy:1299,rad:110,omega:.91,phase:.442}}],frags:[{x:716,y:1477},{x:854,y:566}],solution:{vx:-55.78,vy:-637.565,t0Step:0},fragSolution:{vx:336.551,vy:244.519,t0Step:0}},
+    {id:"c38",index:37,seed:118847,difficulty:1.16,name:"Telescopium Herschelii",plate:"XXXVIII",probe:{x:470,y:1458},target:{x:440,y:338,r:32},bodies:[{kind:"planet",r:45,mu:7.15e6,x:481,y:957,orbit:null},{kind:"repulsor",r:30,mu:-1.38e7,x:596,y:803,orbit:null},{kind:"blackhole",r:15,capture:46,mu:3.55e7,x:692,y:1076,orbit:null},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:692,cy:1076,rad:132,omega:-1.214,phase:.315}}],frags:[{x:76,y:844},{x:117,y:671}],solution:{vx:-218.893,vy:-601.403,t0Step:0},fragSolution:{vx:-300.702,vy:-109.446,t0Step:0}},
+    {id:"c39",index:38,seed:195478,difficulty:1.18,name:"Officina Typographica",plate:"XXXIX",probe:{x:477,y:1453},target:{x:282,y:220,r:32},bodies:[{kind:"planet",r:68,mu:2.25e7,x:332,y:743,orbit:null},{kind:"repulsor",r:23,mu:-1.12e7,x:420,y:499,orbit:null},{kind:"planet",r:36,mu:2.63e6,orbit:{cx:546,cy:1018,rad:131,omega:.506,phase:3.956},pair:1},{kind:"planet",r:39,mu:3.8e6,orbit:{cx:546,cy:1018,rad:131,omega:.506,phase:7.098},pair:1},{kind:"moon",r:15,mu:203000,orbit:{cx:332,cy:743,rad:123,omega:-1.56,phase:4.026}}],frags:[{x:73,y:1235},{x:66,y:366}],solution:{vx:-247.785,vy:-353.874,t0Step:0},fragSolution:{vx:-219.884,vy:-42.741,t0Step:0}},
+    {id:"c40",index:39,seed:144109,difficulty:1.2,name:"Machina Electrica",plate:"XL",probe:{x:609,y:1373},target:{x:597,y:283,r:32},bodies:[{kind:"planet",r:61,mu:1.82e7,x:572,y:962,orbit:null},{kind:"repulsor",r:23,mu:-1.14e7,x:610,y:1089,orbit:null},{kind:"planet",r:69,mu:2.56e7,x:335,y:1210,orbit:null},{kind:"planet",r:51,mu:8.79e6,x:725,y:873,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:335,cy:1210,rad:153,omega:-1.366,phase:.086}}],frags:[{x:56,y:1357},{x:122,y:335}],solution:{vx:195.934,vy:-473.026,t0Step:0},fragSolution:{vx:-297.718,vy:216.305,t0Step:0}},
+    {id:"c41",index:40,seed:373240,difficulty:1.22,name:"Lochium Funis",plate:"XLI",probe:{x:676,y:1414},target:{x:438,y:224,r:31},bodies:[{kind:"planet",r:58,mu:1.42e7,x:588,y:979,orbit:null},{kind:"repulsor",r:29,mu:-1.18e7,x:415,y:917,orbit:null},{kind:"planet",r:39,mu:4.54e6,orbit:{cx:371,cy:1145,rad:128,omega:.95,phase:1.806},pair:1},{kind:"planet",r:40,mu:4.94e6,orbit:{cx:371,cy:1145,rad:128,omega:.95,phase:4.948},pair:1},{kind:"blackhole",r:12,capture:40,mu:2.74e7,x:388,y:727,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:388,cy:727,rad:105,omega:.683,phase:4.806}}],frags:[{x:727,y:1084},{x:667,y:677}],solution:{vx:-218.809,vy:-515.483,t0Step:0},fragSolution:{vx:133.063,vy:-626.014,t0Step:0}},
+    {id:"c42",index:41,seed:250371,difficulty:1.24,name:"Tarandus",plate:"XLII",probe:{x:448,y:1461},target:{x:326,y:244,r:31},bodies:[{kind:"planet",r:60,mu:1.29e7,x:360,y:814,orbit:null},{kind:"repulsor",r:25,mu:-1.18e7,x:424,y:606,orbit:null},{kind:"planet",r:58,mu:1.56e7,x:492,y:1025,orbit:null},{kind:"planet",r:51,mu:1.05e7,x:547,y:800,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:492,cy:1025,rad:112,omega:1.114,phase:4.111}}],frags:[{x:87,y:1249},{x:81,y:451}],solution:{vx:-285.567,vy:-572.758,t0Step:0},fragSolution:{vx:-267.868,vy:-47.232,t0Step:0}},
+    {id:"c43",index:42,seed:653502,difficulty:1.26,name:"Cerberus",plate:"XLIII",probe:{x:262,y:1467},target:{x:505,y:146,r:31},bodies:[{kind:"planet",r:78,mu:3.38e7,x:322,y:945,orbit:null},{kind:"repulsor",r:22,mu:-9.9e6,x:402,y:782,orbit:null},{kind:"planet",r:42,mu:4.58e6,x:166,y:1171,orbit:null},{kind:"blackhole",r:14,capture:40,mu:2.8e7,x:82,y:954,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:166,cy:1171,rad:110,omega:1.393,phase:3.591}}],frags:[{x:586,y:1296},{x:780,y:819},{x:675,y:367}],solution:{vx:388.449,vy:-488.347,t0Step:0},fragSolution:{vx:390.518,vy:-86.576,t0Step:0}},
+    {id:"c44",index:43,seed:425633,difficulty:1.28,name:"Antinous",plate:"XLIV",probe:{x:333,y:1371},target:{x:646,y:261,r:31},bodies:[{kind:"planet",r:48,mu:7.11e6,x:497,y:731,orbit:null},{kind:"repulsor",r:29,mu:-1.2e7,x:481,y:565,orbit:null},{kind:"planet",r:55,mu:1.29e7,x:277,y:869,orbit:null},{kind:"planet",r:44,mu:6.46e6,orbit:{cx:272,cy:488,rad:96,omega:.942,phase:5.297},pair:1},{kind:"planet",r:49,mu:8.83e6,orbit:{cx:272,cy:488,rad:96,omega:.942,phase:8.439},pair:1},{kind:"moon",r:15,mu:203000,orbit:{cx:277,cy:869,rad:121,omega:-.895,phase:.186}}],frags:[{x:714,y:1032},{x:748,y:734},{x:678,y:530}],solution:{vx:290.554,vy:-570.244,t0Step:0},fragSolution:{vx:197.82,vy:-64.276,t0Step:0}},
+    {id:"c45",index:44,seed:341764,difficulty:1.3,name:"Noctua",plate:"XLV",probe:{x:504,y:1351},target:{x:248,y:189,r:30},bodies:[{kind:"planet",r:42,mu:5.76e6,x:385,y:795,orbit:null},{kind:"repulsor",r:23,mu:-8.38e6,x:412,y:617,orbit:null},{kind:"blackhole",r:13,capture:39,mu:3.81e7,x:496,y:1056,orbit:null},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:496,cy:1056,rad:107,omega:1.187,phase:5.653}},{kind:"moon",r:19,mu:412000,orbit:{cx:385,cy:795,rad:98,omega:-.796,phase:.494}}],frags:[{x:64,y:1081},{x:41,y:455},{x:97,y:332}],solution:{vx:-490.268,vy:-411.384,t0Step:0},fragSolution:{vx:-447.983,vy:3.909,t0Step:0}},
+    {id:"c46",index:45,seed:3002395,difficulty:1.32,name:"The Transit of Venus",plate:"XLVI",probe:{x:336,y:1429},target:{x:527,y:165,r:30},bodies:[{kind:"planet",r:50,mu:9.84e6,x:430,y:916,orbit:null},{kind:"repulsor",r:23,mu:-8.79e6,x:415,y:1066,orbit:null},{kind:"planet",r:40,mu:3.57e6,x:578,y:876,orbit:null},{kind:"planet",r:45,mu:7.58e6,x:464,y:1212,orbit:null},{kind:"planet",r:38,mu:3.05e6,orbit:{cx:658,cy:623,rad:88,omega:-.638,phase:2.156},pair:1},{kind:"planet",r:47,mu:8.5e6,orbit:{cx:658,cy:623,rad:88,omega:-.638,phase:5.298},pair:1}],frags:[{x:44,y:948},{x:118,y:492}],solution:{vx:-81.642,vy:-440.498,t0Step:0},fragSolution:{vx:-201.281,vy:-130.713,t0Step:0}},
+    {id:"c47",index:46,seed:3460526,difficulty:1.34,name:"The Zenith Sector",plate:"XLVII",probe:{x:235,y:1382},target:{x:710,y:191,r:30},bodies:[{kind:"planet",r:42,mu:6.21e6,x:451,y:888,orbit:null},{kind:"repulsor",r:23,mu:-1.27e7,x:668,y:829,orbit:null},{kind:"planet",r:51,mu:9.77e6,x:492,y:1155,orbit:null},{kind:"planet",r:39,mu:3.79e6,orbit:{cx:217,cy:619,rad:88,omega:-.57,phase:2.829},pair:1},{kind:"planet",r:38,mu:3.36e6,orbit:{cx:217,cy:619,rad:88,omega:-.57,phase:5.971},pair:1},{kind:"planet",r:59,mu:1.57e7,x:668,y:592,orbit:null}],frags:[{x:271,y:1058},{x:373,y:759},{x:458,y:552}],solution:{vx:247.974,vy:-519.889,t0Step:0},fragSolution:{vx:25.959,vy:-495.32,t0Step:0}},
+    {id:"c48",index:47,seed:613157,difficulty:1.36,name:"Georgium Sidus",plate:"XLVIII",probe:{x:600,y:1430},target:{x:358,y:400,r:30},bodies:[{kind:"planet",r:50,mu:8.34e6,x:467,y:770,orbit:null},{kind:"repulsor",r:22,mu:-1.07e7,x:507,y:574,orbit:null},{kind:"planet",r:42,mu:4.59e6,orbit:{cx:699,cy:982,rad:115,omega:-.967,phase:1.359},pair:1},{kind:"planet",r:42,mu:6.2e6,orbit:{cx:699,cy:982,rad:115,omega:-.967,phase:4.501},pair:1},{kind:"planet",r:37,mu:3.99e6,orbit:{cx:678,cy:489,rad:94,omega:.789,phase:1.074},pair:2},{kind:"planet",r:36,mu:2.77e6,orbit:{cx:678,cy:489,rad:94,omega:.789,phase:4.216},pair:2},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:467,cy:770,rad:103,omega:-.665,phase:.875}}],frags:[{x:354,y:1037},{x:306,y:835}],solution:{vx:-242.732,vy:-486.844,t0Step:0},fragSolution:{vx:-212.038,vy:-239.666,t0Step:0}},
+    {id:"c49",index:48,seed:2402288,difficulty:1.38,name:"Leverrier's Planet",plate:"XLIX",probe:{x:266,y:1449},target:{x:536,y:196,r:29},bodies:[{kind:"planet",r:45,mu:5.58e6,x:424,y:636,orbit:null},{kind:"repulsor",r:27,mu:-9.23e6,x:197,y:439,orbit:null},{kind:"planet",r:48,mu:8.25e6,x:420,y:895,orbit:null},{kind:"planet",r:42,mu:4.7e6,orbit:{cx:608,cy:514,rad:85,omega:-.797,phase:1.583},pair:1},{kind:"planet",r:42,mu:5.34e6,orbit:{cx:608,cy:514,rad:85,omega:-.797,phase:4.725},pair:1},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:420,cy:895,rad:148,omega:-.957,phase:1.626}}],frags:[{x:452,y:1360},{x:765,y:346}],solution:{vx:-66.898,vy:-636.494,t0Step:0},fragSolution:{vx:179.841,vy:-67.24,t0Step:0}},
+    {id:"c50",index:49,seed:179919,difficulty:1.4,name:"The Zodiacal Light",plate:"L",probe:{x:306,y:1479},target:{x:205,y:319,r:29},bodies:[{kind:"planet",r:40,mu:4.02e6,x:277,y:924,orbit:null},{kind:"repulsor",r:26,mu:-9.25e6,x:474,y:864,orbit:null},{kind:"planet",r:35,mu:3.61e6,orbit:{cx:510,cy:1202,rad:128,omega:-.529,phase:2.524},pair:1},{kind:"planet",r:47,mu:7.4e6,orbit:{cx:510,cy:1202,rad:128,omega:-.529,phase:5.666},pair:1},{kind:"planet",r:32,mu:2.35e6,orbit:{cx:506,cy:646,rad:109,omega:-.944,phase:6.044},pair:2},{kind:"planet",r:35,mu:2.93e6,orbit:{cx:506,cy:646,rad:109,omega:-.944,phase:9.186},pair:2},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:277,cy:924,rad:122,omega:-.641,phase:5.649}}],frags:[{x:213,y:1143},{x:183,y:767}],solution:{vx:5.166,vy:-591.977,t0Step:0},fragSolution:{vx:-181.591,vy:-512.797,t0Step:0}},
+    {id:"c51",index:50,seed:463550,difficulty:1.42,name:"Encke's Comet",plate:"LI",probe:{x:387,y:1399},target:{x:670,y:181,r:29},bodies:[{kind:"planet",r:59,mu:1.31e7,x:531,y:890,orbit:null},{kind:"repulsor",r:30,mu:-1.33e7,x:333,y:915,orbit:null},{kind:"planet",r:49,mu:7.32e6,orbit:{cx:294,cy:654,rad:98,omega:.944,phase:.355},pair:1},{kind:"planet",r:48,mu:7.74e6,orbit:{cx:294,cy:654,rad:98,omega:.944,phase:3.497},pair:1},{kind:"blackhole",r:12,capture:50,mu:2.98e7,x:309,y:1120,orbit:null},{kind:"moon",r:22,mu:639000,orbit:{cx:309,cy:1120,rad:113,omega:1.484,phase:3.825}},{kind:"moon",r:14,mu:165000,orbit:{cx:531,cy:890,rad:111,omega:1.557,phase:3.914}}],frags:[{x:787,y:1242},{x:838,y:323}],solution:{vx:218.893,vy:-601.403,t0Step:0},fragSolution:{vx:415.747,vy:14.518,t0Step:0}},
+    {id:"c52",index:51,seed:1137681,difficulty:1.44,name:"Piazzi's Ceres",plate:"LII",probe:{x:270,y:1381},target:{x:511,y:315,r:29},bodies:[{kind:"planet",r:40,mu:5.38e6,x:427,y:745,orbit:null},{kind:"repulsor",r:25,mu:-1.4e7,x:611,y:453,orbit:null},{kind:"planet",r:66,mu:1.78e7,x:653,y:638,orbit:null},{kind:"planet",r:35,mu:2.83e6,orbit:{cx:593,cy:1022,rad:123,omega:.871,phase:1.62},pair:1},{kind:"planet",r:44,mu:5.65e6,orbit:{cx:593,cy:1022,rad:123,omega:.871,phase:4.762},pair:1},{kind:"planet",r:51,mu:8.14e6,x:221,y:483,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:221,cy:483,rad:127,omega:.71,phase:1.01}}],frags:[{x:50,y:1240},{x:291,y:227}],solution:{vx:36.141,vy:-590.896,t0Step:0},fragSolution:{vx:-193.527,vy:-76.232,t0Step:0}},
+    {id:"c53",index:52,seed:3388812,difficulty:1.46,name:"Olbers' Paradox",plate:"LIII",probe:{x:316,y:1369},target:{x:268,y:375,r:28},bodies:[{kind:"planet",r:51,mu:9.81e6,x:317,y:804,orbit:null},{kind:"repulsor",r:25,mu:-1.27e7,x:431,y:530,orbit:null},{kind:"planet",r:58,mu:1.38e7,x:502,y:738,orbit:null},{kind:"planet",r:35,mu:3.41e6,orbit:{cx:513,cy:1064,rad:137,omega:.93,phase:3.724},pair:1},{kind:"planet",r:43,mu:6.02e6,orbit:{cx:513,cy:1064,rad:137,omega:.93,phase:6.866},pair:1}],frags:[{x:139,y:998},{x:121,y:836},{x:145,y:678}],solution:{vx:-187.118,vy:-612.035,t0Step:0},fragSolution:{vx:-202.21,vy:-268.342,t0Step:0}},
+    {id:"c54",index:53,seed:536943,difficulty:1.48,name:"Struve's Doubles",plate:"LIV",probe:{x:670,y:1457},target:{x:258,y:149,r:28},bodies:[{kind:"planet",r:69,mu:2.05e7,x:461,y:881,orbit:null},{kind:"repulsor",r:23,mu:-1.01e7,x:321,y:741,orbit:null},{kind:"planet",r:31,mu:2.25e6,orbit:{cx:266,cy:1064,rad:131,omega:.752,phase:4.596},pair:1},{kind:"planet",r:31,mu:1.9e6,orbit:{cx:266,cy:1064,rad:131,omega:.752,phase:7.738},pair:1},{kind:"planet",r:67,mu:2.39e7,x:661,y:590,orbit:null},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:661,cy:590,rad:130,omega:1.321,phase:5.751}}],frags:[{x:322,y:1427},{x:57,y:418}],solution:{vx:-78.043,vy:-522.2,t0Step:0},fragSolution:{vx:-218.69,vy:48.482,t0Step:0}},
+    {id:"c55",index:54,seed:841324,difficulty:1.5,name:"The Meridian Circle",plate:"LV",probe:{x:389,y:1392},target:{x:400,y:334,r:28},bodies:[{kind:"planet",r:62,mu:1.74e7,x:357,y:1016,orbit:null},{kind:"repulsor",r:30,mu:-8.12e6,x:487,y:792,orbit:null},{kind:"planet",r:48,mu:9.33e6,orbit:{cx:581,cy:1142,rad:91,omega:-.911,phase:4.413},pair:1},{kind:"planet",r:39,mu:3.85e6,orbit:{cx:581,cy:1142,rad:91,omega:-.911,phase:7.555},pair:1},{kind:"planet",r:53,mu:9.22e6,x:152,y:1244,orbit:null}],frags:[{x:821,y:905},{x:662,y:593},{x:571,y:418}],solution:{vx:-202.857,vy:-435.028,t0Step:0},fragSolution:{vx:366.866,vy:28.873,t0Step:0}},
+    {id:"c56",index:55,seed:1297205,difficulty:1.52,name:"The Heliometer",plate:"LVI",probe:{x:298,y:1382},target:{x:443,y:278,r:28},bodies:[{kind:"planet",r:46,mu:7.26e6,x:356,y:912,orbit:null},{kind:"repulsor",r:28,mu:-1.29e7,x:582,y:894,orbit:null},{kind:"planet",r:35,mu:3.31e6,orbit:{cx:565,cy:1137,rad:116,omega:-.763,phase:5.394},pair:1},{kind:"planet",r:42,mu:4.08e6,orbit:{cx:565,cy:1137,rad:116,omega:-.763,phase:8.536},pair:1},{kind:"planet",r:50,mu:9.62e6,x:535,y:622,orbit:null}],frags:[{x:252,y:882},{x:323,y:578}],solution:{vx:203.155,vy:-590.004,t0Step:0},fragSolution:{vx:-91.686,vy:-519.978,t0Step:0}},
+    {id:"c57",index:56,seed:776336,difficulty:1.54,name:"Cassini's Division",plate:"LVII",probe:{x:537,y:1353},target:{x:639,y:246,r:28},bodies:[{kind:"planet",r:45,mu:5.71e6,x:612,y:660,orbit:null},{kind:"repulsor",r:23,mu:-9.31e6,x:697,y:388,orbit:null},{kind:"planet",r:41,mu:4.29e6,x:734,y:926,orbit:null},{kind:"blackhole",r:12,capture:50,mu:3.85e7,x:791,y:670,orbit:null},{kind:"planet",r:43,mu:4.55e6,x:390,y:406,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:390,cy:406,rad:118,omega:1.54,phase:4.131}},{kind:"moon",r:15,mu:203000,orbit:{cx:734,cy:926,rad:97,omega:-.544,phase:1.164}}],frags:[{x:241,y:1006},{x:200,y:729},{x:342,y:356}],solution:{vx:-94.598,vy:-632.97,t0Step:0},fragSolution:{vx:-221.703,vy:-128,t0Step:0}},
+    {id:"c58",index:57,seed:521967,difficulty:1.56,name:"The Nautical Almanac",plate:"LVIII",probe:{x:488,y:1351},target:{x:702,y:387,r:27},bodies:[{kind:"planet",r:52,mu:1.12e7,x:554,y:917,orbit:null},{kind:"repulsor",r:23,mu:-9.46e6,x:555,y:680,orbit:null},{kind:"planet",r:52,mu:9.93e6,x:711,y:1216,orbit:null},{kind:"blackhole",r:14,capture:42,mu:3.69e7,x:411,y:1056,orbit:null},{kind:"planet",r:47,mu:7.9e6,orbit:{cx:329,cy:860,rad:91,omega:.672,phase:.103},pair:1},{kind:"planet",r:39,mu:4.04e6,orbit:{cx:329,cy:860,rad:91,omega:.672,phase:3.245},pair:1},{kind:"moon",r:14,mu:165000,orbit:{cx:711,cy:1216,rad:106,omega:1.103,phase:.633}}],frags:[{x:167,y:790},{x:424,y:582},{x:559,y:519}],solution:{vx:367.089,vy:-524.257,t0Step:0},fragSolution:{vx:-504.978,vy:-84.504,t0Step:0}},
+    {id:"c59",index:58,seed:598598,difficulty:1.58,name:"The Great Comet",plate:"LIX",probe:{x:642,y:1473},target:{x:315,y:261,r:27},bodies:[{kind:"planet",r:46,mu:8.02e6,x:417,y:738,orbit:null},{kind:"repulsor",r:29,mu:-1.07e7,x:263,y:463,orbit:null},{kind:"planet",r:37,mu:3.02e6,orbit:{cx:245,cy:976,rad:98,omega:-.771,phase:.309},pair:1},{kind:"planet",r:37,mu:3.51e6,orbit:{cx:245,cy:976,rad:98,omega:-.771,phase:3.451},pair:1},{kind:"blackhole",r:14,capture:46,mu:3.84e7,x:487,y:940,orbit:null},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:417,cy:738,rad:100,omega:-1.02,phase:4.053}}],frags:[{x:786,y:1014},{x:656,y:627},{x:544,y:499}],solution:{vx:122.118,vy:-628.241,t0Step:0},fragSolution:{vx:201.681,vy:-363.842,t0Step:0}},
+    {id:"c60",index:59,seed:1170229,difficulty:1.6,name:"Halley's Return",plate:"LX",probe:{x:246,y:1427},target:{x:656,y:363,r:27},bodies:[{kind:"planet",r:59,mu:1.45e7,x:489,y:870,orbit:null},{kind:"repulsor",r:30,mu:-1.34e7,x:469,y:704,orbit:null},{kind:"planet",r:35,mu:3.54e6,orbit:{cx:286,cy:977,rad:86,omega:-.658,phase:3.694},pair:1},{kind:"planet",r:41,mu:5.65e6,orbit:{cx:286,cy:977,rad:86,omega:-.658,phase:6.836},pair:1},{kind:"planet",r:33,mu:2.17e6,orbit:{cx:250,cy:664,rad:117,omega:-.603,phase:2.654},pair:2},{kind:"planet",r:37,mu:4.27e6,orbit:{cx:250,cy:664,rad:117,omega:-.603,phase:5.796},pair:2}],frags:[{x:858,y:860},{x:812,y:697}],solution:{vx:385.162,vy:-511.127,t0Step:0},fragSolution:{vx:189.891,vy:28.379,t0Step:0}}
+  ]);/*@END*/
 
-  return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, generate: generate, solve: solve, NAMES: NAMES,
+  var VOLUMES = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }];
+
+  return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, VOLUMES: VOLUMES, generate: generate, daily: daily, solve: solve, NAMES: NAMES,
     // internal: shared with tools/levels-bake.js so the bake uses exactly the runtime generator
     _gen: { sims: function () { return nSims; }, genStats: genStats, build: build, recipe: recipe, robust: robust, hit: hit, launch: launch, placeFrags: placeFrags,
       pointGap: pointGap, bodyGap: bodyGap, straightHits: straightHits, finish: finish, d3: d3 } };
@@ -1387,6 +1544,7 @@ var Render = (function () {
       for (size = 12; size >= 10; size -= 0.5) { g.font = fnt('600', size, FONT.sc); if (spacedWidth(g, cap, size * 0.12) <= maxW) { fit = true; break; } }
       if (!fit) { size = 10; g.font = fnt('600', size, FONT.sc); sq = maxW / spacedWidth(g, cap, size * 0.12); }
     }
+    capInfo.text = cap; capInfo.size = size; capInfo.two = !!hudGeo.two; capInfo.squeeze = sq;
     g.translate(cxm, hudGeo.yCap); g.scale(sq, 1);
     spacedText(g, cap, 0, 0, size * 0.12, 'center');
     g.setTransform(d, 0, 0, d, 0, 0);
@@ -1398,6 +1556,7 @@ var Render = (function () {
     return true;
   }
   // top band anchors: the plate edges, or the safe screen edges when the plate is narrow (landscape)
+  var capInfo = { text: '', size: 0, two: false, squeeze: 1 };      // last caption layout (read by QA)
   var STARS_W = 46, hudGeo = { xl: 0, xr: 0, yRow: 0, yCap: 0, two: false };
   function hudAnchors() {
     var Pl = layout.plate, sf = layout.safe;
@@ -1474,6 +1633,15 @@ var Render = (function () {
     for (i = 0; i < 3; i++) {
       (function (mode) { hudSpr.star[mode] = makeSprite(6, function (g, c) { drawStar(g, c, c, 5.2, mode); }); })(i);
     }
+    (function () {                                   // the astronomer's label, drawn rotated along the hint line
+      var str = 'the astronomer\u2019s line', pr = mk(4, 4).getContext('2d');
+      pr.font = fnt('italic 500', 11, FONT.serif);
+      var w = Math.ceil(pr.measureText(str).width) + 4, h = 15, c = mk(w * d, h * d), g = c.getContext('2d');
+      g.setTransform(d, 0, 0, d, 0, 0); g.font = fnt('italic 500', 11, FONT.serif);
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = PAL.brass;
+      g.fillText(str, w / 2, h / 2 + 0.5);
+      hintSpr = { c: c, w: w, hh: h };
+    })();
     starRow.length = 0; roCv = null; ro.dirty = true;
     dirtyHud = false;
   }
@@ -1741,11 +1909,13 @@ var Render = (function () {
   var ro = { str: '', t: -1e9, phase: '', italic: false, dirty: true };
   function readout(state, now) {
     var ph = state.phase, aim = state.aim, hd = state.hud || {};
-    var key = ph + (aim && aim.active ? (aim.cancel ? 'c' : 'a') : '');
+    var pulling = ph === 'aim' && aim && aim.active && !aim.cancel, held = !!state.frozen && ph === 'aim' && !pulling;
+    var key = ph + (aim && aim.active ? (aim.cancel ? 'c' : 'a') : '') + (held ? 'f' : '');
     if (key === ro.phase && now - ro.t < 100) return;
     var prevS = ro.str, prevI = ro.italic;
     ro.phase = key; ro.t = now; ro.italic = false;
-    if (ph === 'aim' && aim && aim.active) {
+    if (held) { ro.str = 'the heavens are held'; ro.italic = true; }
+    else if (ph === 'aim' && aim && aim.active) {
       if (aim.cancel) { ro.str = 'release to cancel'; ro.italic = true; }
       else ro.str = 'v₀ ' + Math.round(Math.sqrt(aim.vx * aim.vx + aim.vy * aim.vy)) + ' u/s  ·  power ' + Math.round((aim.power || 0) * 100) + '%';
     } else if (ph === 'aim' && !state.launches) { ro.str = 'pull back anywhere to aim'; ro.italic = true; }
@@ -1813,16 +1983,17 @@ var Render = (function () {
     }
 
     drawFrags(state, now, u);
+    if (state.spotlight) drawSpotlight(state.spotlight, now, u);
     drawGhosts(state, u);
     var showTrail = state.phase === 'flight' || state.phase === 'result';
     if (showTrail) drawTrail(state.trail, u, succ.on ? 0.45 : 1);
     if (succ.on || (state.phase === 'result' && state.result && state.result.success)) drawSuccessPath(state, now, u);
-    aimLbl.on = false;
-    if (state.phase === 'aim') drawAim(state, now, u, d, ox, oy);
+    aimLbl.on = false; hintLbl.on = false;
+    if (state.phase === 'aim') { drawHint(state, now, u, ox, oy); drawAim(state, now, u, d, ox, oy); }
     drawProbe(state, u);
     drawCrashes(now, u);
     ctx.restore();
-    aimLabel(d);
+    aimLabel(d); hintLabel(d);
     ctx.lineCap = 'butt'; ctx.globalAlpha = 1;
     if (state.phase === 'flight' && state.sim) offPlate(state.sim, d, ox, oy);
     drawSeal(state, now, d, shx, shy);
@@ -1934,7 +2105,174 @@ var Render = (function () {
     ctx.globalAlpha = 1; ctx.lineJoin = 'miter';
   }
 
-  var PRED_B = 5, aimLbl = { on: false, x: 0, y: 0, i: 0 };
+  // ---- aiming stub, astronomer's line, spotlight (all allocation-free; dots collected into one scratch buffer)
+  var DOT_MAX = 200, DOTS = new Float32Array(DOT_MAX * 3);          // x, y, key per dot
+  var PRED_SP = 7, PRED_START = 9.5, NB = 10;                        // CSS px between dots, gap left around the probe
+  var BAND_T = []; for (var bq = 0; bq < NB; bq++) BAND_T.push((bq + 0.5) / NB);
+  function smooth(a, b, x) { x = (x - a) / (b - a); x = x < 0 ? 0 : x > 1 ? 1 : x; return x * x * (3 - 2 * x); }
+  // The prediction covers only K.PREDICT_STEPS (1.5 s): a short vermilion stub of dots spaced evenly by ARC LENGTH
+  // (so a slow, tight pull is as legible as a full-power one), tapering in size and dissolving smoothly to nothing.
+  function drawPredict(pr, u) {
+    var n = pr.n, pts = pr.pts, sp = PRED_SP * u, st = PRED_START * u, total = 0, next = st, nd = 0, i, k;
+    var x0 = level.probe.x, y0 = level.probe.y, x, y, dx, dy, seg, f;
+    for (i = 0; i < n; i++) {
+      x = pts[2 * i]; y = pts[2 * i + 1]; dx = x - x0; dy = y - y0; seg = Math.sqrt(dx * dx + dy * dy);
+      while (total + seg >= next && nd < DOT_MAX) {
+        f = seg > 0 ? (next - total) / seg : 0;
+        DOTS[3 * nd] = x0 + dx * f; DOTS[3 * nd + 1] = y0 + dy * f; DOTS[3 * nd + 2] = next; nd++; next += sp;
+      }
+      total += seg; x0 = x; y0 = y;
+    }
+    if (!nd) return;
+    var span = Math.max(total - st, sp), cur = -1, t, b, r;
+    ctx.fillStyle = PAL.vermilion;
+    for (k = 0; k < nd; k++) {
+      t = (DOTS[3 * k + 2] - st) / span; t = t > 1 ? 1 : t;
+      b = Math.min(NB - 1, (t * NB) | 0);
+      if (b !== cur) {
+        if (cur >= 0) ctx.fill();
+        cur = b; ctx.globalAlpha = 0.95 * (1 - smooth(0.05, 1.08, BAND_T[b])); ctx.beginPath();
+      }
+      r = (1.2 - 0.6 * t) * u; x = DOTS[3 * k]; y = DOTS[3 * k + 1];
+      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+    }
+    ctx.fill();
+    // engraver's end mark: a hair-thin tick across the path where the stub ends
+    if (n > 5 && total > st + 4 * u) {
+      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], tx = ex - pts[2 * (n - 6)], ty = ey - pts[2 * (n - 6) + 1];
+      var tl = Math.sqrt(tx * tx + ty * ty) || 1, c = 3.2 * u;
+      ctx.strokeStyle = PAL.vermilion; ctx.globalAlpha = 0.34; ctx.lineWidth = 0.6 * u; ctx.beginPath();
+      ctx.moveTo(ex - ty / tl * c, ey + tx / tl * c); ctx.lineTo(ex + ty / tl * c, ey - tx / tl * c); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Consult the Astronomer: the opening of a winning course as brass dots, a dot every 5 steps, larger than the
+  // vermilion prediction and fading toward the far end. The italic label is drawn after the plate clip (hintLabel).
+  var HINT_SP = 5, HINT_LBL_PX = 58, hintLbl = { on: false, x: 0, y: 0, ang: 0, a: 0 }, hintSpr = null;
+  function drawHint(state, now, u, ox, oy) {
+    var h = state.hint; hintLbl.on = false;
+    if (!h || !h.on || !h.pts || !(h.n > 4)) return;
+    var n = Math.min(h.n | 0, h.pts.length >> 1), pts = h.pts, s = layout.scale;
+    var fade = easeOutCubic((now - (+h.t0 || 0)) / 300);
+    if (!(fade > 0)) return;
+    var px = level.probe.x, py = level.probe.y, skip2 = (K.DRAG_CANCEL + 7) * (K.DRAG_CANCEL + 7), nd = 0, i, dx, dy;
+    for (i = HINT_SP - 1; i < n && nd < DOT_MAX; i += HINT_SP) {
+      dx = pts[2 * i] - px; dy = pts[2 * i + 1] - py;
+      if (dx * dx + dy * dy < skip2) continue;
+      DOTS[3 * nd] = pts[2 * i]; DOTS[3 * nd + 1] = pts[2 * i + 1]; DOTS[3 * nd + 2] = i; nd++;
+    }
+    if (!nd) return;
+    var cur = -1, k, f, b, r, x, y;
+    ctx.fillStyle = PAL.brass;
+    for (k = 0; k < nd; k++) {
+      f = DOTS[3 * k + 2] / (n - 1);
+      b = Math.min(NB - 1, (f * NB) | 0);
+      if (b !== cur) {
+        if (cur >= 0) ctx.fill();
+        cur = b; ctx.globalAlpha = fade * (0.95 - 0.78 * BAND_T[b]); ctx.beginPath();
+      }
+      r = (1.65 - 0.65 * f) * u; x = DOTS[3 * k]; y = DOTS[3 * k + 1];
+      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // label anchor: ~58 px along the line (clear of the probe and the pull ring), set beside the dots
+    if (!hintSpr) return;
+    var a = 0, lim = HINT_LBL_PX / s, acc = 0;
+    for (i = 1; i < n; i++) {
+      dx = pts[2 * i] - pts[2 * i - 2]; dy = pts[2 * i + 1] - pts[2 * i - 1]; acc += Math.sqrt(dx * dx + dy * dy);
+      if (acc >= lim) { a = i; break; }
+    }
+    if (!a) return;
+    // the label spans sw px of the line from the anchor: use the chord over that span for its angle, and stand it
+    // off by the path's own bulge so a curving line never runs through the letters
+    var Pl = layout.plate, sw = hintSpr.w, sh = hintSpr.hh, i1 = a, acc2 = 0;
+    for (i = a + 1; i < n; i++) {
+      dx = pts[2 * i] - pts[2 * i - 2]; dy = pts[2 * i + 1] - pts[2 * i - 1]; acc2 += Math.sqrt(dx * dx + dy * dy);
+      i1 = i; if (acc2 * s >= sw) break;
+    }
+    var i0 = Math.max(0, a - 2);
+    var tx = pts[2 * i1] - pts[2 * i0], ty = pts[2 * i1 + 1] - pts[2 * i0 + 1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
+    tx /= tl; ty /= tl;
+    var ang = Math.atan2(ty, tx); if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+    var ca = Math.cos(ang), sa = Math.sin(ang), hw = Math.abs(ca) * sw / 2 + Math.abs(sa) * sh / 2 + 6, hh = Math.abs(sa) * sw / 2 + Math.abs(ca) * sh / 2 + 6;
+    var ax = ox + pts[2 * a] * s, ay = oy + pts[2 * a + 1] * s, off = 12;
+    var xmin = ox + hw, xmax = ox + Pl.w - hw, ymin = oy + hh, ymax = oy + Pl.h - hh;
+    var best = 1e9, cx = ax, cy = ay, sg, m;
+    for (sg = -1; sg <= 1; sg += 2) {
+      var nx = -ty * sg, ny = tx * sg, push = 0;
+      for (m = a; m <= i1; m++) {                 // how far the path bulges toward this side within the span
+        var dv = ((pts[2 * m] * s + ox - ax) * nx + (pts[2 * m + 1] * s + oy - ay) * ny); if (dv > push) push = dv;
+      }
+      var qx = ax + tx * sw / 2 + nx * (off + push), qy = ay + ty * sw / 2 + ny * (off + push);
+      var kx = qx < xmin ? xmin : qx > xmax ? xmax : qx, ky = qy < ymin ? ymin : qy > ymax ? ymax : qy;
+      var sc = Math.abs(kx - qx) + Math.abs(ky - qy) + push * 0.4;
+      if (sc < best) { best = sc; cx = kx; cy = ky; }
+    }
+    hintLbl.on = true; hintLbl.x = cx; hintLbl.y = cy; hintLbl.ang = ang; hintLbl.a = fade * 0.92;
+  }
+  function hintLabel(d) {
+    if (!hintLbl.on || !hintSpr) return;
+    hintLbl.on = false;
+    var c = Math.cos(hintLbl.ang) * d, s = Math.sin(hintLbl.ang) * d;
+    ctx.setTransform(c, s, -s, c, hintLbl.x * d, hintLbl.y * d); ctx.globalAlpha = hintLbl.a;
+    ctx.drawImage(hintSpr.c, -hintSpr.w / 2, -hintSpr.hh / 2, hintSpr.w, hintSpr.hh);
+    ctx.globalAlpha = 1;
+  }
+
+  // Popup-card spotlight: an engraved dashed ring (slowly turning) with four fine leader ticks round each point.
+  var DASH_S = [0, 0];
+  function drawSpotlight(sl, now, u) {
+    var n = sl.length | 0; if (n < 1) return;
+    if (n > 8) n = 8;
+    var R = K.FRAG_R * 2.2, circ = TAU * R, nd = Math.max(10, Math.round(circ / u / 5.6)), per = circ / nd;
+    var a0 = now * 0.00032, i, k, p, x, y, a, ca, sa;
+    DASH_S[0] = per * 0.56; DASH_S[1] = per * 0.44;
+    ctx.strokeStyle = PAL.paper; ctx.lineCap = 'butt';
+    ctx.globalAlpha = 0.55; ctx.lineWidth = 0.85 * u; ctx.setLineDash(DASH_S); ctx.beginPath();
+    for (i = 0; i < n; i++) { p = sl[i]; if (!p) continue; ctx.moveTo(p.x + R * Math.cos(a0), p.y + R * Math.sin(a0)); ctx.arc(p.x, p.y, R, a0, a0 + TAU); }
+    ctx.stroke(); ctx.setLineDash(DASH_NONE);
+    ctx.globalAlpha = 0.5; ctx.lineWidth = 0.6 * u; ctx.beginPath();
+    for (i = 0; i < n; i++) {
+      p = sl[i]; if (!p) continue; x = p.x; y = p.y;
+      for (k = 0; k < 4; k++) {
+        a = -a0 * 0.5 + k * Math.PI / 2 + Math.PI / 4; ca = Math.cos(a); sa = Math.sin(a);
+        ctx.moveTo(x + ca * (R + 3.2 * u), y + sa * (R + 3.2 * u)); ctx.lineTo(x + ca * (R + 9.5 * u), y + sa * (R + 9.5 * u));
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 0.2; ctx.lineWidth = 0.5 * u; ctx.beginPath();          // faint inner hairline
+    for (i = 0; i < n; i++) { p = sl[i]; if (!p) continue; ctx.moveTo(p.x + R * 0.88, p.y); ctx.arc(p.x, p.y, R * 0.88, 0, TAU); }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  var aimLbl = { on: false, x: 0, y: 0, i: 0 };
+  // Power label placement (screen px). Preferred: just beyond the ruler's end. If that would touch the plate
+  // border, stand beside the ruler (nudged perpendicular to it), fully inside the plate with a margin.
+  var PW_HW = 14, PW_HH = 7, PW_M = 8;
+  function placePower(ox, oy, px, py, ux, uy, L) {
+    var s = layout.scale, Pl = layout.plate;
+    var x0 = ox + PW_HW + PW_M, x1 = ox + Pl.w - PW_HW - PW_M, y0 = oy + PW_HH + PW_M, y1 = oy + Pl.h - PW_HH - PW_M;
+    var sx = ox + px * s, sy = oy + py * s, Ls = L * s, cs = K.DRAG_CANCEL * s;
+    var lx = sx + ux * (Ls + 14), ly = sy + uy * (Ls + 14);
+    if (lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1) { aimLbl.on = true; aimLbl.x = lx; aimLbl.y = ly; return; }
+    var nx = -uy, ny = ux, need = PW_HW * Math.abs(nx) + PW_HH * Math.abs(ny) + 6;
+    var t = Ls + 8, tmin = cs + 4;
+    while (t > tmin) { var qx = sx + ux * t, qy = sy + uy * t; if (qx >= x0 && qx <= x1 && qy >= y0 && qy <= y1) break; t -= 3; }
+    if (t < tmin) t = tmin;
+    var best = 1e9, bx = lx, by = ly;
+    for (var sg = -1; sg <= 1; sg += 2) {
+      var cx = sx + ux * t + nx * need * sg, cy = sy + uy * t + ny * need * sg;
+      var ccx = cx < x0 ? x0 : cx > x1 ? x1 : cx, ccy = cy < y0 ? y0 : cy > y1 ? y1 : cy;
+      var tp = (ccx - sx) * ux + (ccy - sy) * uy; tp = tp < cs ? cs : tp > Ls ? Ls : tp;
+      var ddx = ccx - (sx + ux * tp), ddy = ccy - (sy + uy * tp), dist = Math.sqrt(ddx * ddx + ddy * ddy);
+      var sc = Math.abs(ccx - cx) + Math.abs(ccy - cy) + (dist < need - 1 ? 100 + (need - dist) : 0);
+      if (sc < best) { best = sc; bx = ccx; by = ccy; }
+    }
+    aimLbl.on = true; aimLbl.x = bx; aimLbl.y = by;
+  }
   function aimLabel(d) {
     if (!aimLbl.on) return;
     aimLbl.on = false;
@@ -1953,23 +2291,8 @@ var Render = (function () {
       return;
     }
     var cancel = !!aim.cancel;
-    // prediction: dotted vermilion, one dot every 4 steps, fading toward its end
     var pr = state.predict;
-    if (!cancel && pr && pr.n > 4) {
-      var n = pr.n, pts = pr.pts, r = 1.05 * u;
-      ctx.fillStyle = PAL.vermilion;
-      for (var b = 0; b < PRED_B; b++) {
-        var i0 = Math.floor(b * n / PRED_B), i1 = Math.floor((b + 1) * n / PRED_B);
-        ctx.globalAlpha = 0.95 - 0.8 * (b / (PRED_B - 1));
-        ctx.beginPath();
-        for (i = i0 - (i0 % 4) + 3; i < i1; i += 4) { var x = pts[2 * i], y = pts[2 * i + 1]; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); }
-        ctx.fill();
-      }
-      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], qx = pts[2 * (n - 5)], qy = pts[2 * (n - 5) + 1];
-      var tx = ex - qx, ty = ey - qy, tl = Math.sqrt(tx * tx + ty * ty) || 1, c = 4 * u;
-      ctx.strokeStyle = PAL.vermilion; ctx.globalAlpha = 0.45; ctx.lineWidth = 0.7 * u; ctx.beginPath();
-      ctx.moveTo(ex - ty / tl * c, ey + tx / tl * c); ctx.lineTo(ex + ty / tl * c, ey - tx / tl * c); ctx.stroke();
-    }
+    if (!cancel && pr && pr.n > 4) drawPredict(pr, u);
     // pull line with engraved graduation, power arcs
     var dx = aim.dx || 0, dy = aim.dy || 0, len = Math.sqrt(dx * dx + dy * dy);
     ctx.strokeStyle = cancel ? PAL.vermilion : PAL.paper;
@@ -1990,15 +2313,8 @@ var Render = (function () {
           ctx.globalAlpha = 0.3; ctx.lineWidth = 0.6 * u; ctx.beginPath(); ctx.arc(px, py, K.DRAG_MAX, ang - 0.22, ang + 0.22); ctx.stroke();
         }
         ctx.globalAlpha = 1;
-        // % label: drawn after the plate clip is released (see aimLabel), kept inside the plate
-        var Pl = layout.plate, x0 = ox + 10, x1 = ox + Pl.w - 10, y0 = oy + 10, y1 = oy + Pl.h - 10;
-        var lx = ox + (px + ux * (L + 14 * u)) * layout.scale, ly = oy + (py + uy * (L + 14 * u)) * layout.scale;
-        var cx0 = Math.max(x0, Math.min(x1, lx)), cy0 = Math.max(y0, Math.min(y1, ly));
-        if (cx0 !== lx || cy0 !== ly) {
-          var sg = (-uy * (ox + Pl.w / 2 - cx0) + ux * (oy + Pl.h / 2 - cy0)) >= 0 ? 1 : -1;   // nudge toward the plate
-          cx0 = Math.max(x0, Math.min(x1, cx0 - uy * 12 * sg)); cy0 = Math.max(y0, Math.min(y1, cy0 + ux * 12 * sg));
-        }
-        aimLbl.on = true; aimLbl.x = cx0; aimLbl.y = cy0;
+        // % label: drawn after the plate clip is released (see aimLabel); placed clear of the border and the ruler
+        placePower(ox, oy, px, py, ux, uy, L);
         aimLbl.i = Math.max(0, Math.min(100, Math.round((aim.power || L / K.DRAG_MAX) * 100)));
       }
     }
@@ -2104,7 +2420,8 @@ var Render = (function () {
     // stars (right)
     var res = state.phase === 'result' ? state.result : null, earned = 0, pot = 0;
     var failed = state.phase === 'flight' && state.sim && state.sim.status !== 'flying' && state.sim.status !== 'hit';
-    if (res) earned = res.success ? (res.stars | 0) : 0; else pot = Math.max(0, 4 - ln - (failed ? 1 : 0));
+    if (res) earned = res.success ? (res.stars | 0) : 0;
+    else pot = Math.max(0, Math.min(3, 4 - ln - (failed ? 1 : 0) - (state.hint && state.hint.used ? 1 : 0)));
     var rk = res ? 4 + Math.min(3, earned) : Math.min(3, pot), row = starRow[rk] || (starRow[rk] = buildStarRow(res, earned, pot));
     ctx.drawImage(row, Math.round((hudGeo.xr - 41 + shx) * d), Math.round((y - 8) * d));
     // bottom readout (centre 50% only), re-rendered only when its text changes
@@ -2211,7 +2528,7 @@ var Render = (function () {
   }
 
   return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx,
-           worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; } };
+           worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; }, get caption() { return capInfo; } };
 })();
 
 // ===================== MODULE: 40-audio.js =====================
@@ -2391,6 +2708,22 @@ var Sound = (function () {
     try { var t = now() + 0.01; bell(t, 392, 0.5); bell(t + 0.14, 587.33, 0.3); } catch (e) {}
   }
 
+  // ---- ach: soft two-note bell for an honour in the Observer's Log (quieter and shorter than chime, ~0.6 s) ----
+  function achBell(t, f0, level) {
+    var ratios = [1, 2.76, 5.4], amps = [0.55, 0.22, 0.08], decs = [0.5, 0.3, 0.16];
+    for (var i = 0; i < 3; i++) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f0 * ratios[i];
+      o.connect(g); g.connect(master);
+      env(g, t, amps[i] * level, 0.005, decs[i]);
+      o.start(t); o.stop(t + decs[i] + 0.05);
+    }
+  }
+  function ach() {
+    if (!ready()) return;
+    try { var t = now() + 0.01; achBell(t, 659.26, 0.2); achBell(t + 0.11, 987.77, 0.14); } catch (e) {}
+  }
+
   // ---- thump: filtered noise burst + low sine drop. soft (0..1] scales it for lost/timeout ----
   function thump(soft) {
     if (!ready()) return;
@@ -2471,39 +2804,69 @@ var Sound = (function () {
   return {
     unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
     droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
-    chime: chime, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    chime: chime, ach: ach, thump: thump, pluck: pluck, tick: tick, launch: launch,
     get state() { return ctx ? ctx.state : 'none'; }
   };
 })();
 
 // ===================== MODULE: 50-save.js =====================
-/* PERIHELION — save (owner: INPUT & FEEL AGENT).
-   localStorage key 'perihelion.v1'. Every storage access is wrapped in try/catch; if storage is unavailable
-   (private mode, sandboxed iframe, quota) the game keeps working from the in-memory copy. */
+/* PERIHELION — save.
+   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: 60 plates, `seen` flags for the
+   popup cards, the Daily Plate record, lifetime `stats` and unlocked achievements. Every storage access is wrapped in
+   try/catch; if storage is unavailable (private mode, sandboxed iframe, quota) the game keeps working from memory. */
 var Save = (function () {
-  var KEY = 'perihelion.v1', N = 30;
+  var KEY = 'perihelion.v1', N = 60, VERSION = 2;
   var persistent = false;
+  var DAY = 86400000;
 
   function zeros(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
-  function fresh() { return { v: 1, stars: zeros(N), frags: zeros(N), unlocked: 1, endlessBest: 0, muted: false }; }
+  function fresh() {
+    return {
+      v: VERSION, stars: zeros(N), frags: zeros(N), unlocked: 1, endlessBest: 0, muted: false,
+      seen: {},                                     // { intro: true, fragments: true, ... } popup cards already shown
+      daily: { last: '', lastStars: 0, lastLaunches: 0, streak: 0, best: 0, done: {} },   // done: { 'YYYY-MM-DD': stars }
+      stats: {},                                    // lifetime counters, name -> number (see bump)
+      ach: {}                                       // unlocked achievements, id -> 'YYYY-MM-DD'
+    };
+  }
   function int(x, lo, hi) {
     x = Number(x);
     if (!isFinite(x)) return lo;
     x = Math.floor(x);
     return x < lo ? lo : x > hi ? hi : x;
   }
-  // Defensive merge of whatever JSON we find: unknown/garbage fields are dropped, ranges clamped.
+  var NAME_OK = /^[A-Za-z0-9_]{1,32}$/, DATE_OK = /^\d{4}-\d{2}-\d{2}$/;
+
+  // Defensive merge of whatever JSON we find: unknown/garbage fields are dropped, ranges clamped. v1 saves (30 plates,
+  // no extras) are upgraded in place: arrays are padded with zeros, everything else defaults.
   function merge(raw) {
-    var d = fresh();
+    var d = fresh(), k, i, n;
     if (!raw || typeof raw !== 'object') return d;
-    var i;
     if (Array.isArray(raw.stars)) for (i = 0; i < N; i++) d.stars[i] = int(raw.stars[i], 0, 3);
     if (Array.isArray(raw.frags)) for (i = 0; i < N; i++) d.frags[i] = int(raw.frags[i], 0, 9);
     d.unlocked = int(raw.unlocked, 1, N);
-    // a plate with stars implies the next is open, even if 'unlocked' was lost
     for (i = 0; i < N; i++) if (d.stars[i] > 0) d.unlocked = Math.max(d.unlocked, Math.min(N, i + 2));
     d.endlessBest = int(raw.endlessBest, 0, 1e6);
     d.muted = raw.muted === true;
+    if (raw.seen && typeof raw.seen === 'object') for (k in raw.seen) if (NAME_OK.test(k) && raw.seen[k] === true) d.seen[k] = true;
+    var rd = raw.daily;
+    if (rd && typeof rd === 'object') {
+      d.daily.last = typeof rd.last === 'string' && DATE_OK.test(rd.last) ? rd.last : '';
+      d.daily.lastStars = int(rd.lastStars, 0, 3);
+      d.daily.lastLaunches = int(rd.lastLaunches, 0, 3);
+      d.daily.streak = int(rd.streak, 0, 100000);
+      d.daily.best = Math.max(d.daily.streak, int(rd.best, 0, 100000));
+      if (rd.done && typeof rd.done === 'object') {
+        var keys = Object.keys(rd.done).filter(function (x) { return DATE_OK.test(x); }).sort().slice(-90);
+        for (i = 0; i < keys.length; i++) d.daily.done[keys[i]] = int(rd.done[keys[i]], 0, 3);
+      }
+    }
+    if (raw.stats && typeof raw.stats === 'object') for (k in raw.stats) {
+      if (!NAME_OK.test(k)) continue;
+      n = Number(raw.stats[k]);
+      if (isFinite(n) && n >= 0) d.stats[k] = Math.min(n, 1e12);
+    }
+    if (raw.ach && typeof raw.ach === 'object') for (k in raw.ach) if (NAME_OK.test(k) && DATE_OK.test(String(raw.ach[k]))) d.ach[k] = raw.ach[k];
     return d;
   }
 
@@ -2520,6 +2883,7 @@ var Save = (function () {
     catch (e) { persistent = false; return false; }
   }
 
+  // ---- campaign ----
   // Record a sealed plate; keeps the best stars / fragments and opens the next plate.
   function recordPlate(i, stars, frags) {
     if (!(i >= 0 && i < N)) return { improved: false };
@@ -2536,21 +2900,719 @@ var Save = (function () {
   }
   function setMuted(b) { data.muted = !!b; write(); }
   function totals() {
-    var s = 0, f = 0;
-    for (var i = 0; i < N; i++) { s += data.stars[i]; f += data.frags[i]; }
-    return { stars: s, frags: f };
+    var s = 0, f = 0, sealed = 0, three = 0;
+    for (var i = 0; i < N; i++) { s += data.stars[i]; f += data.frags[i]; if (data.stars[i] > 0) sealed++; if (data.stars[i] === 3) three++; }
+    return { stars: s, frags: f, sealed: sealed, threeStar: three };
   }
+
+  // ---- popup cards ----
+  function seen(name) { return data.seen[name] === true; }
+  function markSeen(name) { if (NAME_OK.test(name) && !data.seen[name]) { data.seen[name] = true; write(); } }
+
+  // ---- Daily Plate ----
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  // Local calendar date as 'YYYY-MM-DD' (what "today" means to the player).
+  function dateKey(d) { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function keyToNoon(k) { var p = k.split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
+  function prevKey(k) { return dateKey(new Date(keyToNoon(k).getTime() - DAY)); }
+  function dailyDone(k) { return data.daily.done[k || dateKey()] || 0; }      // stars earned that day (0 = not sealed)
+  // Record a sealed daily plate. First seal of a day extends (or restarts) the streak; a better retry only improves stars.
+  function recordDaily(k, stars, launches) {
+    var dl = data.daily, prev = dl.done[k] || 0, first = prev === 0;
+    if (first) {
+      dl.streak = dl.last === prevKey(k) ? dl.streak + 1 : 1;
+      dl.best = Math.max(dl.best, dl.streak);
+      dl.last = k;
+    }
+    if (stars > prev) { dl.done[k] = int(stars, 1, 3); dl.lastStars = dl.done[k]; dl.lastLaunches = int(launches, 1, 3); }
+    var keys = Object.keys(dl.done).sort(); while (keys.length > 90) delete dl.done[keys.shift()];
+    write();
+    return { first: first, streak: dl.streak, best: dl.best, improved: stars > prev };
+  }
+  // Streak as it should be shown right now: a streak whose last day was before yesterday has lapsed.
+  function dailyStreak() {
+    var dl = data.daily, t = dateKey();
+    return dl.last === t || dl.last === prevKey(t) ? dl.streak : 0;
+  }
+
+  // ---- lifetime stats & achievements (used by Log) ----
+  function bump(name, n) {
+    if (!NAME_OK.test(name)) return 0;
+    data.stats[name] = Math.min(1e12, (data.stats[name] || 0) + (n === undefined ? 1 : Number(n) || 0));
+    return data.stats[name];
+  }
+  function stat(name) { return data.stats[name] || 0; }
+  function unlockAch(id) { if (!NAME_OK.test(id) || data.ach[id]) return false; data.ach[id] = dateKey(); write(); return true; }
+  function hasAch(id) { return !!data.ach[id]; }
+
   function reset() { data = fresh(); write(); return data; }
 
   load();
 
   return {
-    KEY: KEY, N: N,
+    KEY: KEY, N: N, VERSION: VERSION,
     get data() { return data; },
     get persistent() { return persistent; },
     load: load, write: write, merge: merge,
-    recordPlate: recordPlate, recordEndless: recordEndless, setMuted: setMuted, totals: totals, reset: reset
+    recordPlate: recordPlate, recordEndless: recordEndless, setMuted: setMuted, totals: totals,
+    seen: seen, markSeen: markSeen,
+    dateKey: dateKey, prevKey: prevKey, dailyDone: dailyDone, recordDaily: recordDaily, dailyStreak: dailyStreak,
+    bump: bump, stat: stat, unlockAch: unlockAch, hasAch: hasAch,
+    reset: reset
   };
+})();
+
+// ===================== MODULE: 55-log.js =====================
+/* PERIHELION — Observer's Log: lifetime statistics and honours (owner: LOG AGENT).
+   Log.event(name, data) is called by the game (see docs/CONTRACT-v2.md §4). It never throws: every step is wrapped, and
+   it works if Save is memory-only. Counters live in Save.data.stats (via Save.bump); unlocked honours in Save.data.ach.
+   Honours are idempotent (Save.unlockAch returns true once) and are re-evaluated after every event, so cumulative ones
+   also unlock retroactively for saves that predate this module.
+
+   Interface notes:
+   - flightEnd is the one place fragments and flight statistics are counted, so each is counted exactly once per flight.
+     Fragments are counted from the delta of fragsThisAttempt since the previous event of the same attempt (the counter
+     persists across the launches of one attempt; a 'launch' with launchNo 1, a different plate, or a smaller value
+     starts a new attempt). plateSealed only tops up if a pickup was somehow not seen by flightEnd.
+   - "clean sweep" compares fragsThisAttempt with the number of fragments on the plate (level.frags.length; falls back to
+     data.fragsTotal when no level is given).
+   - Campaign-only counts (cartographer, volumes, perfectionist, self_reliant) use plateIndex >= 0 and treat the plate being
+     sealed as sealed even if Save.recordPlate has not run yet. */
+var Log = (function () {
+  var ROM_VOL = [{ from: 0, to: 29 }, { from: 30, to: 59 }];
+
+  // ---- honours -------------------------------------------------------------------------------------------------------
+  // Each: id, name, blurb, test(c) -> bool. `c` is the evaluation context (see ctx()). `ev` limits event-driven tests.
+  function sealedAll(c, from, to, min) {
+    for (var i = from; i <= to; i++) if ((c.stars[i] || 0) < min) return false;
+    return true;
+  }
+  function hasKind(level, kind) {
+    var b = level && level.bodies;
+    if (!b) return false;
+    for (var i = 0; i < b.length; i++) if (b[i] && b[i].kind === kind) return true;
+    return false;
+  }
+  function hasPair(level) {
+    var b = level && level.bodies;
+    if (!b) return false;
+    for (var i = 0; i < b.length; i++) if (b[i] && b[i].pair !== undefined && b[i].pair !== null) return true;
+    return false;
+  }
+  function sealedNow(c) { return c.ev === 'plateSealed'; }
+  function oneShot(c) { return sealedNow(c) && c.data.launches === 1; }
+
+  var LIST = [
+    { id: 'first_light', name: 'First Light', blurb: 'Seal any plate.',
+      test: function (c) { return sealedNow(c); } },
+    { id: 'thread_needle', name: 'Threading the Needle', blurb: 'Win a flight that passes within 12 units of a body.',
+      test: function (c) { return c.ev === 'flightEnd' && c.win && c.minGap <= 12; } },
+    { id: 'near_ten', name: 'Ten Near Misses', blurb: 'Graze a body within 20 units, ten times over.',
+      test: function (c) { return c.stat('nearMiss') >= 10; } },
+    // A flight ends the instant it crosses the ring's edge, so minDist is about the ring radius on every win and
+    // "within 8 units of the centre" could never be met. The honour is judged on the heading at entry instead (within
+    // 8 degrees of the ring's centre); minDist <= 8 also qualifies (only possible for a tiny ring).
+    { id: 'dead_center', name: 'Dead Centre', blurb: 'Win with the probe heading straight for the ring’s centre.',
+      test: function (c) { return c.ev === 'flightEnd' && c.win && (c.aimOff <= 8 || c.minDist <= 8); } },
+    { id: 'clean_sweep', name: 'The Clean Sweep', blurb: 'Gather every fragment of a plate in one attempt, and seal it.',
+      test: function (c) { return sealedNow(c) && c.fragsPlate >= 2 && c.fragsAttempt >= c.fragsPlate; } },
+    { id: 'one_shot_ten', name: 'Ten True Shots', blurb: 'Earn three stars on ten plates.',
+      test: function (c) { return c.totals.threeStar >= 10; } },
+    { id: 'cartographer_10', name: 'Apprentice Cartographer', blurb: 'Seal ten plates of the Atlas.',
+      test: function (c) { return c.totals.sealed >= 10; } },
+    { id: 'cartographer_30', name: 'Journeyman Cartographer', blurb: 'Seal thirty plates of the Atlas.',
+      test: function (c) { return c.totals.sealed >= 30; } },
+    { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal all sixty plates of the Atlas.',
+      test: function (c) { return c.totals.sealed >= 60; } },
+    { id: 'volume_one', name: 'Volume I, Complete', blurb: 'Seal every plate of Volume I.',
+      test: function (c) { return sealedAll(c, ROM_VOL[0].from, ROM_VOL[0].to, 1); } },
+    { id: 'volume_two', name: 'Volume II, Complete', blurb: 'Seal every plate of Volume II.',
+      test: function (c) { return sealedAll(c, ROM_VOL[1].from, ROM_VOL[1].to, 1); } },
+    { id: 'perfectionist', name: 'The Perfectionist', blurb: 'Three stars on every plate of Volume I.',
+      test: function (c) { return sealedAll(c, ROM_VOL[0].from, ROM_VOL[0].to, 3); } },
+    { id: 'event_horizon', name: 'Event Horizon', blurb: 'Seal a plate holding a black hole with a single launch.',
+      test: function (c) { return oneShot(c) && hasKind(c.level, 'blackhole'); } },
+    { id: 'contrary_star', name: 'Contrary Star', blurb: 'Seal a plate holding a repulsor with a single launch.',
+      test: function (c) { return oneShot(c) && hasKind(c.level, 'repulsor'); } },
+    { id: 'binary_star', name: 'Binary Star', blurb: 'Seal a plate holding a binary pair with a single launch.',
+      test: function (c) { return oneShot(c) && hasPair(c.level); } },
+    { id: 'persistence', name: 'Persistence of Vision', blurb: 'Seal a plate on your third and final launch.',
+      test: function (c) { return sealedNow(c) && c.data.launches === 3; } },
+    { id: 'long_way_round', name: 'The Long Way Round', blurb: 'Win with a flight of 960 steps or more.',
+      test: function (c) { return c.ev === 'flightEnd' && c.win && c.steps >= 960; } },
+    { id: 'comet_hunter', name: 'Comet Hunter', blurb: 'Gather twenty-five comet fragments.',
+      test: function (c) { return c.stat('frags') >= 25; } },
+    { id: 'apprentice', name: 'The Astronomer’s Apprentice', blurb: 'Consult the Astronomer for the first time.',
+      test: function (c) { return c.stat('hints') >= 1; } },
+    { id: 'self_reliant', name: 'Self-Reliant', blurb: 'Seal twenty plates without consulting the Astronomer.',
+      test: function (c) { return c.stat('platesNoHint') >= 20; } },
+    { id: 'daily_3', name: 'Three Nights Running', blurb: 'Seal the Daily Plate three days in a row.',
+      test: function (c) { return c.dailyBest >= 3; } },
+    { id: 'daily_7', name: 'A Week at the Eyepiece', blurb: 'Seal the Daily Plate seven days in a row.',
+      test: function (c) { return c.dailyBest >= 7; } },
+    { id: 'daily_30', name: 'A Month of Nights', blurb: 'Seal the Daily Plate thirty days in a row.',
+      test: function (c) { return c.dailyBest >= 30; } },
+    { id: 'daily_perfect', name: 'Plate of the Day', blurb: 'Seal a Daily Plate with a single launch.',
+      test: function (c) { return c.ev === 'daily' && c.data.launches === 1; } },
+    { id: 'endless_5', name: 'Deep Survey', blurb: 'Reach round five of the Endless Survey.',
+      test: function (c) { return c.endlessRound >= 5; } },
+    { id: 'endless_10', name: 'Uncharted Waters', blurb: 'Reach round ten of the Endless Survey.',
+      test: function (c) { return c.endlessRound >= 10; } }
+  ];
+
+  var ACHIEVEMENTS = LIST.map(function (a) { return { id: a.id, name: a.name, blurb: a.blurb }; });
+
+  // ---- helpers -------------------------------------------------------------------------------------------------------
+  var STAT_NAMES = ['launches', 'wins', 'losses', 'crashes', 'lost', 'distance', 'frags', 'hints', 'nearMiss', 'threads',
+    'platesNoHint', 'dailyWins', 'endlessRounds'];
+
+  function num(x, dflt) { x = Number(x); return isFinite(x) ? x : dflt; }
+  function stat(n) { try { return Save.stat(n) || 0; } catch (e) { return 0; } }
+  function bump(n, v) { try { Save.bump(n, v); } catch (e) {} }
+
+  // angle in degrees between the probe's velocity and the direction to the ring's centre (Infinity if unknown)
+  function aimOffset(sim, level) {
+    try {
+      var t = level.target, hx = t.x - sim.x, hy = t.y - sim.y, vx = sim.vx, vy = sim.vy;
+      var a = Math.sqrt(hx * hx + hy * hy), b = Math.sqrt(vx * vx + vy * vy);
+      if (!(a > 0 && b > 0)) return Infinity;
+      var c = (hx * vx + hy * vy) / (a * b);
+      return Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
+    } catch (e) { return Infinity; }
+  }
+
+  // attempt tracking for fragment deltas
+  var att = { level: null, frags: 0 };
+  function attemptFor(level) {
+    var id = level && level.id !== undefined ? level.id : null;
+    if (att.level !== id) { att.level = id; att.frags = 0; }
+  }
+  function fragDelta(level, fragsNow) {
+    attemptFor(level);
+    fragsNow = Math.max(0, Math.floor(num(fragsNow, 0)));
+    if (fragsNow < att.frags) att.frags = 0;
+    var d = fragsNow - att.frags;
+    att.frags = fragsNow;
+    return d;
+  }
+
+  // stars as the achievements should see them (the plate being sealed counts even if Save.recordPlate has not run yet)
+  function starsNow(pending) {
+    var a = [], i, src = null;
+    try { src = Save.data.stars; } catch (e) {}
+    var n = 60; try { n = Save.N || 60; } catch (e) {}
+    for (i = 0; i < n; i++) a.push(src && src[i] ? src[i] : 0);
+    if (pending && pending.idx >= 0 && pending.idx < n) a[pending.idx] = Math.max(a[pending.idx], pending.stars > 0 ? pending.stars : 1);
+    return a;
+  }
+  function totalsOf(stars) {
+    var s = 0, sealed = 0, three = 0, f = 0;
+    for (var i = 0; i < stars.length; i++) { s += stars[i]; if (stars[i] > 0) sealed++; if (stars[i] === 3) three++; }
+    try { f = Save.totals().frags; } catch (e) {}
+    return { stars: s, frags: f, sealed: sealed, threeStar: three };
+  }
+
+  // ---- evaluation ----------------------------------------------------------------------------------------------------
+  function announce(a) {
+    var shown = false;
+    try {
+      if (typeof LogUI !== 'undefined' && LogUI.toast) { LogUI.toast(a.name, a.blurb, { ach: true }); shown = true; }
+    } catch (e) {}
+    if (!shown) { try { if (typeof Sound !== 'undefined' && Sound.ach) Sound.ach(); } catch (e) {} }
+  }
+
+  // ctx: { ev, data, level, win, minGap, minDist, steps, ... } (event-specific fields default to non-triggering values)
+  function evaluate(c) {
+    var unlocked = [];
+    var stars = c.stars || starsNow(null);
+    var full = {
+      ev: c.ev, data: c.data || {}, level: c.level || null, win: !!c.win,
+      minGap: c.minGap === undefined ? Infinity : c.minGap, minDist: c.minDist === undefined ? Infinity : c.minDist,
+      steps: c.steps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
+      endlessRound: c.endlessRound || 0,
+      stars: stars, totals: c.totals || totalsOf(stars), stat: stat, dailyBest: 0
+    };
+    try { var dl = Save.data.daily; full.dailyBest = Math.max(dl.best || 0, dl.streak || 0, c.dailyStreak || 0, c.dailyBest || 0); } catch (e) {}
+    if (c.dailyBest) full.dailyBest = Math.max(full.dailyBest, c.dailyBest);
+    try { full.endlessRound = Math.max(full.endlessRound, Save.data.stats.endlessBestRound || 0); } catch (e) {}
+    for (var i = 0; i < LIST.length; i++) {
+      var a = LIST[i];
+      try {
+        if (Save.hasAch(a.id)) continue;
+        if (a.test(full) && Save.unlockAch(a.id)) unlocked.push(a);
+      } catch (e) {}
+    }
+    var MAXT = 5;
+    for (var j = 0; j < unlocked.length; j++) {
+      if (j < MAXT) announce(unlocked[j]);
+      else if (j === MAXT) {
+        try {
+          if (typeof LogUI !== 'undefined' && LogUI.toast) LogUI.toast((unlocked.length - MAXT) + ' further honours', 'See the Observer’s Log.', { ach: true });
+        } catch (e) {}
+      }
+    }
+    return unlocked;
+  }
+
+  // ---- events --------------------------------------------------------------------------------------------------------
+  function isWin(status) { return status === 'hit'; }
+
+  var handlers = {
+    launch: function (d) {
+      bump('launches');
+      if (num(d.launchNo, 1) <= 1) { att.frags = 0; }
+      return { ev: 'launch', data: d };
+    },
+
+    flightEnd: function (d) {
+      var sim = d.sim || {}, status = d.status, win = isWin(status);
+      bump(win ? 'wins' : 'losses');
+      if (status === 'crash' || status === 'captured') bump('crashes');
+      else if (status === 'lost' || status === 'timeout') bump('lost');
+      var dist = num(sim.dist, 0); if (dist > 0) bump('distance', Math.round(dist));
+      var gap = num(sim.minGap, Infinity);
+      var wrecked = status === 'crash' || status === 'captured';
+      if (gap <= 20 && !wrecked) bump('nearMiss');
+      if (win && gap <= 12) bump('threads');
+      var fd = fragDelta(d.level, d.fragsThisAttempt);
+      if (fd > 0) bump('frags', fd);
+      return { ev: 'flightEnd', data: d, level: d.level, win: win, minGap: gap, minDist: num(sim.minDist, Infinity),
+        steps: num(sim.step, 0), aimOff: win ? aimOffset(sim, d.level) : Infinity };
+    },
+
+    plateSealed: function (d) {
+      var level = d.level || null;
+      var fd = fragDelta(level, d.fragsThisAttempt);          // top-up only; normally already counted by flightEnd
+      if (fd > 0) bump('frags', fd);
+      var idx = num(d.plateIndex, -1);
+      if (idx >= 0 && !d.hintUsed) bump('platesNoHint');
+      var stars = starsNow({ idx: idx, stars: num(d.stars, 1) });
+      var plateFrags = level && level.frags ? level.frags.length : num(d.fragsTotal, 0);
+      return { ev: 'plateSealed', data: d, level: level, stars: stars, totals: totalsOf(stars),
+        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)) };
+    },
+
+    hint: function (d) {
+      bump('hints');
+      return { ev: 'hint', data: d, level: d.level };
+    },
+
+    daily: function (d) {
+      if (d.first !== false) bump('dailyWins');
+      return { ev: 'daily', data: d, dailyStreak: num(d.streak, 0), dailyBest: Math.max(num(d.best, 0), num(d.streak, 0)) };
+    },
+
+    endlessRound: function (d) {
+      bump('endlessRounds');
+      var r = Math.floor(num(d.round, 0));
+      try { if (r > (Save.data.stats.endlessBestRound || 0)) Save.data.stats.endlessBestRound = Math.min(r, 1e6); } catch (e) {}
+      return { ev: 'endlessRound', data: d, endlessRound: r };
+    }
+  };
+
+  function event(name, data) {
+    try {
+      var h = handlers[name];
+      if (!h) return;
+      var d = data && typeof data === 'object' ? data : {};
+      var c = null;
+      try { c = h(d); } catch (e) { c = { ev: name, data: d }; }
+      try { evaluate(c); } catch (e) {}
+      try { Save.write(); } catch (e) {}
+    } catch (e) { /* never throws */ }
+  }
+
+  // ---- snapshot ------------------------------------------------------------------------------------------------------
+  function snapshot() {
+    var out = { totals: { stars: 0, frags: 0, sealed: 0, threeStar: 0 }, daily: { streak: 0, best: 0, last: '', done: {} },
+      achievements: [], stats: {} };
+    try { out.totals = Save.totals(); } catch (e) {}
+    try {
+      var dl = Save.data.daily, done = {}, k;
+      for (k in dl.done) done[k] = dl.done[k];
+      out.daily = { streak: Save.dailyStreak(), best: Math.max(dl.best || 0, Save.dailyStreak()), last: dl.last || '', done: done };
+    } catch (e) {}
+    var i, id;
+    for (i = 0; i < LIST.length; i++) {
+      id = LIST[i].id;
+      var date = null;
+      try { date = Save.data.ach[id] || null; } catch (e) {}
+      out.achievements.push({ id: id, name: LIST[i].name, blurb: LIST[i].blurb, unlocked: !!date, date: date });
+    }
+    for (i = 0; i < STAT_NAMES.length; i++) out.stats[STAT_NAMES[i]] = stat(STAT_NAMES[i]);
+    try { for (var s in Save.data.stats) if (out.stats[s] === undefined) out.stats[s] = Save.data.stats[s]; } catch (e) {}
+    out.stats.hitRate = out.stats.launches > 0 ? Math.min(1, out.stats.wins / out.stats.launches) : 0;
+    return out;
+  }
+
+  return { ACHIEVEMENTS: ACHIEVEMENTS, event: event, snapshot: snapshot };
+})();
+
+// ===================== MODULE: 56-logui.js =====================
+/* PERIHELION — Observer's Log screen and toasts (owner: LOG AGENT).
+   LogUI.open(onClose)  full-screen page, like the Atlas: totals, the Daily Plate strip, honours. onClose runs when the
+                        player leaves with the back button (or Escape); LogUI.close() hides it silently.
+   LogUI.close()
+   LogUI.toast(title, subtitle, opts)  small engraved banner at top centre, queued, ~3 s each, pointer-events: none.
+                        opts: { kicker: 'Observation recorded', ach: true } — ach plays Sound.ach() as the banner appears.
+   The DOM and the single <style id="logui-css"> are built lazily on first use. Nothing here throws. */
+var LogUI = (function () {
+  var doc = (typeof document !== 'undefined') ? document : null;
+  var root = null, scroller = null, backBtn = null, onCloseCb = null, isOpen = false;
+  var tHost = null, tQueue = [], tBusy = false;
+  var SHOW_MS = 3000, FADE_MS = 250;
+
+  var CSS = [
+    '#logui, #logui-toasts {',
+    '  --lg-ink: var(--ink, #0E0D0B); --lg-paper: var(--paper, #EDE6D6); --lg-graphite: var(--graphite, #2A2620);',
+    '  --lg-brass: var(--brass, #C9A45C); --lg-vermilion: var(--vermilion, #E4572E);',
+    '  --lg-p90: var(--paper-90, rgba(237,230,214,.9)); --lg-p75: var(--paper-75, rgba(237,230,214,.75));',
+    '  --lg-p60: var(--paper-60, rgba(237,230,214,.6)); --lg-p45: var(--paper-45, rgba(237,230,214,.45));',
+    '  --lg-hair: var(--hair, rgba(237,230,214,.42)); --lg-hairf: var(--hair-faint, rgba(237,230,214,.17));',
+    '  --lg-press: var(--press, rgba(237,230,214,.08)); --lg-bh: var(--brass-hair, rgba(201,164,92,.72));',
+    '  --lg-bf: var(--brass-faint, rgba(201,164,92,.3));',
+    '  --lg-sc: var(--sc, "Cormorant SC", "Cormorant Garamond", Georgia, "Times New Roman", serif);',
+    '  --lg-serif: var(--serif, "Cormorant Garamond", Georgia, "Times New Roman", serif);',
+    '  --lg-mono: var(--mono, "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace);',
+    '  --lg-ease: var(--ease, cubic-bezier(.22,.8,.26,1));',
+    '  --lg-sat: env(safe-area-inset-top, 0px); --lg-sar: env(safe-area-inset-right, 0px);',
+    '  --lg-sab: env(safe-area-inset-bottom, 0px); --lg-sal: env(safe-area-inset-left, 0px);',
+    '  box-sizing: border-box; font-family: var(--lg-serif); -webkit-font-smoothing: antialiased;',
+    '  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;',
+    '}',
+    '#logui *, #logui-toasts * { box-sizing: border-box; }',
+    '#logui { position: fixed; inset: 0; z-index: 60; background: var(--lg-ink); color: var(--lg-paper);',
+    '  display: flex; flex-direction: column; opacity: 0; visibility: hidden; transform: translateY(8px); pointer-events: none;',
+    '  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;',
+    '  transition: opacity 250ms var(--lg-ease), transform 250ms var(--lg-ease), visibility 0s linear 250ms; }',
+    '#logui.on { opacity: 1; visibility: visible; transform: none; pointer-events: auto;',
+    '  transition: opacity 250ms var(--lg-ease), transform 250ms var(--lg-ease), visibility 0s linear 0s; }',
+    '#logui .lg-caps { font-variant-caps: small-caps; }',
+
+    /* header, as the Atlas */
+    '#logui .lg-head { flex: none; position: relative; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;',
+    '  padding: calc(var(--lg-sat) + 50px) calc(var(--lg-sar) + 16px) 12px calc(var(--lg-sal) + 16px);',
+    '  border-bottom: 3px double var(--lg-hairf); }',
+    '#logui .lg-back { -webkit-appearance: none; appearance: none; position: absolute; left: calc(var(--lg-sal) + 4px); top: calc(var(--lg-sat) + 6px);',
+    '  background: none; border: 0; border-radius: 0; color: var(--lg-p60); font: 600 14px/1 var(--lg-sc); font-variant-caps: small-caps;',
+    '  letter-spacing: .18em; min-height: 44px; min-width: 44px; padding: 0 12px 2px; cursor: pointer; touch-action: manipulation;',
+    '  transition: color 200ms var(--lg-ease); }',
+    '#logui .lg-back:active { color: var(--lg-paper); }',
+    '#logui .lg-back:focus { outline: none; }',
+    '#logui .lg-scroll:focus { outline: none; }',
+    '#logui .lg-back:focus-visible { outline: 1px solid var(--lg-brass); outline-offset: 3px; }',
+    '#logui .lg-title { font: 600 25px/1.1 var(--lg-sc); font-variant-caps: small-caps; letter-spacing: .14em; padding-left: .14em;',
+    '  margin: 0; color: var(--lg-paper); text-wrap: balance; }',
+    '#logui .lg-rule { width: min(46vw, 220px); height: 4px; border-top: 1px solid var(--lg-hairf); border-bottom: 1px solid var(--lg-hairf); }',
+    '#logui .lg-sub { margin: 0; font: italic 500 15px/1.2 var(--lg-serif); color: var(--lg-p60); }',
+
+    /* scroll body */
+    '#logui .lg-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; touch-action: pan-y;',
+    '  overscroll-behavior: contain; padding: 4px calc(var(--lg-sar) + 16px) calc(var(--lg-sab) + 32px) calc(var(--lg-sal) + 16px); }',
+    '#logui .lg-page { max-width: 600px; margin: 0 auto; }',
+    '#logui .lg-sec { margin-top: 26px; }',
+    '#logui .lg-h { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; font: 600 15px/1 var(--lg-sc); font-variant-caps: small-caps;',
+    '  letter-spacing: .24em; color: var(--lg-p90); }',
+    '#logui .lg-h::before, #logui .lg-h::after { content: ""; flex: 1; height: 4px; border-top: 1px solid var(--lg-hairf); border-bottom: 1px solid var(--lg-hairf); }',
+    '#logui .lg-h span { padding: 0 0 2px .24em; }',
+    '#logui .lg-note { margin: 12px 0 0; text-align: center; font: italic 500 16px/1.25 var(--lg-serif); color: var(--lg-p60); }',
+
+    /* observations */
+    '#logui .lg-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }',
+    '#logui .lg-fig { border: 1px solid var(--lg-hairf); padding: 12px 8px 10px; text-align: center; display: flex; flex-direction: column; gap: 7px; align-items: center; }',
+    '#logui .lg-fig b { font: 400 26px/1 var(--lg-mono); font-variant-numeric: tabular-nums; color: var(--lg-paper); letter-spacing: -.02em; }',
+    '#logui .lg-fig b i { font-style: normal; font-size: 14px; color: var(--lg-p45); letter-spacing: 0; }',
+    '#logui .lg-fig span { font: 600 12px/1.1 var(--lg-sc); font-variant-caps: small-caps; letter-spacing: .18em; color: var(--lg-p60); padding-left: .18em; }',
+    '#logui .lg-fig.brass { border-color: var(--lg-bf); }',
+    '#logui .lg-fig.brass b { color: var(--lg-brass); }',
+    '#logui .lg-ledger { list-style: none; margin: 14px 0 0; padding: 0; }',
+    '#logui .lg-ledger li { display: flex; align-items: baseline; gap: 8px; min-height: 32px; padding: 6px 2px 4px; border-bottom: 1px solid var(--lg-hairf); }',
+    '#logui .lg-ledger li:last-child { border-bottom: 0; }',
+    '#logui .lg-ledger span { font: 600 14px/1.1 var(--lg-sc); font-variant-caps: small-caps; letter-spacing: .16em; color: var(--lg-p75); }',
+    '#logui .lg-ledger em { flex: 1; align-self: flex-end; height: 0; margin-bottom: 5px; border-bottom: 1px dotted var(--lg-hairf); }',
+    '#logui .lg-ledger b { font: 400 14px/1.1 var(--lg-mono); font-variant-numeric: tabular-nums; color: var(--lg-paper); }',
+    '#logui .lg-ledger b i { font-style: normal; color: var(--lg-p45); font-size: 11px; margin-left: 3px; }',
+
+    /* daily plate */
+    '#logui .lg-dfigs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }',
+    '#logui .lg-strip { list-style: none; margin: 12px 0 0; padding: 0 0 0; display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); }',
+    '#logui .lg-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 66px;',
+    '  border-bottom: 1px solid var(--lg-hair); }',
+    '#logui .lg-day .lg-tick { display: block; width: 1px; height: 9px; background: var(--lg-graphite); }',
+    '#logui .lg-day.got .lg-tick { width: 5px; height: 22px; background: var(--lg-brass); }',
+    '#logui .lg-day.today:not(.got) .lg-tick { width: 1px; height: 14px; background: var(--lg-p60); }',
+    '#logui .lg-pips { display: flex; flex-direction: column-reverse; align-items: center; gap: 1px; margin-bottom: 4px; min-height: 0; }',
+    '#logui .lg-pips svg { display: block; width: 8px; height: 8px; fill: var(--lg-brass); }',
+    '#logui .lg-day .lg-d { position: absolute; top: 100%; left: 0; right: 0; margin-top: 5px; text-align: center; font: 400 9.5px/1 var(--lg-mono); color: var(--lg-p45); }',
+    '#logui .lg-day.got .lg-d { color: var(--lg-p75); }',
+    '#logui .lg-day.today .lg-d { color: var(--lg-paper); }',
+    '#logui .lg-day .lg-w { position: absolute; top: 100%; left: 0; right: 0; margin-top: 18px; text-align: center; font: 600 10px/1 var(--lg-sc); font-variant-caps: small-caps; color: var(--lg-p45); }',
+    '#logui .lg-strip-wrap { padding-bottom: 34px; }',
+    '#logui .lg-legend { margin: 0; text-align: center; font: italic 500 14px/1.2 var(--lg-serif); color: var(--lg-p60); }',
+
+    /* honours */
+    '#logui .lg-count { margin: -4px 0 14px; text-align: center; font: italic 500 16px/1.2 var(--lg-serif); color: var(--lg-p75); }',
+    '#logui .lg-count b { font: 400 13px/1 var(--lg-mono); font-style: normal; color: var(--lg-brass); }',
+    '#logui .lg-honours { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }',
+    '#logui .lg-hon { border: 1px solid var(--lg-hairf); padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }',
+    '#logui .lg-hon .lg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }',
+    '#logui .lg-hon .lg-n { font: 400 12px/1 var(--lg-mono); color: var(--lg-p45); }',
+    '#logui .lg-hon .lg-dt { font: 400 9.5px/1 var(--lg-mono); color: var(--lg-brass); opacity: .85; }',
+    '#logui .lg-hon .lg-nm { font: 600 16px/1.1 var(--lg-sc); font-variant-caps: small-caps; letter-spacing: .08em; color: var(--lg-p60); overflow-wrap: anywhere; }',
+    '#logui .lg-hon .lg-bl { margin: 0; font: italic 500 14px/1.2 var(--lg-serif); color: var(--lg-p60); }',
+    '#logui .lg-hon.got { border-color: var(--lg-bf); outline: 1px solid var(--lg-hairf); outline-offset: -4px; }',
+    '#logui .lg-hon.got .lg-n { color: var(--lg-brass); }',
+    '#logui .lg-hon.got .lg-nm { color: var(--lg-paper); }',
+    '#logui .lg-hon.got .lg-bl { color: var(--lg-p75); }',
+    '#logui .lg-colophon { margin: 26px auto 0; text-align: center; font: italic 500 15px/1.25 var(--lg-serif); color: var(--lg-p45); max-width: 20em; }',
+
+    /* short landscape screens */
+    '@media (max-height: 520px) {',
+    '  #logui .lg-head { padding-top: calc(var(--lg-sat) + 8px); padding-bottom: 8px; gap: 5px; }',
+    '  #logui .lg-back { top: calc(var(--lg-sat) + 2px); }',
+    '  #logui .lg-title { font-size: 21px; margin-top: 2px; }',
+    '  #logui .lg-sub { display: none; }',
+    '  #logui .lg-figs { grid-template-columns: repeat(4, 1fr); }',
+    '  #logui .lg-fig { padding: 10px 4px 8px; }',
+    '  #logui .lg-fig b { font-size: 22px; }',
+    '  #logui .lg-page { max-width: 700px; }',
+    '}',
+    '@media (max-width: 340px) { #logui .lg-honours { grid-template-columns: 1fr; } }',
+
+    /* toasts */
+    '#logui-toasts { position: fixed; left: 0; right: 0; top: calc(var(--lg-sat) + 8px); z-index: 1000; display: flex; justify-content: center;',
+    '  padding: 0 calc(var(--lg-sar) + 12px) 0 calc(var(--lg-sal) + 12px); pointer-events: none; }',
+    '#logui-toasts .lg-toast { width: min(340px, 100%); padding: 9px 14px 11px; text-align: center; pointer-events: none; background: var(--lg-ink);',
+    '  border: 1px solid var(--lg-bh); outline: 1px solid var(--lg-bf); outline-offset: -5px;',
+    '  display: flex; flex-direction: column; align-items: center; gap: 3px;',
+    '  opacity: 0; transform: translateY(-8px); transition: opacity 250ms var(--lg-ease), transform 250ms var(--lg-ease); }',
+    '#logui-toasts .lg-toast.on { opacity: 1; transform: none; }',
+    /* compact form (whenever the Log page is not open): ONE line, kicker + name, ~32 px */
+    '#logui-toasts .lg-toast.compact { width: auto; max-width: 100%; flex-direction: row; align-items: baseline; justify-content: center; gap: 9px; padding: 5px 13px 6px; outline-offset: -3px; }',
+    '#logui-toasts .lg-toast.compact .lg-tk { flex: none; font-size: 8.5px; letter-spacing: .2em; padding-left: 0; }',
+    '#logui-toasts .lg-toast.compact .lg-tt { font-size: 15px; letter-spacing: .07em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }',
+    '#logui-toasts .lg-tk { margin: 0; font: 600 10px/1 var(--lg-sc); font-variant-caps: small-caps; letter-spacing: .26em; padding-left: .26em; color: var(--lg-brass); }',
+    '#logui-toasts .lg-tt { margin: 0; font: 600 19px/1.1 var(--lg-sc); font-variant-caps: small-caps; letter-spacing: .1em; color: var(--lg-paper); }',
+    '#logui-toasts .lg-ts { margin: 0; font: italic 500 15px/1.2 var(--lg-serif); color: var(--lg-p75); }',
+
+    '@media (prefers-reduced-motion: reduce) {',
+    '  #logui, #logui.on, #logui-toasts .lg-toast, #logui-toasts .lg-toast.on { transition-duration: 1ms !important; transition-delay: 0s !important; }',
+    '  #logui, #logui-toasts .lg-toast { transform: none !important; }',
+    '}'
+  ].join('\n');
+
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function fmt(n) {
+    n = Math.round(Number(n) || 0);
+    var s = String(Math.abs(n)), out = '';
+    while (s.length > 3) { out = ',' + s.slice(-3) + out; s = s.slice(0, -3); }
+    return (n < 0 ? '-' : '') + s + out;
+  }
+
+  function injectCss() {
+    if (!doc || doc.getElementById('logui-css')) return;
+    var st = doc.createElement('style');
+    st.id = 'logui-css';
+    st.textContent = CSS;
+    (doc.head || doc.documentElement).appendChild(st);
+  }
+
+  // ---------------------------------------------------------------- the Log screen
+  var STAR = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M5 .4l1.5 3.2 3.5.4-2.6 2.4.7 3.5L5 8.1 1.9 9.9l.7-3.5L0 4l3.5-.4z"/></svg>';
+  var DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  function lastDays(n) {
+    var keys = [], k = Save.dateKey();
+    for (var i = 0; i < n; i++) { keys.unshift(k); k = Save.prevKey(k); }
+    return keys;
+  }
+  function dailyStrip(snap) {
+    var keys = lastDays(14), done = (snap.daily && snap.daily.done) || {}, h = '', today = keys[keys.length - 1];
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], st = done[k] || 0, p = k.split('-'), dow = new Date(+p[0], +p[1] - 1, +p[2], 12).getDay();
+      var pips = '';
+      for (var s = 0; s < st; s++) pips += STAR;
+      h += '<li class="lg-day' + (st > 0 ? ' got' : '') + (k === today ? ' today' : '') + '" aria-label="' + esc(k) + (st > 0 ? ', sealed, ' + st + (st === 1 ? ' star' : ' stars') : k === today ? ', not yet sealed' : ', missed') + '">' +
+        (st > 0 ? '<span class="lg-pips">' + pips + '</span>' : '') + '<i class="lg-tick"></i>' +
+        '<span class="lg-d">' + (+p[2]) + '</span><span class="lg-w">' + DOW[dow] + '</span></li>';
+    }
+    return '<ol class="lg-strip">' + h + '</ol>';
+  }
+
+  function fig(label, value, unit, cls) {
+    return '<div class="lg-fig' + (cls ? ' ' + cls : '') + '"><b>' + value + (unit ? '<i>' + unit + '</i>' : '') + '</b><span>' + esc(label) + '</span></div>';
+  }
+  function row(label, value, unit) {
+    return '<li><span>' + esc(label) + '</span><em></em><b>' + value + (unit ? '<i>' + unit + '</i>' : '') + '</b></li>';
+  }
+
+  function render(snap) {
+    var t = snap.totals || {}, st = snap.stats || {}, dl = snap.daily || {}, ach = snap.achievements || [];
+    var N = 60; try { N = Save.N || 60; } catch (e) {}
+    var got = 0, i;
+    for (i = 0; i < ach.length; i++) if (ach[i].unlocked) got++;
+    var hit = st.launches > 0 ? Math.round(100 * (st.hitRate || 0)) + '<i>%</i>' : '&mdash;';
+    var frags = Math.max(st.frags || 0, t.frags || 0);
+    var h = '<div class="lg-page">';
+
+    h += '<section class="lg-sec" style="margin-top:18px"><h3 class="lg-h"><span>Observations</span></h3>';
+    h += '<div class="lg-figs">' +
+      fig('Plates sealed', fmt(t.sealed || 0) + '<i>/' + N + '</i>', '', 'brass') +
+      fig('Stars', fmt(t.stars || 0) + '<i>/' + (3 * N) + '</i>', '', 'brass') +
+      fig('Fragments', fmt(frags)) +
+      fig('Launches', fmt(st.launches || 0)) + '</div>';
+    h += '<ul class="lg-ledger">' +
+      row('Hit rate', hit) +
+      row('Distance flown', fmt(st.distance || 0), 'u') +
+      row('Near misses', fmt(st.nearMiss || 0)) +
+      row('Needles threaded', fmt(st.threads || 0)) + '</ul>';
+    if (!(st.launches > 0)) h += '<p class="lg-note">Nothing observed as yet. The log fills as you fly.</p>';
+    h += '</section>';
+
+    h += '<section class="lg-sec"><h3 class="lg-h"><span>The Daily Plate</span></h3>';
+    h += '<div class="lg-dfigs">' + fig('Current streak', fmt(dl.streak || 0), '', (dl.streak > 0) ? 'brass' : '') + fig('Best streak', fmt(dl.best || 0)) + '</div>';
+    h += '<div class="lg-strip-wrap">' + dailyStrip(snap) + '</div>';
+    h += '<p class="lg-legend">The last fortnight: a brass mark for each plate sealed, and a star for each earned.</p></section>';
+
+    h += '<section class="lg-sec"><h3 class="lg-h"><span>Instruments &amp; Honours</span></h3>';
+    h += '<p class="lg-count"><b>' + got + '</b> of <b>' + ach.length + '</b> honours recorded</p><ul class="lg-honours">';
+    for (i = 0; i < ach.length; i++) {
+      var a = ach[i], n = (i + 1 < 10 ? '0' : '') + (i + 1);
+      h += '<li class="lg-hon' + (a.unlocked ? ' got' : '') + '" data-id="' + esc(a.id) + '"><div class="lg-top"><span class="lg-n">' + n + '</span>' +
+        (a.unlocked && a.date ? '<span class="lg-dt">' + esc(a.date) + '</span>' : '') + '</div>' +
+        '<div class="lg-nm">' + esc(a.name) + '</div><p class="lg-bl">' + esc(a.blurb) + '</p></li>';
+    }
+    h += '</ul></section>';
+    h += '<p class="lg-colophon">Set down by the observer, for the record of the Atlas.</p></div>';
+    scroller.innerHTML = h;
+  }
+
+  function build() {
+    if (root || !doc) return;
+    injectCss();
+    root = doc.createElement('div');
+    root.id = 'logui';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-label', 'The Observer’s Log');
+    root.setAttribute('aria-hidden', 'true');
+    root.innerHTML = '<header class="lg-head"><button class="lg-back" type="button">&lsaquo; Title</button>' +
+      '<h2 class="lg-title">The Observer’s Log</h2><div class="lg-rule"></div>' +
+      '<p class="lg-sub">Observations, honours and the daily plate</p></header>' +
+      '<div class="lg-scroll scroll" tabindex="-1"></div>';
+    backBtn = root.querySelector('.lg-back');
+    scroller = root.querySelector('.lg-scroll');
+    backBtn.addEventListener('click', function (e) { e.preventDefault(); back(); });
+    // keep the game beneath from seeing any gesture, and let the page's own touchmove guard (which blocks scrolling
+    // outside .scroll) stand aside so this page scrolls on iOS
+    ['pointerdown', 'pointermove', 'pointerup', 'touchstart', 'touchmove', 'touchend', 'mousedown', 'wheel'].forEach(function (t) {
+      root.addEventListener(t, function (e) { e.stopPropagation(); }, { passive: true });
+    });
+    (doc.body || doc.documentElement).appendChild(root);
+  }
+
+  function onKey(e) {
+    if (e.key === 'Escape' && isOpen) { e.preventDefault(); e.stopPropagation(); back(); }
+  }
+
+  function open(onClose) {
+    try {
+      if (!doc) { if (onClose) onClose(); return; }
+      build();
+      onCloseCb = typeof onClose === 'function' ? onClose : null;
+      var snap = null;
+      try { snap = (typeof Log !== 'undefined' && Log.snapshot) ? Log.snapshot() : null; } catch (e) {}
+      if (!snap) snap = { totals: {}, stats: {}, daily: {}, achievements: [] };
+      render(snap);
+      scroller.scrollTop = 0;
+      root.setAttribute('aria-hidden', 'false');
+      void root.offsetWidth;
+      root.classList.add('on');
+      isOpen = true;
+      window.addEventListener('keydown', onKey, true);
+      try { scroller.focus({ preventScroll: true }); } catch (e) {}
+    } catch (e) { if (onClose) { try { onClose(); } catch (e2) {} } }
+  }
+
+  function close() {
+    try {
+      if (!root) return;
+      isOpen = false;
+      root.classList.remove('on');
+      root.setAttribute('aria-hidden', 'true');
+      window.removeEventListener('keydown', onKey, true);
+    } catch (e) {}
+  }
+
+  function back() {
+    var cb = onCloseCb;
+    onCloseCb = null;
+    close();
+    if (cb) { try { cb(); } catch (e) {} }
+  }
+
+  // ---------------------------------------------------------------- toasts
+  function toast(title, subtitle, opts) {
+    try {
+      if (!doc) return;
+      tQueue.push({ title: title, sub: subtitle, o: opts || {} });
+      if (!tBusy) nextToast();
+    } catch (e) {}
+  }
+
+  // On the play screen the banner sits just inside the top edge of the plate (below the HUD row, whose position moves with the
+  // device's safe inset); everywhere else it keeps the CSS default (just under the safe inset). Read at show time; all guarded.
+  function placeHost() {
+    if (!tHost) return;
+    var top = '';
+    try {
+      var pl = doc.getElementById('play-ui');
+      if (!isOpen && pl && pl.classList.contains('on') && typeof Render !== 'undefined' && Render.layout && Render.layout.plate) {
+        var y = Render.layout.plate.y;
+        if (y > 0 && y < 400) top = (y + 4) + 'px';
+      }
+    } catch (e) {}
+    tHost.style.top = top;
+  }
+
+  function nextToast() {
+    var item = tQueue.shift();
+    if (!item) { tBusy = false; return; }
+    tBusy = true;
+    try {
+      injectCss();
+      if (!tHost) {
+        tHost = doc.createElement('div');
+        tHost.id = 'logui-toasts';
+        tHost.setAttribute('aria-live', 'polite');
+        (doc.body || doc.documentElement).appendChild(tHost);
+      }
+      var el = doc.createElement('div');
+      var compact = !isOpen;      // over the game: one short line; over the Log page: the full banner with the blurb
+      placeHost();
+      el.className = 'lg-toast' + (compact ? ' compact' : '');
+      if (compact && item.sub) el.setAttribute('title', String(item.sub));
+      el.innerHTML = '<p class="lg-tk">' + esc(item.o.kicker || (compact ? 'Recorded' : 'Observation recorded')) + '</p>' +
+        '<p class="lg-tt">' + esc(item.title) + '</p>' + (!compact && item.sub ? '<p class="lg-ts">' + esc(item.sub) + '</p>' : '');
+      tHost.appendChild(el);
+      void el.offsetWidth;
+      el.classList.add('on');
+      if (item.o.ach) { try { if (typeof Sound !== 'undefined' && Sound.ach) Sound.ach(); } catch (e) {} }
+      setTimeout(function () {
+        el.classList.remove('on');
+        setTimeout(function () {
+          try { if (el.parentNode) el.parentNode.removeChild(el); } catch (e) {}
+          nextToast();
+        }, FADE_MS + 30);
+      }, SHOW_MS);
+    } catch (e) { tBusy = false; }
+  }
+
+  return { open: open, close: close, toast: toast };
 })();
 
 // ===================== MODULE: 60-main.js =====================
@@ -2562,11 +3624,13 @@ var Save = (function () {
   function $(id) { return doc.getElementById(id); }
   var cv = $('game'), ui = $('ui');
   var elTitle = $('scr-title'), elSelect = $('scr-select'), elPlay = $('play-ui'), elSheet = $('sheet');
-  var elCard = $('card'), elHint = $('hint'), elNote = $('note'), elGrid = $('grid'), elTally = $('tally');
+  var elCard = $('card'), elPop = $('pcard'), elHint = $('hint'), elNote = $('note'), elGrid = $('grid'), elTally = $('tally');
   var elZoneL = $('zone-l'), elZoneR = $('zone-r'), elProbe = $('safe-probe');
 
   var CAMP = Levels.CAMPAIGN || [];
   var NPL = Math.min(Save.N, CAMP.length);
+  var VOLS = (Levels.VOLUMES && Levels.VOLUMES.length) ? Levels.VOLUMES : [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }];
+  var MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   var STEP_HZ = Math.round(1 / K.DT);
   var FAIL_TEXT = {
     crash: 'Struck a body.', captured: 'Taken by the dark star.', lost: 'Lost beyond the plate.', timeout: 'Drifted past the hour.'
@@ -2578,9 +3642,14 @@ var Save = (function () {
   var state = {
     screen: 'title',
     paused: false,
-    mode: 'campaign',
+    mode: 'campaign',                 // 'campaign' | 'endless' | 'daily'
+    daily: null,                      // { key, label } while mode === 'daily'
     level: CAMP[0] || null, levelIndex: 0,
     step: 0,
+    frozen: false,                    // the astronomer holds the heavens: step does not advance while aiming
+    hint: { on: false, used: false, pts: new Float32Array(K.HINT_MAX * 2), n: 0, t0: 0 },
+    spotlight: null,                  // [{x, y}] world points ringed while the fragment card is open
+    card: null,                       // null | 'intro' | 'fragments': a popup card is open (aim blocked, clock held)
     phase: 'aim',
     aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
     predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
@@ -2596,8 +3665,11 @@ var Save = (function () {
   // full path of the current flight (pooled). result.pts points at it until the next launch.
   var path = { pts: new Float32Array((K.MAX_STEPS + 1) * 2), n: 0 };
   var runSeed = 0;
-  var hintShown = false, hintDone = false;
-  var timers = [];          // step-based timers: {at: step, fn} — pause with the game, advance under fastForward
+  var hintBuf = new Float32Array((K.MAX_STEPS + 2) * 2);   // scratch for the astronomer's course (allocated once)
+  var nudgeShown = false, nudgeDone = false, nudgeIdle = 0;
+  var tick = 0;             // physics ticks: advances every physStep, even while the heavens are frozen
+  var timers = [];          // tick-based timers: {at: tick, fn} — pause with the game, advance under fastForward
+  var popQueue = [], popFromSheet = false;
   var safe = { top: 0, right: 0, bottom: 0, left: 0 };
   var L = null;             // last Render.layout
   var reduceMotion = false;
@@ -2608,11 +3680,12 @@ var Save = (function () {
   function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
 
   // ------------------------------------------------------------------ timers (in physics steps)
-  function after(steps, fn) { timers.push({ at: state.step + Math.max(1, Math.round(steps)), fn: fn }); }
+  function logEvent(name, data) { try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
+  function after(steps, fn) { timers.push({ at: tick + Math.max(1, Math.round(steps)), fn: fn }); }
   function afterMs(ms, fn) { after(ms / 1000 * STEP_HZ, fn); }
   function runTimers() {
     for (var i = 0; i < timers.length; i++) {
-      if (state.step >= timers[i].at) { var t = timers[i]; timers.splice(i, 1); i--; t.fn(); }
+      if (tick >= timers[i].at) { var t = timers[i]; timers.splice(i, 1); i--; t.fn(); }
     }
   }
 
@@ -2635,9 +3708,12 @@ var Save = (function () {
     path.pts[2 * path.n] = x; path.pts[2 * path.n + 1] = y; path.n++;
   }
 
+  function hintClear() { var h = state.hint; h.on = false; h.used = false; h.n = 0; state.frozen = false; }
   function resetAttempt() {
     timers.length = 0;
     state.step = 0;
+    hintClear();
+    dropPopup();
     state.phase = 'aim';
     clearAim();
     state.sim = null;
@@ -2652,7 +3728,8 @@ var Save = (function () {
     Sound.droneStop();
     hideCard();
     showNote('');
-    updateHint();
+    nudgeIdle = 0; setNudge(false);
+    flushPopups();
   }
 
   function resetProbe() {
@@ -2662,6 +3739,7 @@ var Save = (function () {
     clearTrail();
     clearAim();
     state.hud.speed = 0; state.hud.closest = Infinity;
+    flushPopups();
   }
 
   function doLaunch(vx, vy, power) {
@@ -2672,6 +3750,7 @@ var Save = (function () {
     if (sim.collected && sim.collected.length === state.collected.length) sim.collected.set(state.collected);
     state.sim = sim;
     state.phase = 'flight';
+    state.frozen = false; state.hint.on = false;      // the astronomer releases the heavens; hint.used stays true
     clearAim();
     clearTrail();
     path.n = 0;
@@ -2681,8 +3760,9 @@ var Save = (function () {
     Sound.launch(power);
     Sound.droneStart();
     vibrate(12);
-    if (!hintDone && hintShown) { hintDone = true; updateHint(); }
+    nudgeDone = true; setNudge(false);
     showNote('');
+    logEvent('launch', { mode: state.mode, launchNo: state.launches, power: power, hintUsed: state.hint.used });
     return true;
   }
 
@@ -2697,22 +3777,32 @@ var Save = (function () {
   function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
 
   function endFlight(status) {
-    var sim = state.sim;
+    var sim = state.sim, mode = state.mode, lv = state.level, hu = state.hint.used;
     Sound.droneStop();
+    logEvent('flightEnd', { mode: mode, level: lv, launchNo: state.launches, status: status, sim: sim, hintUsed: hu, fragsThisAttempt: countFrags() });
     if (status === 'hit') {
-      var stars = Math.max(1, 4 - state.launches);
+      var stars = Math.max(1, 4 - state.launches - (hu ? 1 : 0));
       state.phase = 'result';
-      state.result = { success: true, stars: stars, status: status, pts: path.pts, n: path.n, at: nowMs() };
+      state.result = { success: true, stars: stars, status: status, pts: path.pts, n: path.n, at: nowMs(), hintUsed: hu };
       state.hud.closest = 0;
       try { Render.fx.success(path.pts, path.n); } catch (e) {}
       Sound.chime();
       vibrate([12, 60, 24]);
-      if (state.mode === 'campaign') {
-        state.result.record = Save.recordPlate(state.levelIndex, stars, countFrags());
+      var rec = null, plateIndex = -1;
+      if (mode === 'campaign') {
+        plateIndex = state.levelIndex;
+        rec = Save.recordPlate(plateIndex, stars, countFrags());
+      } else if (mode === 'daily') {
+        rec = Save.recordDaily(state.daily.key, stars, state.launches);
       } else {
         state.endless.score += stars;
         if (Save.recordEndless(state.endless.score)) state.endless.best = state.endless.score;
       }
+      state.result.record = rec;
+      logEvent('plateSealed', { mode: mode, level: lv, plateIndex: plateIndex, stars: stars, launches: state.launches, hintUsed: hu,
+        fragsThisAttempt: countFrags(), fragsTotal: lv.frags ? lv.frags.length : 0, endlessRound: mode === 'endless' ? state.endless.round : 0 });
+      if (mode === 'daily') logEvent('daily', { key: state.daily.key, stars: stars, launches: state.launches, streak: rec.streak, best: rec.best, first: rec.first });
+      if (mode === 'endless') logEvent('endlessRound', { round: state.endless.round, score: state.endless.score });
       afterMs(1200, showSuccessCard);
       return;
     }
@@ -2745,7 +3835,8 @@ var Save = (function () {
 
   // one fixed physics step
   function physStep() {
-    state.step++;
+    tick++;
+    if (!state.frozen) state.step++;
     var s = state.sim;
     if (state.phase === 'flight' && s && s.status === 'flying') {
       var st = Physics.stepSim(s, state.level);
@@ -2774,12 +3865,60 @@ var Save = (function () {
   function loadCampaign(i) {
     i = Math.max(0, Math.min(CAMP.length - 1, i | 0));
     state.mode = 'campaign';
+    state.daily = null;
     state.levelIndex = i;
     state.level = CAMP[i];
     Render.setLevel(state.level);
     resetAttempt();
     setScreen('play');
+    autoCards();
     return state.level;
+  }
+
+  // ---- Daily Plate
+  function hashKey(k) { var h = 2166136261 >>> 0; for (var i = 0; i < k.length; i++) h = Math.imul(h ^ k.charCodeAt(i), 16777619) >>> 0; return h >>> 0; }
+  function dayLabel(k) { var p = k.split('-'); return (+p[2]) + ' ' + MONTHS[(+p[1] - 1) | 0] + ' ' + p[0]; }
+  // Levels.daily is the LEVEL agent's; until it lands a weekday-graded Levels.generate stands in.
+  function idle(fn, timeout) {
+    try { if (window.requestIdleCallback) { window.requestIdleCallback(fn, { timeout: timeout || 3000 }); return; } } catch (e) {}
+    setTimeout(fn, 250);
+  }
+  // today's plate is engraved in idle time while the title shows (Levels.daily can cost ~100+ ms on a phone); one entry,
+  // keyed by date, recomputed when the date rolls over. The level object is deterministic, so reusing it is safe.
+  var dailyCache = null;
+  function makeDaily(k) {
+    if (dailyCache && dailyCache.key === k) return dailyCache.lv;
+    var lv = buildDaily(k);
+    dailyCache = { key: k, lv: lv };
+    return lv;
+  }
+  function prepDaily() {
+    if (dailyCache && dailyCache.key === Save.dateKey()) return;
+    idle(function () {
+      var k = Save.dateKey();
+      if (dailyCache && dailyCache.key === k) return;
+      try { makeDaily(k); } catch (e) {}
+    });
+  }
+  function buildDaily(k) {
+    if (typeof Levels.daily === 'function') return Levels.daily(k);
+    var p = k.split('-'), wd = new Date(+p[0], +p[1] - 1, +p[2], 12).getDay();
+    var lv = Levels.generate(hashKey('perihelion-' + k), [0.85, 0.3, 0.4, 0.5, 0.6, 0.7, 0.78][wd]);
+    lv.id = 'd' + k; lv.plate = 'DAILY'; lv.caption = 'DAILY \u00b7 ' + dayLabel(k); lv.name = lv.name || 'Daily Plate';
+    return lv;
+  }
+  function loadDaily(k) {
+    k = (typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k)) ? k : Save.dateKey();
+    var lv = makeDaily(k), m = /^DAILY\s*[·:|\-–—]\s*(.+)$/.exec(lv.caption || '');
+    state.mode = 'daily';
+    state.daily = { key: k, label: m ? m[1] : dayLabel(k) };
+    state.levelIndex = -1;
+    state.level = lv;
+    Render.setLevel(lv);
+    resetAttempt();
+    setScreen('play');
+    autoCards();
+    return lv;
   }
   function roundSeed(r) { return (runSeed + Math.imul(r, 0x9E3779B1)) >>> 0; }
   // Next Endless round is generated while the success card shows (same seed & difficulty => same level).
@@ -2792,10 +3931,14 @@ var Save = (function () {
   function preGenerate(r) {
     var seed = roundSeed(r), d = Math.min(1, r / 25), run = runSeed;
     if (preGen && preGen.seed === seed && preGen.run === run) return;
+    // start only once the success card has settled (seal + card animation done), and in idle time; a quick tap on
+    // "Next plate" before this runs just generates synchronously in genRound
     setTimeout(function () {
-      if (state.mode !== 'endless' || runSeed !== run || state.endless.round !== r - 1) return;
-      try { preGen = { seed: seed, d: d, run: run, lv: Levels.generate(seed, d) }; } catch (e) { preGen = null; }
-    }, reduceMotion ? 0 : 380);
+      idle(function () {
+        if (state.mode !== 'endless' || runSeed !== run || state.endless.round !== r - 1 || (preGen && preGen.seed === seed && preGen.run === run)) return;
+        try { preGen = { seed: seed, d: d, run: run, lv: Levels.generate(seed, d) }; } catch (e) { preGen = null; }
+      }, 2000);
+    }, reduceMotion ? 0 : 500);
   }
   function endlessRound() {
     var r = state.endless.round;
@@ -2803,11 +3946,13 @@ var Save = (function () {
     lv.plate = toRoman(r);
     lv.caption = 'ENDLESS · PLATE ' + lv.plate;
     state.mode = 'endless';
+    state.daily = null;
     state.levelIndex = r - 1;
     state.level = lv;
     Render.setLevel(lv);
     resetAttempt();
     setScreen('play');
+    autoCards();
     return lv;
   }
   function startEndless(seed) {
@@ -2831,16 +3976,19 @@ var Save = (function () {
       Sound.droneStop();
       clearAim();
       hideCard();
+      dropPopup();
+      popQueue.length = 0;
       showNote('');
+      setNudge(false);
       timers.length = 0;
+      hintClear();
       if (state.phase === 'flight') state.phase = 'aim';
     }
     hideSheet();
     state.paused = false;
-    if (name === 'title') refreshTitle();
+    if (name === 'title') { refreshTitle(); prepDaily(); }
     if (name === 'select') refreshSelect(prev !== 'select');
     if (name === 'play') placeDom();
-    updateHint();
     acc = 0;
     snapshot();
   }
@@ -2853,6 +4001,16 @@ var Save = (function () {
   function refreshTitle() {
     var b = Save.data.endlessBest;
     $('t-best').innerHTML = b > 0 ? 'Best survey &middot; <b>' + b + '</b> stars' : '';
+    var ed = $('t-ed');
+    if (ed && CAMP.length) ed.innerHTML = 'Plates I&ndash;' + toRoman(CAMP.length) + ' &middot; Engraved MMXXVI';
+    var dl = $('t-daily');
+    if (dl) {
+      var st = Save.dailyDone(Save.dateKey());
+      if (st > 0) {
+        dl.innerHTML = 'Sealed <span class="vh">' + st + (st === 1 ? ' star' : ' stars') + '</span>' + starsRow(st, 11) +
+          '<span class="sep">&middot;</span>streak ' + Math.max(1, Save.dailyStreak());
+      } else dl.innerHTML = 'Today&rsquo;s plate';
+    }
     refreshSoundButtons();
   }
 
@@ -2875,50 +4033,86 @@ var Save = (function () {
       '<circle cx="10.5" cy="3.5" r="1.8"/><path d="M9 4.6 L1.5 9 M9.6 5.3 L4.5 9.6 M8.4 3.9 L1 6.6"/></svg>';
   }
 
-  // ---- level select
-  var cards = [], thumbW = 0, thumbsDrawn = false;
+  // ---- level select: two volumes, thumbnails drawn lazily (only rows near the viewport)
+  var cards = [], thumbW = 0, thumbsDrawn = false, thumbRaf = 0;
+  function volHead(v, from, to) {
+    return '<h3 class="vol-head">' + escapeHtml(v.name || 'Volume') + '<span class="vs"> &middot; </span><i>Plates ' + toRoman(from + 1) + '&ndash;' + toRoman(to + 1) + '</i></h3><div class="vol-rule"></div>';
+  }
+  function plateHtml(i) {
+    var lv = CAMP[i];
+    return '<button class="plate" data-i="' + i + '" aria-label="Plate ' + toRoman(i + 1) + '">' +
+      '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Sealed</span></span></span>' +
+      '<span class="pl-num">' + toRoman(i + 1) + '</span>' +
+      '<span class="pl-name">' + escapeHtml(lv.name || '') + '</span>' +
+      '<span class="pl-meta"></span></button>';
+  }
   function buildGrid() {
-    var html = '';
-    for (var i = 0; i < CAMP.length; i++) {
-      var lv = CAMP[i];
-      html += '<button class="plate" data-i="' + i + '" aria-label="Plate ' + toRoman(i + 1) + '">' +
-        '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Sealed</span></span></span>' +
-        '<span class="pl-num">' + toRoman(i + 1) + '</span>' +
-        '<span class="pl-name">' + escapeHtml(lv.name || '') + '</span>' +
-        '<span class="pl-meta"></span></button>';
+    var html = '', used = [], v, i, from, to;
+    for (var vi = 0; vi < VOLS.length; vi++) {
+      v = VOLS[vi];
+      from = Math.max(0, v.from | 0); to = Math.min(CAMP.length - 1, v.to | 0);
+      var list = [];
+      for (i = from; i <= to; i++) if (!used[i]) { used[i] = 1; list.push(i); }
+      if (!list.length) continue;
+      html += volHead(v, list[0], list[list.length - 1]) + '<div class="grid">';
+      for (i = 0; i < list.length; i++) html += plateHtml(list[i]);
+      html += '</div>';
     }
+    var rest = [];
+    for (i = 0; i < CAMP.length; i++) if (!used[i]) rest.push(i);
+    if (rest.length) { html += '<div class="vol-rule"></div><div class="grid">'; for (i = 0; i < rest.length; i++) html += plateHtml(rest[i]); html += '</div>'; }
     elGrid.innerHTML = html;
     cards = [];
     var bs = elGrid.querySelectorAll('.plate');
-    for (var j = 0; j < bs.length; j++) cards.push({ el: bs[j], cv: bs[j].querySelector('canvas'), sealed: bs[j].querySelector('.sealed'), meta: bs[j].querySelector('.pl-meta') });
+    for (var j = 0; j < bs.length; j++) {
+      var idx = +bs[j].getAttribute('data-i');
+      cards[idx] = { el: bs[j], cv: bs[j].querySelector('canvas'), sealed: bs[j].querySelector('.sealed'), meta: bs[j].querySelector('.pl-meta'), done: false };
+    }
+    thumbsDrawn = false; thumbW = 0;
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function drawCard(i, w, h, dpr) {
+    var c = cards[i].cv;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    var g = c.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = PAL.ink; g.fillRect(0, 0, c.width, c.height);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    try { Render.drawThumbnail(g, CAMP[i], w, h); } catch (e) { if (!drawCard.err) { drawCard.err = 1; console.warn('drawThumbnail failed', e); } }
+    cards[i].done = true;
+  }
+  // Draw the thumbnails of plates within ~600 px of the scroll viewport that are not drawn yet (at the current width).
   function drawThumbs(force) {
     if (!cards.length) return;
-    var r = cards[0].cv.parentNode.getBoundingClientRect();
-    var w = Math.round(r.width) - 2, h = Math.round(w * 16 / 9);
+    var sc = $('s-scroll'), first = cards[0] || cards.filter(Boolean)[0];
+    if (!sc || !first) return;
+    var w = Math.round(first.cv.parentNode.getBoundingClientRect().width) - 2, h = Math.round(w * 16 / 9);
     if (w <= 0) return;
-    if (!force && thumbsDrawn && w === thumbW) return;
-    thumbW = w; thumbsDrawn = true;
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
-    for (var i = 0; i < cards.length; i++) {
-      var c = cards[i].cv;
-      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
-      c.style.height = h + 'px';
-      var g = c.getContext('2d');
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.fillStyle = PAL.ink; g.fillRect(0, 0, c.width, c.height);
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      try { Render.drawThumbnail(g, CAMP[i], w, h); } catch (e) { if (!drawThumbs.err) { drawThumbs.err = 1; console.warn('drawThumbnail failed', e); } }
+    var i;
+    if (force || w !== thumbW) { thumbW = w; for (i = 0; i < cards.length; i++) if (cards[i]) cards[i].done = false; }
+    thumbsDrawn = true;
+    var sr = sc.getBoundingClientRect(), lo = sr.top - 600, hi = sr.bottom + 600, todo = [];
+    for (i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      if (!c || c.done) continue;
+      var r = c.el.getBoundingClientRect();
+      if (r.bottom >= lo && r.top <= hi) todo.push(i);
     }
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (i = 0; i < todo.length; i++) drawCard(todo[i], w, h, dpr);
   }
+  function scheduleThumbs() {
+    if (thumbRaf) return;
+    thumbRaf = requestAnimationFrame(function () { thumbRaf = 0; if (state.screen === 'select') drawThumbs(false); });
+  }
+  (function () { var sc = $('s-scroll'); if (sc) sc.addEventListener('scroll', scheduleThumbs, { passive: true }); })();
   function refreshSelect(entering) {
     if (!cards.length) buildGrid();
-    var d = Save.data, tot = Save.totals(), fragTotal = 0;
+    var d = Save.data, tot = Save.totals();
     for (var i = 0; i < cards.length; i++) {
-      var lv = CAMP[i], nf = lv.frags ? lv.frags.length : 0, locked = i >= d.unlocked;
-      fragTotal += nf;
       var c = cards[i];
+      if (!c) continue;
+      var lv = CAMP[i], nf = lv.frags ? lv.frags.length : 0, locked = i >= d.unlocked;
       c.el.classList.toggle('locked', locked);
       c.el.classList.toggle('done', d.stars[i] > 0);
       c.el.setAttribute('aria-disabled', String(locked));
@@ -2928,29 +4122,120 @@ var Save = (function () {
       c.meta.innerHTML = meta;
     }
     elTally.innerHTML = 'Stars <b>' + tot.stars + '</b>/<b>' + (cards.length * 3) + '</b><span class="sep">&middot;</span>' +
-      'Fragments <b>' + tot.frags + '</b>/<b>' + fragTotal + '</b>';
-    // draw after the page is laid out
-    requestAnimationFrame(function () { drawThumbs(false); });
+      'Sealed <b>' + tot.sealed + '</b>/<b>' + cards.length + '</b>';
     if (entering) {
-      var sc = $('s-scroll'), cur = cards[Math.max(0, Math.min(cards.length - 1, d.unlocked - 1))];
-      if (sc && cur && state.mode === 'campaign' && state.levelIndex > 5) {
-        requestAnimationFrame(function () { try { sc.scrollTop = Math.max(0, cards[state.levelIndex].el.offsetTop - 80); } catch (e) {} });
+      var sc = $('s-scroll'), idx = state.mode === 'campaign' ? state.levelIndex : Math.max(0, d.unlocked - 1);
+      idx = Math.max(0, Math.min(cards.length - 1, idx));
+      if (sc && cards[idx]) {
+        requestAnimationFrame(function () {
+          try {
+            sc.scrollTop = idx > 5 ? Math.max(0, cards[idx].el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 90) : 0;
+          } catch (e) {}
+          drawThumbs(false);
+        });
+        return;
       }
     }
+    // draw after the page is laid out
+    requestAnimationFrame(function () { drawThumbs(false); });
   }
 
-  // ---- hint & marginal notes (positioned in world coords via Render)
-  function updateHint() {
-    var want = state.screen === 'play' && state.mode === 'campaign' && state.levelIndex === 0 &&
-      !hintDone && state.launches === 0 && !(Save.data.stars[0] > 0);
-    if (want) hintShown = true;
-    elHint.classList.toggle('on', !!want);
+  // ---- first-run nudge: the marginal note on plate I appears only if the player idles (the intro card says it first)
+  function setNudge(on) { if (on !== nudgeShown) { nudgeShown = on; elHint.classList.toggle('on', on); } }
+  function nudgeEligible() {
+    return state.screen === 'play' && state.mode === 'campaign' && state.levelIndex === 0 && !nudgeDone && state.launches === 0 &&
+      !(Save.data.stars[0] > 0) && state.phase === 'aim' && !state.card && !state.paused && !state.aim.active && !cardVisible();
   }
   var noteTimer = 0;
   function showNote(text) {
     if (text) { elNote.textContent = text; elNote.classList.add('on'); }
     else elNote.classList.remove('on');
   }
+
+  // ---- popup cards (To Observe / Comet Fragments): atlas plates that hold the clock while open
+  function levelFrags() { return (state.level && state.level.frags && state.level.frags.length) || 0; }
+  function popupSafe() { return state.screen === 'play' && state.phase !== 'flight' && !cardVisible(); }
+  function autoNext() {
+    if (!Save.seen('intro')) return 'intro';
+    if (levelFrags() && !Save.seen('fragments')) return 'fragments';
+    return null;
+  }
+  function autoCards() { var n = autoNext(); if (n) requestPopup(n); }
+  function flushPopups() {
+    if (state.card || !popupSafe()) return;
+    var n = popQueue.shift();
+    if (n) showPopup(n, false);
+  }
+  function requestPopup(name) {
+    if (name !== 'intro' && name !== 'fragments') return null;
+    if (state.card || !popupSafe()) {
+      if (state.card !== name && popQueue.indexOf(name) < 0) popQueue.push(name);
+      return 'queued';
+    }
+    showPopup(name, false);
+    return 'open';
+  }
+  function popHtml(name) {
+    if (name === 'intro') {
+      return '<p class="kicker">Instructions</p><h3 class="c-title">To Observe</h3><div class="rule"></div>' +
+        '<ol class="steps">' +
+        '<li>Touch anywhere and pull back, as if drawing a sling.</li>' +
+        '<li>Release to launch. The probe flies opposite your pull; a longer pull is faster.</li>' +
+        '<li>Gravity bends every course, and only the first moments of yours are drawn. Judge the rest.</li>' +
+        '<li>Reach the brass ring. Fewer launches earn more stars: one launch, three stars.</li></ol>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Begin</button></div>';
+    }
+    return '<p class="kicker">Notice</p><h3 class="c-title">Comet Fragments</h3><div class="rule"></div>' +
+      '<p class="pop-text">Small brass comets drift on this plate. Fly through one to collect it. They are optional, but a course that gathers them is a harder one. Fragments you collect stay collected across your launches on this plate.</p>' +
+      '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+  }
+  function fragCentroid() {
+    var f = state.level && state.level.frags;
+    if (!f || !f.length) return null;
+    var sx = 0, sy = 0;
+    for (var i = 0; i < f.length; i++) { var p = Render.worldToScreen(f[i].x, f[i].y); sx += p.x; sy += p.y; }
+    return { x: sx / f.length, y: sy / f.length };
+  }
+  function showPopup(name, fromSheet) {
+    state.card = name;
+    popFromSheet = !!fromSheet;
+    clearAim();
+    var f = state.level && state.level.frags;
+    state.spotlight = (name === 'fragments' && f && f.length) ? f.map(function (q) { return { x: q.x, y: q.y }; }) : null;
+    elPop.innerHTML = popHtml(name);
+    ui.classList.add('card-open');
+    if (fromSheet) { elSheet.classList.add('sub'); elCard.classList.add('held'); }
+    elPop.scrollTop = 0;
+    placePop();
+    elPop.classList.remove('on');
+    void elPop.offsetWidth;
+    elPop.classList.add('on');
+    showNote('');
+    setNudge(false);
+  }
+  function hidePopEl() {
+    elPop.classList.remove('on');
+    ui.classList.remove('card-open');
+    elCard.classList.remove('held');
+    state.card = null; state.spotlight = null;
+    if (popFromSheet) { elSheet.classList.remove('sub'); popFromSheet = false; }
+  }
+  // dismissed by the player (or a test hook): remembered, and the next queued / unseen card follows
+  function closePopup() {
+    var name = state.card;
+    if (!name) return null;
+    var fromSheet = popFromSheet;
+    Save.markSeen(name);
+    hidePopEl();
+    last = 0; acc = 0;
+    if (!fromSheet) {
+      var nx = popQueue.shift() || autoNext();
+      if (nx && popupSafe()) showPopup(nx, false);
+    }
+    return state.card;
+  }
+  // silently removed (level change / reset): not remembered
+  function dropPopup() { if (state.card) hidePopEl(); }
 
   // ---- result cards
   var cardShownAt = 0;
@@ -2961,15 +4246,20 @@ var Save = (function () {
     cardShownAt = nowMs();
     showNote('');
   }
-  function hideCard() { elCard.classList.remove('on'); }
+  function hideCard() { elCard.classList.remove('on'); elCard.classList.remove('held'); }
   function cardVisible() { return elCard.classList.contains('on'); }
-  function kicker() { return state.mode === 'endless' ? 'Endless &middot; Plate ' + toRoman(state.endless.round) : 'Plate ' + toRoman(state.levelIndex + 1); }
+  function kicker() {
+    if (state.mode === 'endless') return 'Endless &middot; Plate ' + toRoman(state.endless.round);
+    if (state.mode === 'daily') return 'Daily Plate' + (state.daily ? ' &middot; ' + escapeHtml(state.daily.label) : '');
+    return 'Plate ' + toRoman(state.levelIndex + 1);
+  }
   function statsLine() {
     var nf = state.level.frags ? state.level.frags.length : 0;
     var s = 'Launches <b>' + state.launches + '</b>/<b>' + K.MAX_LAUNCHES + '</b>';
     if (nf) s += '<span class="sep"> &middot; </span>Fragments <b>' + countFrags() + '</b>/<b>' + nf + '</b>';
     return s;
   }
+  function hintLine() { return state.hint.used ? '<p class="note sm">Astronomer consulted: one star forfeited</p>' : ''; }
   function showSuccessCard() {
     if (state.screen !== 'play' || !state.result || !state.result.success) return;
     var r = state.result, h;
@@ -2980,16 +4270,25 @@ var Save = (function () {
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Sealed</h3>' +
         '<p class="note">' + note + '</p>' +
         '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
-        '<p class="c-stats">' + statsLine() + '</p>' +
+        '<p class="c-stats">' + statsLine() + '</p>' + hintLine() +
         (last ? '<div class="c-btns"><button class="btn" data-act="replay">Replay</button>' +
                 '<button class="btn primary" data-act="atlas">Atlas</button></div>'
               : '<div class="c-btns three"><button class="btn" data-act="replay">Replay</button>' +
                 '<button class="btn" data-act="atlas">Atlas</button>' +
                 '<button class="btn primary" data-act="next">Next plate</button></div>');
+    } else if (state.mode === 'daily') {
+      var dr = r.record || {}, streak = dr.streak || Save.dailyStreak();
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Sealed</h3>' +
+        '<p class="note">A new plate is engraved tomorrow.</p>' +
+        '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
+        '<p class="c-stats">Launches <b>' + state.launches + '</b>/<b>' + K.MAX_LAUNCHES + '</b><span class="sep"> &middot; </span>Streak <b>' + streak + '</b>' +
+        (dr.best > streak ? '<span class="sep"> &middot; </span>Best <b>' + dr.best + '</b>' : '') + '</p>' + hintLine() +
+        '<div class="c-btns"><button class="btn" data-act="replay">Replay</button>' +
+        '<button class="btn primary" data-act="title">Menu</button></div>';
     } else {
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Surveyed</h3>' +
         '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
-        '<p class="c-stats">Score <b>' + state.endless.score + '</b><span class="sep"> &middot; </span>Best <b>' + Math.max(state.endless.best, state.endless.score) + '</b></p>' +
+        '<p class="c-stats">Score <b>' + state.endless.score + '</b><span class="sep"> &middot; </span>Best <b>' + Math.max(state.endless.best, state.endless.score) + '</b></p>' + hintLine() +
         '<div class="c-btns"><button class="btn" data-act="end">End survey</button>' +
         '<button class="btn primary" data-act="next">Next plate</button></div>';
     }
@@ -3005,6 +4304,12 @@ var Save = (function () {
         '<div class="c-stars">' + starsRow(0, 20) + '</div>' +
         '<div class="c-btns"><button class="btn" data-act="atlas">Atlas</button>' +
         '<button class="btn primary" data-act="retry">Retry plate</button></div>';
+    } else if (state.mode === 'daily') {
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title">Unsealed</h3>' +
+        '<p class="note">' + why + ' Three launches spent.</p>' +
+        '<div class="c-stars">' + starsRow(0, 20) + '</div>' +
+        '<div class="c-btns"><button class="btn" data-act="title">Menu</button>' +
+        '<button class="btn primary" data-act="retry">Retry plate</button></div>';
     } else {
       var rounds = state.endless.round - 1;
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title">Survey Concluded</h3>' +
@@ -3016,16 +4321,46 @@ var Save = (function () {
     showCard(h);
   }
 
+  // ---- Consult the Astronomer
+  function canHint() {
+    var lv = state.level;
+    return state.screen === 'play' && state.phase === 'aim' && !!(lv && lv.solution) && !state.hint.used && !state.card &&
+      state.launches < K.MAX_LAUNCHES && !cardVisible();
+  }
+  function hintWhy() {
+    if (state.hint.used) return 'Already consulted on this attempt.';
+    if (!state.level || !state.level.solution) return 'No course is engraved for this plate.';
+    if (state.phase !== 'aim' || cardVisible()) return 'Only while a launch is being aimed.';
+    return '';
+  }
+  function useHint() {
+    if (!canHint()) return false;
+    var lv = state.level, sol = lv.solution, t0 = sol.t0Step | 0;
+    var sim = Physics.simulate(lv, sol.vx, sol.vy, t0, K.MAX_STEPS, hintBuf);
+    var n = Math.min(K.HINT_MAX, Math.floor(0.55 * sim.n)), h = state.hint;
+    h.pts.set(hintBuf.subarray(0, 2 * n));
+    h.n = n; h.on = true; h.used = true; h.t0 = nowMs();
+    state.step = t0; state.frozen = true;
+    clearAim();
+    setNudge(false);
+    logEvent('hint', { mode: state.mode, level: lv });
+    return true;
+  }
+
   // ---- pause sheet
   function showSheet() {
     $('sheet-kicker').innerHTML = kicker();
-    $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : 'Return to the Atlas';
+    $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : (state.mode === 'daily' ? 'Return to the Title' : 'Return to the Atlas');
+    var ok = canHint(), hb = $('sheet-hint'), why = $('sheet-hint-why'), wt = ok ? '' : hintWhy();
+    hb.setAttribute('aria-disabled', String(!ok));
+    why.textContent = wt; why.hidden = !wt;
     refreshSoundButtons();
     elSheet.classList.add('on');
+    var pn = $('sheet-panel'); if (pn) pn.scrollTop = 0;
   }
-  function hideSheet() { elSheet.classList.remove('on'); }
+  function hideSheet() { elSheet.classList.remove('on'); elSheet.classList.remove('sub'); }
   function pause() {
-    if (state.screen !== 'play' || state.paused) return;
+    if (state.screen !== 'play' || state.paused || state.card) return;
     state.paused = true;
     clearAim();
     Sound.droneStop();
@@ -3047,17 +4382,31 @@ var Save = (function () {
     switch (name) {
       case 'begin': setScreen('select'); break;
       case 'endless': startEndless(); break;
+      case 'daily': loadDaily(); break;
+      case 'log':
+        try { if (typeof LogUI !== 'undefined' && LogUI && LogUI.open) LogUI.open(function () { if (state.screen !== 'title') setScreen('title'); else refreshTitle(); }); } catch (e) {}
+        break;
       case 'sound': Sound.setMuted(!Sound.isMuted()); if (!Sound.isMuted()) { Sound.unlock(function () { Sound.chime(); }); } refreshSoundButtons(); break;
       case 'title': setScreen('title'); break;
       case 'plate':
         var i = +el.getAttribute('data-i');
         if (i >= Save.data.unlocked) { vibrate(6); return; }
         loadCampaign(i); break;
-      case 'reset': if (state.screen === 'play') { if (state.mode === 'endless' && state.phase === 'result' && !state.result.success) startEndless(); else resetAttempt(); } break;
+      case 'reset':
+        if (state.screen === 'play' && !state.card) { if (state.mode === 'endless' && state.phase === 'result' && !state.result.success) startEndless(); else resetAttempt(); }
+        break;
       case 'menu': pause(); break;
       case 'resume': resume(); break;
       case 'restart': resume(); resetAttempt(); break;
-      case 'atlas': setScreen(state.mode === 'endless' ? 'title' : 'select'); break;
+      case 'hint':
+        if (!canHint()) { vibrate(6); return; }
+        if (state.paused) resume();
+        useHint();
+        break;
+      case 'howto': if (state.paused) showPopup('intro', true); break;
+      case 'fragments': if (state.paused) showPopup('fragments', true); break;
+      case 'pop-ok': closePopup(); break;
+      case 'atlas': setScreen(state.mode === 'campaign' ? 'select' : 'title'); break;
       case 'next':
         if (state.mode === 'endless') nextEndless();
         else if (state.levelIndex + 1 < CAMP.length) loadCampaign(state.levelIndex + 1);
@@ -3081,7 +4430,7 @@ var Save = (function () {
   // ------------------------------------------------------------------ input: aiming
   var ptr = { id: null, sx: 0, sy: 0 };
   function canAim() {
-    return state.screen === 'play' && !state.paused && state.phase === 'aim' && !cardVisible() &&
+    return state.screen === 'play' && !state.paused && state.phase === 'aim' && !cardVisible() && !state.card &&
       state.launches < K.MAX_LAUNCHES && !!state.level;
   }
   function aimStart(id, x, y) {
@@ -3169,6 +4518,10 @@ var Save = (function () {
   // keyboard (desktop QA)
   window.addEventListener('keydown', function (e) {
     var k = e.key;
+    if (state.card) {
+      if (k === 'Escape' || k === 'Enter' || k === ' ') { e.preventDefault(); closePopup(); }
+      return;
+    }
     if (k === 'Escape' || k === 'p' || k === 'P') {
       if (state.screen === 'play') { if (state.paused) resume(); else pause(); e.preventDefault(); }
       else if (state.screen === 'select') setScreen('title');
@@ -3182,7 +4535,7 @@ var Save = (function () {
   // ------------------------------------------------------------------ iOS hardening
   function pd(e) { if (e.cancelable) e.preventDefault(); }
   doc.addEventListener('touchmove', function (e) {
-    var inScroll = e.target && e.target.closest && e.target.closest('.scroll');
+    var inScroll = e.target && e.target.closest && e.target.closest('.scroll, .panel, .card');
     if (e.touches.length > 1 || !inScroll) pd(e);
   }, { passive: false });
   ['gesturestart', 'gesturechange', 'gestureend', 'dblclick', 'contextmenu', 'selectstart'].forEach(function (t) {
@@ -3191,7 +4544,7 @@ var Save = (function () {
   var lastTouchEnd = 0;
   doc.addEventListener('touchend', function (e) {   // stop double-tap zoom outside controls
     var n = Date.now();
-    var ctl = e.target && e.target.closest && e.target.closest('button, .scroll');
+    var ctl = e.target && e.target.closest && e.target.closest('button, .scroll, .panel, .card');
     if (!ctl && n - lastTouchEnd < 350) pd(e);
     lastTouchEnd = n;
   }, { passive: false });
@@ -3202,6 +4555,7 @@ var Save = (function () {
       Sound.suspend();
     } else {
       last = 0; acc = 0;
+      refreshTitle(); prepDaily();          // the date may have changed while the app slept: refresh the Daily Plate subline
     }
   });
   window.addEventListener('pagehide', function () { if (state.screen === 'play') pause(); Sound.suspend(); });
@@ -3255,6 +4609,7 @@ var Save = (function () {
       elNote.style.top = px(Math.min(pr.y + 30 * sc + 14, p.y + p.h - 34));
     }
     placeCard();
+    placePop();
   }
   // result card: sized from the viewport & safe areas; beside the plate in landscape, otherwise in the lower
   // part of the plate (the target and seal sit near the top). Never extends past the viewport.
@@ -3282,6 +4637,43 @@ var Save = (function () {
     elCard.style.left = px(left);
     elCard.style.top = px(top);
   }
+  // popup card: beside the plate in landscape; in portrait centred (intro) or on the half of the screen away from the
+  // comet fragments (fragment card), so the ringed comets stay in view.
+  function placePop() {
+    L = Render.layout;
+    if (!L || !L.plate || !state.card) return;
+    var p = L.plate, W = L.w, H = L.h, short = H <= 520 && W > H;
+    // keep clear of the HUD bands (caption/stars above, Reset/Menu below) where the viewport allows
+    var minTop = Math.max(safe.top + 10, L.top ? L.top.y + L.top.h + 2 : 0);
+    var maxBottom = Math.min(H - safe.bottom - 10, L.bottom ? L.bottom.y - 2 : H);
+    if (maxBottom - minTop < 200) { minTop = safe.top + 10; maxBottom = H - safe.bottom - 10; }
+    var availH = Math.max(120, maxBottom - minTop);
+    var spR = W - safe.right - (p.x + p.w) - 24, spL = p.x - safe.left - 24;
+    var wide = short && state.card === 'intro';                  // landscape intro: a wide plate over the middle, 2 x 2 steps
+    var side = !wide && W > H && Math.max(spR, spL) >= 230;
+    var cw = wide ? Math.min(600, W - 24 - safe.left - safe.right) : side ? Math.min(360, Math.max(spR, spL)) : Math.min(360, W - 24 - safe.left - safe.right);
+    elPop.classList.toggle('wide', wide);
+    elPop.style.width = px(cw);
+    elPop.style.maxHeight = px(availH);
+    elPop.style.bottom = 'auto';
+    var ch = Math.min(availH, elPop.offsetHeight || 300), top, left;
+    if (side) {
+      left = spR >= spL ? p.x + p.w + 12 + (spR - cw) / 2 : p.x - 12 - cw - (spL - cw) / 2;
+      top = (minTop + maxBottom - ch) / 2;
+    } else {
+      left = safe.left + (W - safe.left - safe.right - cw) / 2;
+      top = (minTop + maxBottom - ch) / 2;
+      var c = state.card === 'fragments' ? fragCentroid() : null;
+      if (c) {
+        var mid = (minTop + maxBottom) / 2;
+        if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);          // comets above: card in the lower half
+        else top = Math.min(mid - ch, minTop + (mid - minTop - ch) / 2);               // comets below: card in the upper half
+      }
+    }
+    top = Math.max(minTop, Math.min(top, maxBottom - ch));
+    elPop.style.left = px(left);
+    elPop.style.top = px(top);
+  }
   window.addEventListener('resize', function () { doResize(false); });
   window.addEventListener('orientationchange', function () { setTimeout(function () { doResize(true); }, 250); });
   if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { doResize(false); });
@@ -3295,13 +4687,17 @@ var Save = (function () {
     last = t;
     if (dt > 0 && dt < 1) { ft[ftI] = dt; ftI = (ftI + 1) % 60; if (ftN < 60) ftN++; }
     if (dt > 0.25 || dt < 0) dt = K.DT;                        // tab switch / clock jump: don't catch up
-    if (state.screen === 'play' && !state.paused) {
+    if (state.screen === 'play' && !state.paused && !state.card) {
       acc += dt;
       var n = 0;
       while (acc >= K.DT && n < K.MAX_STEPS_PER_FRAME) { physStep(); acc -= K.DT; n++; }
       if (n >= K.MAX_STEPS_PER_FRAME && acc > K.DT) acc = 0;    // drop the backlog rather than spiral
       if (state.phase === 'aim') updatePrediction();
       else if (state.phase === 'flight' && state.sim && state.sim.status === 'flying') Sound.droneSpeed(Physics.speed(state.sim) / K.VMAX / 1.4);
+      if (!nudgeDone) {
+        if (nudgeEligible()) { nudgeIdle += dt; if (nudgeIdle > 7) setNudge(true); }
+        else { nudgeIdle = 0; setNudge(false); }
+      }
     } else acc = 0;
     try { Render.frame(state, t); }
     catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
@@ -3330,6 +4726,8 @@ var Save = (function () {
     if (state.phase === 'result') resetAttempt();
     else if (state.phase === 'flight') { timers.length = 0; state.sim = null; state.phase = 'aim'; }
     hideCard();
+    popQueue.length = 0;
+    while (state.card) closePopup();
     return true;
   }
   function fastForward(n) {
@@ -3350,6 +4748,18 @@ var Save = (function () {
     state: state, Physics: Physics, Levels: Levels, Render: Render, Sound: Sound, Save: Save,
     loadLevel: function (i) { return loadCampaign(i); },
     loadEndless: function (seed) { return startEndless(seed); },
+    loadDaily: function (k) { return loadDaily(k); },
+    dailyPlate: function () { return dailyCache && dailyCache.key === Save.dateKey() ? dailyCache.lv : null; },
+    openCard: function (name) { return requestPopup(name); },
+    closeCard: function () { return closePopup(); },
+    useHint: function () {
+      if (state.screen !== 'play') return false;
+      if (state.paused) resume();
+      popQueue.length = 0;
+      while (state.card) closePopup();
+      return useHint();
+    },
+    Log: typeof Log !== 'undefined' ? Log : null, LogUI: typeof LogUI !== 'undefined' ? LogUI : null,
     launch: function (vx, vy) {
       if (!hookPrepare()) return false;
       if (state.launches >= K.MAX_LAUNCHES) resetAttempt();
@@ -3373,7 +4783,10 @@ var Save = (function () {
     fps: fps,
     screen: function (name) {
       if (name == null) return state.screen;
-      if (name === 'play' && state.screen !== 'play') { if (state.mode === 'endless' && state.endless.round > 0) setScreen('play'); else loadCampaign(state.levelIndex); }
+      if (name === 'play' && state.screen !== 'play') {
+        if ((state.mode === 'endless' && state.endless.round > 0) || (state.mode === 'daily' && state.level)) setScreen('play');
+        else loadCampaign(Math.max(0, state.levelIndex));
+      }
       else setScreen(name);
       return state.screen;
     },
@@ -3399,7 +4812,8 @@ var Save = (function () {
   setScreen('title');
   try {
     if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(function () {
-      if (thumbsDrawn) drawThumbs(true);
+      if (thumbsDrawn && state.screen === 'select') drawThumbs(true);
+      else if (thumbsDrawn) for (var i = 0; i < cards.length; i++) if (cards[i]) cards[i].done = false;
       placeDom();
     });
   } catch (e) {}

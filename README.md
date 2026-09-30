@@ -4,33 +4,50 @@ A gravity-slingshot puzzle game for iPhone, drawn as a 19th-century astronomical
 
 Pull back anywhere on the screen and release. Your probe curves around planets, moons and black holes on its way to the brass target ring. You get three launches per plate, and the fewer you use, the more stars you earn.
 
-The whole game is one self-contained HTML file (about 190 KB). There is no server, no build step to play, and no assets other than an optional Google Fonts stylesheet. Add it to your Home Screen and it runs offline.
+The whole game is one self-contained HTML file (about 290 KB). There is no server, no build step to play, and no assets other than an optional Google Fonts stylesheet. Add it to your Home Screen and it runs offline.
 
 <p align="center">
-  <img src="docs/screenshots/title.png" width="200" alt="Title screen: a hatched orrery under the word PERIHELION">
-  <img src="docs/screenshots/plate-15.png" width="200" alt="Plate XV, The Dark Well: a black hole, two planets and a dotted predicted path">
-  <img src="docs/screenshots/success.png" width="200" alt="Plate I sealed: a brass path and an OBSERVED seal beside the target">
+  <img src="docs/screenshots/title.png" width="200" alt="Title screen: a hatched orrery, the Daily Plate and Endless Survey buttons">
+  <img src="docs/screenshots/plate-45.png" width="200" alt="Plate XLV with a short dotted predicted path">
+  <img src="docs/screenshots/hint.png" width="200" alt="The astronomer's line in brass beside the vermilion prediction">
+</p>
+<p align="center">
+  <img src="docs/screenshots/intro.png" width="200" alt="The instruction card, To Observe">
+  <img src="docs/screenshots/fragments.png" width="200" alt="The comet fragments card with a dashed ring around the comet">
+  <img src="docs/screenshots/log.png" width="200" alt="The Observer's Log: totals, Daily streak and a two-week strip">
 </p>
 
 ## How to play
 
 - **Aim:** touch anywhere and pull back. The probe fires the opposite way, and a longer pull means a faster launch. A short pull (under about 40 units) cancels.
-- **Predicted path:** while you aim, a dotted vermilion line shows only the first 35% of the flight. Judging the rest is the puzzle.
+- **Predicted path:** while you aim, a short dotted vermilion line shows only the first 1.5 seconds of the flight, about 15% of the longest possible one. Reading the rest of the course is the puzzle.
 - **Three launches per plate:** 1 launch = 3 stars, 2 = 2 stars, 3 = 1 star. Miss three times and the plate is unsealed.
-- **Comet fragments:** optional brass comets that sit on harder routes.
+- **Comet fragments:** optional brass comets that sit on harder routes. Once collected they stay collected across your launches on that plate.
 - **Hazards:** hitting a body, drifting off the plate, being pulled into a black hole's capture ring, or flying for more than 10 seconds all end the launch.
+- **Instruction cards:** a card explains the controls the first time you play, and another explains comet fragments the first time they appear. Both can be reopened from the Menu.
+
+### Modes
+
+- **The Atlas:** 60 plates in two volumes, unlocked in order.
+- **Daily Plate:** one plate a day, generated from the date, so everyone gets the same one with no server. It keeps a streak of consecutive days. Harder later in the week.
 - **Endless Survey:** generated plates that get harder each round, with a saved best score.
+- **Observer's Log:** lifetime statistics (launches, hit rate, distance flown, near misses), your Daily streak, and 26 honours to earn, such as *Thread the Needle* for winning while grazing a body.
 
-The 30 plates introduce one idea at a time:
+### Consult the Astronomer
 
-| Plates | New mechanic |
-|---|---|
-| I–III | Fixed planets |
-| IV–V | Comet fragments |
-| VI–IX | Moons on rails |
-| X–XIII | Binary pairs |
-| XIV–XIX | Black holes (extra pull, capture ring) |
-| XX–XXX | Repulsors (negative mass), then everything combined |
+Open **Menu → Consult the Astronomer** while aiming. The heavens are held still and a brass line shows the first part of a winning course. It costs one star, so a hinted plate sealed in one launch earns 2 stars. You can consult once per attempt.
+
+### The plates
+
+| Plates | Volume | New mechanic |
+|---|---|---|
+| I–III | I | Fixed planets |
+| IV–V | I | Comet fragments |
+| VI–IX | I | Moons on rails |
+| X–XIII | I | Binary pairs |
+| XIV–XIX | I | Black holes (extra pull, capture ring) |
+| XX–XXX | I | Repulsors (negative mass), then everything combined |
+| XXXI–LX | II | The same mechanics in denser arrangements: 4–7 bodies, smaller targets, more comets, more moving bodies |
 
 ## Put it on GitHub Pages
 
@@ -46,7 +63,9 @@ The 30 plates introduce one idea at a time:
 2. Tap **Share → Add to Home Screen**.
 3. Launch it from the new icon. It opens full screen and keeps working with no connection.
 
-If the fonts never load, the game falls back to your system serif and monospace fonts and plays the same.
+If the fonts never load, the game falls back to your system serif and monospace fonts and plays the same. After you publish a new version, open the app once while online and then close and reopen it to pick up the update.
+
+Progress is saved on the device in `localStorage` (key `perihelion.v1`), so it does not follow you between phones. Older saves from before the Daily Plate and the extra 30 plates upgrade automatically.
 
 Sound is synthesized in the browser, so the first tap unlocks it. On iPhone the game keeps its audio alive with a silent audio track, which means it is audible even when the ringer switch is on silent. Use the in-game **Sound** toggle to mute it.
 
@@ -64,10 +83,11 @@ Edit the files in `src/`, then rebuild. Do not edit `index.html` by hand.
 ### Tests
 
 ```sh
-npm test             # physics self-test, golden-flight hash, and full verification of all 30 plates
+npm test             # physics self-test, golden-flight hash, and verification of all 60 plates
 npx playwright install chromium
-npm run test:flow    # touch flow, menus, pause, fail and endless flows, storage disabled, landscape
-npm run qa           # everything above plus layout, screenshots and frame timing (about 130 checks)
+npm run test:flow    # touch flow, popup cards, Daily, hint, atlas, menus, storage disabled, landscape
+npm run test:log     # achievements and stats logic, the Observer's Log screen, toasts
+npm run qa           # the whole suite in iPhone emulation: about 290 checks, screenshots, frame timing (about 12 minutes)
 npm run perf         # per-frame cost with the CPU throttled 4x, including canvas raster time
 ```
 
@@ -75,13 +95,16 @@ The suites run in Chromium with iPhone 14 emulation (390×844 at 3× DPR, touch,
 
 ### Rebuilding the campaign
 
-The 30 plates are baked into `src/20-levels.js` as plain data, so nothing is solved at startup. To regenerate them:
+The 60 plates are baked into `src/20-levels.js` as plain data, so nothing is solved at startup. Volume I (plates I–XXX) is frozen: its 30 lines are never rewritten, and `tools/levels-golden.json` pins their hashes because players hold stars against them.
 
 ```sh
-npm run bake         # about 4 minutes on two cores; rewrites the CAMPAIGN block in src/20-levels.js
+npm run bake         # bakes the missing Volume II plates (resumable, two worker processes) and rewrites the CAMPAIGN block
+node tools/levels-daily-test.js   # Daily Plate determinism and timing over 400 dates
 ```
 
-Changing anything in `src/00-const.js` or the numeric core of `src/10-physics.js` invalidates the baked solutions. Re-bake and re-run `npm test` if you do. The golden hash in `tools/physics-golden.json` exists to catch accidental changes to the physics.
+Changing anything in `src/00-const.js` (other than the aiming-line length and hint size) or the numeric core of `src/10-physics.js` invalidates the baked solutions. Re-bake and re-run `npm test` if you do. The golden hash in `tools/physics-golden.json` exists to catch accidental changes to the physics.
+
+To tune difficulty, `K.PREDICT_STEPS` in `src/00-const.js` sets how much of the path aiming shows (180 steps = 1.5 s). It only affects the preview, so no plate needs re-baking.
 
 ## How it works
 
@@ -89,30 +112,35 @@ Changing anything in `src/00-const.js` or the numeric core of `src/10-physics.js
 |---|---|
 | `src/00-const.js` | World size, physics constants, palette, fonts |
 | `src/10-physics.js` | Integrator, gravity, collisions, the predictor, `selfTest()` |
-| `src/20-levels.js` | Seeded generator (mulberry32), solver, the 30 baked plates, the Endless generator |
-| `src/30-render.js` | Canvas 2D renderer: hatching, contour wells, grid, HUD, effects, thumbnails |
-| `src/40-audio.js` | Web Audio synthesis: drone, bell, thump, pluck, whoosh |
-| `src/50-save.js` | `localStorage` progress with an in-memory fallback |
-| `src/60-main.js` | Game loop, touch input, screens and menus, test hooks (`window.__peri`) |
+| `src/20-levels.js` | Seeded generator (mulberry32), solver, the 60 baked plates, the Endless and Daily generators |
+| `src/30-render.js` | Canvas 2D renderer: hatching, contour wells, grid, HUD, hint line, effects, thumbnails |
+| `src/40-audio.js` | Web Audio synthesis: drone, bell, thump, pluck, whoosh, honour chime |
+| `src/50-save.js` | `localStorage` progress, popup-card flags, Daily record, stats and honours, with an in-memory fallback |
+| `src/55-log.js` | Observer's Log: lifetime stats and the 26 honours |
+| `src/56-logui.js` | Observer's Log screen and achievement toasts |
+| `src/60-main.js` | Game loop, touch input, screens, cards, Daily and hint flows, test hooks (`window.__peri`) |
 | `src/shell.*.html` | Page head, styles and markup for the menus |
 | `tools/` | Build, tests, level baker, icon generator |
 
 - **Physics:** semi-implicit Euler at a fixed 120 Hz with softened gravity, decoupled from rendering. Moons move on rails driven by an integer step counter, never accumulated time.
 - **Deterministic aiming:** the predicted path and the real flight both call the same `createSim` and `stepSim`, so they match point for point. The self-test proves this, including launches at a non-zero start time.
 - **Level quality:** every plate is verified to be solvable in a single launch, and the stored solution sits in a cluster of winning shots (at least 8 of the 9 aims within ±1° of angle and ±3% of power also hit). From plate VI on, the straight shot at the target misses, and moving-body plates stay solvable at several launch times, so nothing depends on frame-perfect timing.
+- **The astronomer:** each plate stores a verified winning launch. Consulting the astronomer resets the moons to the start time that launch was solved for, holds them there until you fire, and draws the first 55% of that path.
 - **Look:** five colors only (ink, paper, graphite, vermilion, brass), line art and hatching instead of fills, light from the upper left, no glow. Static layers are pre-rendered to offscreen canvases once per plate.
-- **Speed:** about 2.5 ms per frame on a busy late plate with the CPU throttled 4x.
+- **Speed:** a few milliseconds per frame on a busy late plate with the CPU throttled 4x.
 - **iOS details:** safe-area insets, no scroll, zoom or text selection, pauses when the page is hidden, canvas resolution capped at 2× for speed.
 
-More detail is in [docs/CONTRACT.md](docs/CONTRACT.md), the design contract the modules were built against.
+More detail is in [docs/CONTRACT.md](docs/CONTRACT.md) (the original module contract) and [docs/CONTRACT-v2.md](docs/CONTRACT-v2.md) (the Daily Plate, hint, log and cards addendum).
 
 ## Known limits
 
+- **Daily Plate on different browsers:** the plate is generated on the device from the date, and its layout is accepted or rejected by a physics check that uses `Math.sin` and `Math.cos`. Those can differ in the last digit between JavaScript engines, so in rare cases two browsers might settle on different plates for the same date. The plate you get is always verified solvable on your own device. "Today" is your local calendar date.
+- **Generated plates are sometimes gentler than asked:** the phone-side solver has a small time budget. When it cannot find a robust solution, it falls back to an easier layout. This affects about a quarter of Daily plates and some late Endless rounds.
 - Plate I is only as easy as one planet and a small target allow. The first five plates are all fairly gentle, and the difficulty curve starts in earnest at plate VI.
-- Endless plates are checked with a fast solver on the phone. When it cannot find a robust solution within its budget it falls back to an easier layout, so late Endless rounds are somewhat easier than the late campaign plates.
 - It is designed for portrait. Landscape works, but the plate is small.
 - `navigator.vibrate` is used where available. iOS Safari does not support it, so there are no haptics on iPhone.
+- The page is about 290 KB, close to the 300 KB budget the project set itself.
 
 ## Background
 
-Perihelion was built from a single prompt as a test of what a current model can do end to end. A lead agent wrote the shared contract, then physics, level, render and input & feel sub-agents built their modules in parallel, and a QA agent tested the integrated build in iPhone emulation and sent fixes back.
+Perihelion was built from a single prompt as a test of what a current model can do end to end. A lead agent wrote the shared contract, then physics, level, render and input & feel sub-agents built their modules in parallel, and a QA agent tested the integrated build in iPhone emulation and sent fixes back. The second version (60 plates, Daily Plate, the astronomer's hint, the Observer's Log, the instruction cards and the shorter aiming line) was built the same way.
