@@ -174,6 +174,22 @@ var Sound = (function () {
     try { var t = now() + 0.01; bell(t, 392, 0.5); bell(t + 0.14, 587.33, 0.3); } catch (e) {}
   }
 
+  // ---- ach: soft two-note bell for an honour in the Observer's Log (quieter and shorter than chime, ~0.6 s) ----
+  function achBell(t, f0, level) {
+    var ratios = [1, 2.76, 5.4], amps = [0.55, 0.22, 0.08], decs = [0.5, 0.3, 0.16];
+    for (var i = 0; i < 3; i++) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f0 * ratios[i];
+      o.connect(g); g.connect(master);
+      env(g, t, amps[i] * level, 0.005, decs[i]);
+      o.start(t); o.stop(t + decs[i] + 0.05);
+    }
+  }
+  function ach() {
+    if (!ready()) return;
+    try { var t = now() + 0.01; achBell(t, 659.26, 0.2); achBell(t + 0.11, 987.77, 0.14); } catch (e) {}
+  }
+
   // ---- thump: filtered noise burst + low sine drop. soft (0..1] scales it for lost/timeout ----
   function thump(soft) {
     if (!ready()) return;
@@ -254,7 +270,7 @@ var Sound = (function () {
   return {
     unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
     droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
-    chime: chime, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    chime: chime, ach: ach, thump: thump, pluck: pluck, tick: tick, launch: launch,
     get state() { return ctx ? ctx.state : 'none'; }
   };
 })();
