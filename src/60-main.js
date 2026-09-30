@@ -6,11 +6,13 @@
   function $(id) { return doc.getElementById(id); }
   var cv = $('game'), ui = $('ui');
   var elTitle = $('scr-title'), elSelect = $('scr-select'), elPlay = $('play-ui'), elSheet = $('sheet');
-  var elCard = $('card'), elHint = $('hint'), elNote = $('note'), elGrid = $('grid'), elTally = $('tally');
+  var elCard = $('card'), elPop = $('pcard'), elHint = $('hint'), elNote = $('note'), elGrid = $('grid'), elTally = $('tally');
   var elZoneL = $('zone-l'), elZoneR = $('zone-r'), elProbe = $('safe-probe');
 
   var CAMP = Levels.CAMPAIGN || [];
   var NPL = Math.min(Save.N, CAMP.length);
+  var VOLS = (Levels.VOLUMES && Levels.VOLUMES.length) ? Levels.VOLUMES : [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }];
+  var MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   var STEP_HZ = Math.round(1 / K.DT);
   var FAIL_TEXT = {
     crash: 'Struck a body.', captured: 'Taken by the dark star.', lost: 'Lost beyond the plate.', timeout: 'Drifted past the hour.'
@@ -22,9 +24,14 @@
   var state = {
     screen: 'title',
     paused: false,
-    mode: 'campaign',
+    mode: 'campaign',                 // 'campaign' | 'endless' | 'daily'
+    daily: null,                      // { key, label } while mode === 'daily'
     level: CAMP[0] || null, levelIndex: 0,
     step: 0,
+    frozen: false,                    // the astronomer holds the heavens: step does not advance while aiming
+    hint: { on: false, used: false, pts: new Float32Array(K.HINT_MAX * 2), n: 0, t0: 0 },
+    spotlight: null,                  // [{x, y}] world points ringed while the fragment card is open
+    card: null,                       // null | 'intro' | 'fragments': a popup card is open (aim blocked, clock held)
     phase: 'aim',
     aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
     predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
@@ -40,8 +47,11 @@
   // full path of the current flight (pooled). result.pts points at it until the next launch.
   var path = { pts: new Float32Array((K.MAX_STEPS + 1) * 2), n: 0 };
   var runSeed = 0;
-  var hintShown = false, hintDone = false;
-  var timers = [];          // step-based timers: {at: step, fn} — pause with the game, advance under fastForward
+  var hintBuf = new Float32Array((K.MAX_STEPS + 2) * 2);   // scratch for the astronomer's course (allocated once)
+  var nudgeShown = false, nudgeDone = false, nudgeIdle = 0;
+  var tick = 0;             // physics ticks: advances every physStep, even while the heavens are frozen
+  var timers = [];          // tick-based timers: {at: tick, fn} — pause with the game, advance under fastForward
+  var popQueue = [], popFromSheet = false;
   var safe = { top: 0, right: 0, bottom: 0, left: 0 };
   var L = null;             // last Render.layout
   var reduceMotion = false;
@@ -52,11 +62,12 @@
   function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
 
   // ------------------------------------------------------------------ timers (in physics steps)
-  function after(steps, fn) { timers.push({ at: state.step + Math.max(1, Math.round(steps)), fn: fn }); }
+  function logEvent(name, data) { try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
+  function after(steps, fn) { timers.push({ at: tick + Math.max(1, Math.round(steps)), fn: fn }); }
   function afterMs(ms, fn) { after(ms / 1000 * STEP_HZ, fn); }
   function runTimers() {
     for (var i = 0; i < timers.length; i++) {
-      if (state.step >= timers[i].at) { var t = timers[i]; timers.splice(i, 1); i--; t.fn(); }
+      if (tick >= timers[i].at) { var t = timers[i]; timers.splice(i, 1); i--; t.fn(); }
     }
   }
 
@@ -79,9 +90,12 @@
     path.pts[2 * path.n] = x; path.pts[2 * path.n + 1] = y; path.n++;
   }
 
+  function hintClear() { var h = state.hint; h.on = false; h.used = false; h.n = 0; state.frozen = false; }
   function resetAttempt() {
     timers.length = 0;
     state.step = 0;
+    hintClear();
+    dropPopup();
     state.phase = 'aim';
     clearAim();
     state.sim = null;
@@ -96,7 +110,8 @@
     Sound.droneStop();
     hideCard();
     showNote('');
-    updateHint();
+    nudgeIdle = 0; setNudge(false);
+    flushPopups();
   }
 
   function resetProbe() {
@@ -106,6 +121,7 @@
     clearTrail();
     clearAim();
     state.hud.speed = 0; state.hud.closest = Infinity;
+    flushPopups();
   }
 
   function doLaunch(vx, vy, power) {
@@ -116,6 +132,7 @@
     if (sim.collected && sim.collected.length === state.collected.length) sim.collected.set(state.collected);
     state.sim = sim;
     state.phase = 'flight';
+    state.frozen = false; state.hint.on = false;      // the astronomer releases the heavens; hint.used stays true
     clearAim();
     clearTrail();
     path.n = 0;
@@ -125,8 +142,9 @@
     Sound.launch(power);
     Sound.droneStart();
     vibrate(12);
-    if (!hintDone && hintShown) { hintDone = true; updateHint(); }
+    nudgeDone = true; setNudge(false);
     showNote('');
+    logEvent('launch', { mode: state.mode, launchNo: state.launches, power: power, hintUsed: state.hint.used });
     return true;
   }
 
@@ -141,22 +159,32 @@
   function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
 
   function endFlight(status) {
-    var sim = state.sim;
+    var sim = state.sim, mode = state.mode, lv = state.level, hu = state.hint.used;
     Sound.droneStop();
+    logEvent('flightEnd', { mode: mode, level: lv, launchNo: state.launches, status: status, sim: sim, hintUsed: hu, fragsThisAttempt: countFrags() });
     if (status === 'hit') {
-      var stars = Math.max(1, 4 - state.launches);
+      var stars = Math.max(1, 4 - state.launches - (hu ? 1 : 0));
       state.phase = 'result';
-      state.result = { success: true, stars: stars, status: status, pts: path.pts, n: path.n, at: nowMs() };
+      state.result = { success: true, stars: stars, status: status, pts: path.pts, n: path.n, at: nowMs(), hintUsed: hu };
       state.hud.closest = 0;
       try { Render.fx.success(path.pts, path.n); } catch (e) {}
       Sound.chime();
       vibrate([12, 60, 24]);
-      if (state.mode === 'campaign') {
-        state.result.record = Save.recordPlate(state.levelIndex, stars, countFrags());
+      var rec = null, plateIndex = -1;
+      if (mode === 'campaign') {
+        plateIndex = state.levelIndex;
+        rec = Save.recordPlate(plateIndex, stars, countFrags());
+      } else if (mode === 'daily') {
+        rec = Save.recordDaily(state.daily.key, stars, state.launches);
       } else {
         state.endless.score += stars;
         if (Save.recordEndless(state.endless.score)) state.endless.best = state.endless.score;
       }
+      state.result.record = rec;
+      logEvent('plateSealed', { mode: mode, level: lv, plateIndex: plateIndex, stars: stars, launches: state.launches, hintUsed: hu,
+        fragsThisAttempt: countFrags(), fragsTotal: lv.frags ? lv.frags.length : 0, endlessRound: mode === 'endless' ? state.endless.round : 0 });
+      if (mode === 'daily') logEvent('daily', { key: state.daily.key, stars: stars, launches: state.launches, streak: rec.streak, best: rec.best, first: rec.first });
+      if (mode === 'endless') logEvent('endlessRound', { round: state.endless.round, score: state.endless.score });
       afterMs(1200, showSuccessCard);
       return;
     }
@@ -189,7 +217,8 @@
 
   // one fixed physics step
   function physStep() {
-    state.step++;
+    tick++;
+    if (!state.frozen) state.step++;
     var s = state.sim;
     if (state.phase === 'flight' && s && s.status === 'flying') {
       var st = Physics.stepSim(s, state.level);
@@ -218,12 +247,60 @@
   function loadCampaign(i) {
     i = Math.max(0, Math.min(CAMP.length - 1, i | 0));
     state.mode = 'campaign';
+    state.daily = null;
     state.levelIndex = i;
     state.level = CAMP[i];
     Render.setLevel(state.level);
     resetAttempt();
     setScreen('play');
+    autoCards();
     return state.level;
+  }
+
+  // ---- Daily Plate
+  function hashKey(k) { var h = 2166136261 >>> 0; for (var i = 0; i < k.length; i++) h = Math.imul(h ^ k.charCodeAt(i), 16777619) >>> 0; return h >>> 0; }
+  function dayLabel(k) { var p = k.split('-'); return (+p[2]) + ' ' + MONTHS[(+p[1] - 1) | 0] + ' ' + p[0]; }
+  // Levels.daily is the LEVEL agent's; until it lands a weekday-graded Levels.generate stands in.
+  function idle(fn, timeout) {
+    try { if (window.requestIdleCallback) { window.requestIdleCallback(fn, { timeout: timeout || 3000 }); return; } } catch (e) {}
+    setTimeout(fn, 250);
+  }
+  // today's plate is engraved in idle time while the title shows (Levels.daily can cost ~100+ ms on a phone); one entry,
+  // keyed by date, recomputed when the date rolls over. The level object is deterministic, so reusing it is safe.
+  var dailyCache = null;
+  function makeDaily(k) {
+    if (dailyCache && dailyCache.key === k) return dailyCache.lv;
+    var lv = buildDaily(k);
+    dailyCache = { key: k, lv: lv };
+    return lv;
+  }
+  function prepDaily() {
+    if (dailyCache && dailyCache.key === Save.dateKey()) return;
+    idle(function () {
+      var k = Save.dateKey();
+      if (dailyCache && dailyCache.key === k) return;
+      try { makeDaily(k); } catch (e) {}
+    });
+  }
+  function buildDaily(k) {
+    if (typeof Levels.daily === 'function') return Levels.daily(k);
+    var p = k.split('-'), wd = new Date(+p[0], +p[1] - 1, +p[2], 12).getDay();
+    var lv = Levels.generate(hashKey('perihelion-' + k), [0.85, 0.3, 0.4, 0.5, 0.6, 0.7, 0.78][wd]);
+    lv.id = 'd' + k; lv.plate = 'DAILY'; lv.caption = 'DAILY \u00b7 ' + dayLabel(k); lv.name = lv.name || 'Daily Plate';
+    return lv;
+  }
+  function loadDaily(k) {
+    k = (typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k)) ? k : Save.dateKey();
+    var lv = makeDaily(k), m = /^DAILY\s*[·:|\-–—]\s*(.+)$/.exec(lv.caption || '');
+    state.mode = 'daily';
+    state.daily = { key: k, label: m ? m[1] : dayLabel(k) };
+    state.levelIndex = -1;
+    state.level = lv;
+    Render.setLevel(lv);
+    resetAttempt();
+    setScreen('play');
+    autoCards();
+    return lv;
   }
   function roundSeed(r) { return (runSeed + Math.imul(r, 0x9E3779B1)) >>> 0; }
   // Next Endless round is generated while the success card shows (same seed & difficulty => same level).
@@ -236,10 +313,14 @@
   function preGenerate(r) {
     var seed = roundSeed(r), d = Math.min(1, r / 25), run = runSeed;
     if (preGen && preGen.seed === seed && preGen.run === run) return;
+    // start only once the success card has settled (seal + card animation done), and in idle time; a quick tap on
+    // "Next plate" before this runs just generates synchronously in genRound
     setTimeout(function () {
-      if (state.mode !== 'endless' || runSeed !== run || state.endless.round !== r - 1) return;
-      try { preGen = { seed: seed, d: d, run: run, lv: Levels.generate(seed, d) }; } catch (e) { preGen = null; }
-    }, reduceMotion ? 0 : 380);
+      idle(function () {
+        if (state.mode !== 'endless' || runSeed !== run || state.endless.round !== r - 1 || (preGen && preGen.seed === seed && preGen.run === run)) return;
+        try { preGen = { seed: seed, d: d, run: run, lv: Levels.generate(seed, d) }; } catch (e) { preGen = null; }
+      }, 2000);
+    }, reduceMotion ? 0 : 500);
   }
   function endlessRound() {
     var r = state.endless.round;
@@ -247,11 +328,13 @@
     lv.plate = toRoman(r);
     lv.caption = 'ENDLESS · PLATE ' + lv.plate;
     state.mode = 'endless';
+    state.daily = null;
     state.levelIndex = r - 1;
     state.level = lv;
     Render.setLevel(lv);
     resetAttempt();
     setScreen('play');
+    autoCards();
     return lv;
   }
   function startEndless(seed) {
@@ -275,16 +358,19 @@
       Sound.droneStop();
       clearAim();
       hideCard();
+      dropPopup();
+      popQueue.length = 0;
       showNote('');
+      setNudge(false);
       timers.length = 0;
+      hintClear();
       if (state.phase === 'flight') state.phase = 'aim';
     }
     hideSheet();
     state.paused = false;
-    if (name === 'title') refreshTitle();
+    if (name === 'title') { refreshTitle(); prepDaily(); }
     if (name === 'select') refreshSelect(prev !== 'select');
     if (name === 'play') placeDom();
-    updateHint();
     acc = 0;
     snapshot();
   }
@@ -297,6 +383,16 @@
   function refreshTitle() {
     var b = Save.data.endlessBest;
     $('t-best').innerHTML = b > 0 ? 'Best survey &middot; <b>' + b + '</b> stars' : '';
+    var ed = $('t-ed');
+    if (ed && CAMP.length) ed.innerHTML = 'Plates I&ndash;' + toRoman(CAMP.length) + ' &middot; Engraved MMXXVI';
+    var dl = $('t-daily');
+    if (dl) {
+      var st = Save.dailyDone(Save.dateKey());
+      if (st > 0) {
+        dl.innerHTML = 'Sealed <span class="vh">' + st + (st === 1 ? ' star' : ' stars') + '</span>' + starsRow(st, 11) +
+          '<span class="sep">&middot;</span>streak ' + Math.max(1, Save.dailyStreak());
+      } else dl.innerHTML = 'Today&rsquo;s plate';
+    }
     refreshSoundButtons();
   }
 
@@ -319,50 +415,86 @@
       '<circle cx="10.5" cy="3.5" r="1.8"/><path d="M9 4.6 L1.5 9 M9.6 5.3 L4.5 9.6 M8.4 3.9 L1 6.6"/></svg>';
   }
 
-  // ---- level select
-  var cards = [], thumbW = 0, thumbsDrawn = false;
+  // ---- level select: two volumes, thumbnails drawn lazily (only rows near the viewport)
+  var cards = [], thumbW = 0, thumbsDrawn = false, thumbRaf = 0;
+  function volHead(v, from, to) {
+    return '<h3 class="vol-head">' + escapeHtml(v.name || 'Volume') + '<span class="vs"> &middot; </span><i>Plates ' + toRoman(from + 1) + '&ndash;' + toRoman(to + 1) + '</i></h3><div class="vol-rule"></div>';
+  }
+  function plateHtml(i) {
+    var lv = CAMP[i];
+    return '<button class="plate" data-i="' + i + '" aria-label="Plate ' + toRoman(i + 1) + '">' +
+      '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Sealed</span></span></span>' +
+      '<span class="pl-num">' + toRoman(i + 1) + '</span>' +
+      '<span class="pl-name">' + escapeHtml(lv.name || '') + '</span>' +
+      '<span class="pl-meta"></span></button>';
+  }
   function buildGrid() {
-    var html = '';
-    for (var i = 0; i < CAMP.length; i++) {
-      var lv = CAMP[i];
-      html += '<button class="plate" data-i="' + i + '" aria-label="Plate ' + toRoman(i + 1) + '">' +
-        '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Sealed</span></span></span>' +
-        '<span class="pl-num">' + toRoman(i + 1) + '</span>' +
-        '<span class="pl-name">' + escapeHtml(lv.name || '') + '</span>' +
-        '<span class="pl-meta"></span></button>';
+    var html = '', used = [], v, i, from, to;
+    for (var vi = 0; vi < VOLS.length; vi++) {
+      v = VOLS[vi];
+      from = Math.max(0, v.from | 0); to = Math.min(CAMP.length - 1, v.to | 0);
+      var list = [];
+      for (i = from; i <= to; i++) if (!used[i]) { used[i] = 1; list.push(i); }
+      if (!list.length) continue;
+      html += volHead(v, list[0], list[list.length - 1]) + '<div class="grid">';
+      for (i = 0; i < list.length; i++) html += plateHtml(list[i]);
+      html += '</div>';
     }
+    var rest = [];
+    for (i = 0; i < CAMP.length; i++) if (!used[i]) rest.push(i);
+    if (rest.length) { html += '<div class="vol-rule"></div><div class="grid">'; for (i = 0; i < rest.length; i++) html += plateHtml(rest[i]); html += '</div>'; }
     elGrid.innerHTML = html;
     cards = [];
     var bs = elGrid.querySelectorAll('.plate');
-    for (var j = 0; j < bs.length; j++) cards.push({ el: bs[j], cv: bs[j].querySelector('canvas'), sealed: bs[j].querySelector('.sealed'), meta: bs[j].querySelector('.pl-meta') });
+    for (var j = 0; j < bs.length; j++) {
+      var idx = +bs[j].getAttribute('data-i');
+      cards[idx] = { el: bs[j], cv: bs[j].querySelector('canvas'), sealed: bs[j].querySelector('.sealed'), meta: bs[j].querySelector('.pl-meta'), done: false };
+    }
+    thumbsDrawn = false; thumbW = 0;
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function drawCard(i, w, h, dpr) {
+    var c = cards[i].cv;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    var g = c.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = PAL.ink; g.fillRect(0, 0, c.width, c.height);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    try { Render.drawThumbnail(g, CAMP[i], w, h); } catch (e) { if (!drawCard.err) { drawCard.err = 1; console.warn('drawThumbnail failed', e); } }
+    cards[i].done = true;
+  }
+  // Draw the thumbnails of plates within ~600 px of the scroll viewport that are not drawn yet (at the current width).
   function drawThumbs(force) {
     if (!cards.length) return;
-    var r = cards[0].cv.parentNode.getBoundingClientRect();
-    var w = Math.round(r.width) - 2, h = Math.round(w * 16 / 9);
+    var sc = $('s-scroll'), first = cards[0] || cards.filter(Boolean)[0];
+    if (!sc || !first) return;
+    var w = Math.round(first.cv.parentNode.getBoundingClientRect().width) - 2, h = Math.round(w * 16 / 9);
     if (w <= 0) return;
-    if (!force && thumbsDrawn && w === thumbW) return;
-    thumbW = w; thumbsDrawn = true;
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
-    for (var i = 0; i < cards.length; i++) {
-      var c = cards[i].cv;
-      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
-      c.style.height = h + 'px';
-      var g = c.getContext('2d');
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.fillStyle = PAL.ink; g.fillRect(0, 0, c.width, c.height);
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      try { Render.drawThumbnail(g, CAMP[i], w, h); } catch (e) { if (!drawThumbs.err) { drawThumbs.err = 1; console.warn('drawThumbnail failed', e); } }
+    var i;
+    if (force || w !== thumbW) { thumbW = w; for (i = 0; i < cards.length; i++) if (cards[i]) cards[i].done = false; }
+    thumbsDrawn = true;
+    var sr = sc.getBoundingClientRect(), lo = sr.top - 600, hi = sr.bottom + 600, todo = [];
+    for (i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      if (!c || c.done) continue;
+      var r = c.el.getBoundingClientRect();
+      if (r.bottom >= lo && r.top <= hi) todo.push(i);
     }
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (i = 0; i < todo.length; i++) drawCard(todo[i], w, h, dpr);
   }
+  function scheduleThumbs() {
+    if (thumbRaf) return;
+    thumbRaf = requestAnimationFrame(function () { thumbRaf = 0; if (state.screen === 'select') drawThumbs(false); });
+  }
+  (function () { var sc = $('s-scroll'); if (sc) sc.addEventListener('scroll', scheduleThumbs, { passive: true }); })();
   function refreshSelect(entering) {
     if (!cards.length) buildGrid();
-    var d = Save.data, tot = Save.totals(), fragTotal = 0;
+    var d = Save.data, tot = Save.totals();
     for (var i = 0; i < cards.length; i++) {
-      var lv = CAMP[i], nf = lv.frags ? lv.frags.length : 0, locked = i >= d.unlocked;
-      fragTotal += nf;
       var c = cards[i];
+      if (!c) continue;
+      var lv = CAMP[i], nf = lv.frags ? lv.frags.length : 0, locked = i >= d.unlocked;
       c.el.classList.toggle('locked', locked);
       c.el.classList.toggle('done', d.stars[i] > 0);
       c.el.setAttribute('aria-disabled', String(locked));
@@ -372,29 +504,120 @@
       c.meta.innerHTML = meta;
     }
     elTally.innerHTML = 'Stars <b>' + tot.stars + '</b>/<b>' + (cards.length * 3) + '</b><span class="sep">&middot;</span>' +
-      'Fragments <b>' + tot.frags + '</b>/<b>' + fragTotal + '</b>';
-    // draw after the page is laid out
-    requestAnimationFrame(function () { drawThumbs(false); });
+      'Sealed <b>' + tot.sealed + '</b>/<b>' + cards.length + '</b>';
     if (entering) {
-      var sc = $('s-scroll'), cur = cards[Math.max(0, Math.min(cards.length - 1, d.unlocked - 1))];
-      if (sc && cur && state.mode === 'campaign' && state.levelIndex > 5) {
-        requestAnimationFrame(function () { try { sc.scrollTop = Math.max(0, cards[state.levelIndex].el.offsetTop - 80); } catch (e) {} });
+      var sc = $('s-scroll'), idx = state.mode === 'campaign' ? state.levelIndex : Math.max(0, d.unlocked - 1);
+      idx = Math.max(0, Math.min(cards.length - 1, idx));
+      if (sc && cards[idx]) {
+        requestAnimationFrame(function () {
+          try {
+            sc.scrollTop = idx > 5 ? Math.max(0, cards[idx].el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 90) : 0;
+          } catch (e) {}
+          drawThumbs(false);
+        });
+        return;
       }
     }
+    // draw after the page is laid out
+    requestAnimationFrame(function () { drawThumbs(false); });
   }
 
-  // ---- hint & marginal notes (positioned in world coords via Render)
-  function updateHint() {
-    var want = state.screen === 'play' && state.mode === 'campaign' && state.levelIndex === 0 &&
-      !hintDone && state.launches === 0 && !(Save.data.stars[0] > 0);
-    if (want) hintShown = true;
-    elHint.classList.toggle('on', !!want);
+  // ---- first-run nudge: the marginal note on plate I appears only if the player idles (the intro card says it first)
+  function setNudge(on) { if (on !== nudgeShown) { nudgeShown = on; elHint.classList.toggle('on', on); } }
+  function nudgeEligible() {
+    return state.screen === 'play' && state.mode === 'campaign' && state.levelIndex === 0 && !nudgeDone && state.launches === 0 &&
+      !(Save.data.stars[0] > 0) && state.phase === 'aim' && !state.card && !state.paused && !state.aim.active && !cardVisible();
   }
   var noteTimer = 0;
   function showNote(text) {
     if (text) { elNote.textContent = text; elNote.classList.add('on'); }
     else elNote.classList.remove('on');
   }
+
+  // ---- popup cards (To Observe / Comet Fragments): atlas plates that hold the clock while open
+  function levelFrags() { return (state.level && state.level.frags && state.level.frags.length) || 0; }
+  function popupSafe() { return state.screen === 'play' && state.phase !== 'flight' && !cardVisible(); }
+  function autoNext() {
+    if (!Save.seen('intro')) return 'intro';
+    if (levelFrags() && !Save.seen('fragments')) return 'fragments';
+    return null;
+  }
+  function autoCards() { var n = autoNext(); if (n) requestPopup(n); }
+  function flushPopups() {
+    if (state.card || !popupSafe()) return;
+    var n = popQueue.shift();
+    if (n) showPopup(n, false);
+  }
+  function requestPopup(name) {
+    if (name !== 'intro' && name !== 'fragments') return null;
+    if (state.card || !popupSafe()) {
+      if (state.card !== name && popQueue.indexOf(name) < 0) popQueue.push(name);
+      return 'queued';
+    }
+    showPopup(name, false);
+    return 'open';
+  }
+  function popHtml(name) {
+    if (name === 'intro') {
+      return '<p class="kicker">Instructions</p><h3 class="c-title">To Observe</h3><div class="rule"></div>' +
+        '<ol class="steps">' +
+        '<li>Touch anywhere and pull back, as if drawing a sling.</li>' +
+        '<li>Release to launch. The probe flies opposite your pull; a longer pull is faster.</li>' +
+        '<li>Gravity bends every course, and only the first moments of yours are drawn. Judge the rest.</li>' +
+        '<li>Reach the brass ring. Fewer launches earn more stars: one launch, three stars.</li></ol>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Begin</button></div>';
+    }
+    return '<p class="kicker">Notice</p><h3 class="c-title">Comet Fragments</h3><div class="rule"></div>' +
+      '<p class="pop-text">Small brass comets drift on this plate. Fly through one to collect it. They are optional, but a course that gathers them is a harder one. Fragments you collect stay collected across your launches on this plate.</p>' +
+      '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+  }
+  function fragCentroid() {
+    var f = state.level && state.level.frags;
+    if (!f || !f.length) return null;
+    var sx = 0, sy = 0;
+    for (var i = 0; i < f.length; i++) { var p = Render.worldToScreen(f[i].x, f[i].y); sx += p.x; sy += p.y; }
+    return { x: sx / f.length, y: sy / f.length };
+  }
+  function showPopup(name, fromSheet) {
+    state.card = name;
+    popFromSheet = !!fromSheet;
+    clearAim();
+    var f = state.level && state.level.frags;
+    state.spotlight = (name === 'fragments' && f && f.length) ? f.map(function (q) { return { x: q.x, y: q.y }; }) : null;
+    elPop.innerHTML = popHtml(name);
+    ui.classList.add('card-open');
+    if (fromSheet) { elSheet.classList.add('sub'); elCard.classList.add('held'); }
+    elPop.scrollTop = 0;
+    placePop();
+    elPop.classList.remove('on');
+    void elPop.offsetWidth;
+    elPop.classList.add('on');
+    showNote('');
+    setNudge(false);
+  }
+  function hidePopEl() {
+    elPop.classList.remove('on');
+    ui.classList.remove('card-open');
+    elCard.classList.remove('held');
+    state.card = null; state.spotlight = null;
+    if (popFromSheet) { elSheet.classList.remove('sub'); popFromSheet = false; }
+  }
+  // dismissed by the player (or a test hook): remembered, and the next queued / unseen card follows
+  function closePopup() {
+    var name = state.card;
+    if (!name) return null;
+    var fromSheet = popFromSheet;
+    Save.markSeen(name);
+    hidePopEl();
+    last = 0; acc = 0;
+    if (!fromSheet) {
+      var nx = popQueue.shift() || autoNext();
+      if (nx && popupSafe()) showPopup(nx, false);
+    }
+    return state.card;
+  }
+  // silently removed (level change / reset): not remembered
+  function dropPopup() { if (state.card) hidePopEl(); }
 
   // ---- result cards
   var cardShownAt = 0;
@@ -405,15 +628,20 @@
     cardShownAt = nowMs();
     showNote('');
   }
-  function hideCard() { elCard.classList.remove('on'); }
+  function hideCard() { elCard.classList.remove('on'); elCard.classList.remove('held'); }
   function cardVisible() { return elCard.classList.contains('on'); }
-  function kicker() { return state.mode === 'endless' ? 'Endless &middot; Plate ' + toRoman(state.endless.round) : 'Plate ' + toRoman(state.levelIndex + 1); }
+  function kicker() {
+    if (state.mode === 'endless') return 'Endless &middot; Plate ' + toRoman(state.endless.round);
+    if (state.mode === 'daily') return 'Daily Plate' + (state.daily ? ' &middot; ' + escapeHtml(state.daily.label) : '');
+    return 'Plate ' + toRoman(state.levelIndex + 1);
+  }
   function statsLine() {
     var nf = state.level.frags ? state.level.frags.length : 0;
     var s = 'Launches <b>' + state.launches + '</b>/<b>' + K.MAX_LAUNCHES + '</b>';
     if (nf) s += '<span class="sep"> &middot; </span>Fragments <b>' + countFrags() + '</b>/<b>' + nf + '</b>';
     return s;
   }
+  function hintLine() { return state.hint.used ? '<p class="note sm">Astronomer consulted: one star forfeited</p>' : ''; }
   function showSuccessCard() {
     if (state.screen !== 'play' || !state.result || !state.result.success) return;
     var r = state.result, h;
@@ -424,16 +652,25 @@
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Sealed</h3>' +
         '<p class="note">' + note + '</p>' +
         '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
-        '<p class="c-stats">' + statsLine() + '</p>' +
+        '<p class="c-stats">' + statsLine() + '</p>' + hintLine() +
         (last ? '<div class="c-btns"><button class="btn" data-act="replay">Replay</button>' +
                 '<button class="btn primary" data-act="atlas">Atlas</button></div>'
               : '<div class="c-btns three"><button class="btn" data-act="replay">Replay</button>' +
                 '<button class="btn" data-act="atlas">Atlas</button>' +
                 '<button class="btn primary" data-act="next">Next plate</button></div>');
+    } else if (state.mode === 'daily') {
+      var dr = r.record || {}, streak = dr.streak || Save.dailyStreak();
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Sealed</h3>' +
+        '<p class="note">A new plate is engraved tomorrow.</p>' +
+        '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
+        '<p class="c-stats">Launches <b>' + state.launches + '</b>/<b>' + K.MAX_LAUNCHES + '</b><span class="sep"> &middot; </span>Streak <b>' + streak + '</b>' +
+        (dr.best > streak ? '<span class="sep"> &middot; </span>Best <b>' + dr.best + '</b>' : '') + '</p>' + hintLine() +
+        '<div class="c-btns"><button class="btn" data-act="replay">Replay</button>' +
+        '<button class="btn primary" data-act="title">Menu</button></div>';
     } else {
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Surveyed</h3>' +
         '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
-        '<p class="c-stats">Score <b>' + state.endless.score + '</b><span class="sep"> &middot; </span>Best <b>' + Math.max(state.endless.best, state.endless.score) + '</b></p>' +
+        '<p class="c-stats">Score <b>' + state.endless.score + '</b><span class="sep"> &middot; </span>Best <b>' + Math.max(state.endless.best, state.endless.score) + '</b></p>' + hintLine() +
         '<div class="c-btns"><button class="btn" data-act="end">End survey</button>' +
         '<button class="btn primary" data-act="next">Next plate</button></div>';
     }
@@ -449,6 +686,12 @@
         '<div class="c-stars">' + starsRow(0, 20) + '</div>' +
         '<div class="c-btns"><button class="btn" data-act="atlas">Atlas</button>' +
         '<button class="btn primary" data-act="retry">Retry plate</button></div>';
+    } else if (state.mode === 'daily') {
+      h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title">Unsealed</h3>' +
+        '<p class="note">' + why + ' Three launches spent.</p>' +
+        '<div class="c-stars">' + starsRow(0, 20) + '</div>' +
+        '<div class="c-btns"><button class="btn" data-act="title">Menu</button>' +
+        '<button class="btn primary" data-act="retry">Retry plate</button></div>';
     } else {
       var rounds = state.endless.round - 1;
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title">Survey Concluded</h3>' +
@@ -460,16 +703,46 @@
     showCard(h);
   }
 
+  // ---- Consult the Astronomer
+  function canHint() {
+    var lv = state.level;
+    return state.screen === 'play' && state.phase === 'aim' && !!(lv && lv.solution) && !state.hint.used && !state.card &&
+      state.launches < K.MAX_LAUNCHES && !cardVisible();
+  }
+  function hintWhy() {
+    if (state.hint.used) return 'Already consulted on this attempt.';
+    if (!state.level || !state.level.solution) return 'No course is engraved for this plate.';
+    if (state.phase !== 'aim' || cardVisible()) return 'Only while a launch is being aimed.';
+    return '';
+  }
+  function useHint() {
+    if (!canHint()) return false;
+    var lv = state.level, sol = lv.solution, t0 = sol.t0Step | 0;
+    var sim = Physics.simulate(lv, sol.vx, sol.vy, t0, K.MAX_STEPS, hintBuf);
+    var n = Math.min(K.HINT_MAX, Math.floor(0.55 * sim.n)), h = state.hint;
+    h.pts.set(hintBuf.subarray(0, 2 * n));
+    h.n = n; h.on = true; h.used = true; h.t0 = nowMs();
+    state.step = t0; state.frozen = true;
+    clearAim();
+    setNudge(false);
+    logEvent('hint', { mode: state.mode, level: lv });
+    return true;
+  }
+
   // ---- pause sheet
   function showSheet() {
     $('sheet-kicker').innerHTML = kicker();
-    $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : 'Return to the Atlas';
+    $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : (state.mode === 'daily' ? 'Return to the Title' : 'Return to the Atlas');
+    var ok = canHint(), hb = $('sheet-hint'), why = $('sheet-hint-why'), wt = ok ? '' : hintWhy();
+    hb.setAttribute('aria-disabled', String(!ok));
+    why.textContent = wt; why.hidden = !wt;
     refreshSoundButtons();
     elSheet.classList.add('on');
+    var pn = $('sheet-panel'); if (pn) pn.scrollTop = 0;
   }
-  function hideSheet() { elSheet.classList.remove('on'); }
+  function hideSheet() { elSheet.classList.remove('on'); elSheet.classList.remove('sub'); }
   function pause() {
-    if (state.screen !== 'play' || state.paused) return;
+    if (state.screen !== 'play' || state.paused || state.card) return;
     state.paused = true;
     clearAim();
     Sound.droneStop();
@@ -491,17 +764,31 @@
     switch (name) {
       case 'begin': setScreen('select'); break;
       case 'endless': startEndless(); break;
+      case 'daily': loadDaily(); break;
+      case 'log':
+        try { if (typeof LogUI !== 'undefined' && LogUI && LogUI.open) LogUI.open(function () { if (state.screen !== 'title') setScreen('title'); else refreshTitle(); }); } catch (e) {}
+        break;
       case 'sound': Sound.setMuted(!Sound.isMuted()); if (!Sound.isMuted()) { Sound.unlock(function () { Sound.chime(); }); } refreshSoundButtons(); break;
       case 'title': setScreen('title'); break;
       case 'plate':
         var i = +el.getAttribute('data-i');
         if (i >= Save.data.unlocked) { vibrate(6); return; }
         loadCampaign(i); break;
-      case 'reset': if (state.screen === 'play') { if (state.mode === 'endless' && state.phase === 'result' && !state.result.success) startEndless(); else resetAttempt(); } break;
+      case 'reset':
+        if (state.screen === 'play' && !state.card) { if (state.mode === 'endless' && state.phase === 'result' && !state.result.success) startEndless(); else resetAttempt(); }
+        break;
       case 'menu': pause(); break;
       case 'resume': resume(); break;
       case 'restart': resume(); resetAttempt(); break;
-      case 'atlas': setScreen(state.mode === 'endless' ? 'title' : 'select'); break;
+      case 'hint':
+        if (!canHint()) { vibrate(6); return; }
+        if (state.paused) resume();
+        useHint();
+        break;
+      case 'howto': if (state.paused) showPopup('intro', true); break;
+      case 'fragments': if (state.paused) showPopup('fragments', true); break;
+      case 'pop-ok': closePopup(); break;
+      case 'atlas': setScreen(state.mode === 'campaign' ? 'select' : 'title'); break;
       case 'next':
         if (state.mode === 'endless') nextEndless();
         else if (state.levelIndex + 1 < CAMP.length) loadCampaign(state.levelIndex + 1);
@@ -525,7 +812,7 @@
   // ------------------------------------------------------------------ input: aiming
   var ptr = { id: null, sx: 0, sy: 0 };
   function canAim() {
-    return state.screen === 'play' && !state.paused && state.phase === 'aim' && !cardVisible() &&
+    return state.screen === 'play' && !state.paused && state.phase === 'aim' && !cardVisible() && !state.card &&
       state.launches < K.MAX_LAUNCHES && !!state.level;
   }
   function aimStart(id, x, y) {
@@ -613,6 +900,10 @@
   // keyboard (desktop QA)
   window.addEventListener('keydown', function (e) {
     var k = e.key;
+    if (state.card) {
+      if (k === 'Escape' || k === 'Enter' || k === ' ') { e.preventDefault(); closePopup(); }
+      return;
+    }
     if (k === 'Escape' || k === 'p' || k === 'P') {
       if (state.screen === 'play') { if (state.paused) resume(); else pause(); e.preventDefault(); }
       else if (state.screen === 'select') setScreen('title');
@@ -626,7 +917,7 @@
   // ------------------------------------------------------------------ iOS hardening
   function pd(e) { if (e.cancelable) e.preventDefault(); }
   doc.addEventListener('touchmove', function (e) {
-    var inScroll = e.target && e.target.closest && e.target.closest('.scroll');
+    var inScroll = e.target && e.target.closest && e.target.closest('.scroll, .panel, .card');
     if (e.touches.length > 1 || !inScroll) pd(e);
   }, { passive: false });
   ['gesturestart', 'gesturechange', 'gestureend', 'dblclick', 'contextmenu', 'selectstart'].forEach(function (t) {
@@ -635,7 +926,7 @@
   var lastTouchEnd = 0;
   doc.addEventListener('touchend', function (e) {   // stop double-tap zoom outside controls
     var n = Date.now();
-    var ctl = e.target && e.target.closest && e.target.closest('button, .scroll');
+    var ctl = e.target && e.target.closest && e.target.closest('button, .scroll, .panel, .card');
     if (!ctl && n - lastTouchEnd < 350) pd(e);
     lastTouchEnd = n;
   }, { passive: false });
@@ -646,6 +937,7 @@
       Sound.suspend();
     } else {
       last = 0; acc = 0;
+      refreshTitle(); prepDaily();          // the date may have changed while the app slept: refresh the Daily Plate subline
     }
   });
   window.addEventListener('pagehide', function () { if (state.screen === 'play') pause(); Sound.suspend(); });
@@ -699,6 +991,7 @@
       elNote.style.top = px(Math.min(pr.y + 30 * sc + 14, p.y + p.h - 34));
     }
     placeCard();
+    placePop();
   }
   // result card: sized from the viewport & safe areas; beside the plate in landscape, otherwise in the lower
   // part of the plate (the target and seal sit near the top). Never extends past the viewport.
@@ -726,6 +1019,43 @@
     elCard.style.left = px(left);
     elCard.style.top = px(top);
   }
+  // popup card: beside the plate in landscape; in portrait centred (intro) or on the half of the screen away from the
+  // comet fragments (fragment card), so the ringed comets stay in view.
+  function placePop() {
+    L = Render.layout;
+    if (!L || !L.plate || !state.card) return;
+    var p = L.plate, W = L.w, H = L.h, short = H <= 520 && W > H;
+    // keep clear of the HUD bands (caption/stars above, Reset/Menu below) where the viewport allows
+    var minTop = Math.max(safe.top + 10, L.top ? L.top.y + L.top.h + 2 : 0);
+    var maxBottom = Math.min(H - safe.bottom - 10, L.bottom ? L.bottom.y - 2 : H);
+    if (maxBottom - minTop < 200) { minTop = safe.top + 10; maxBottom = H - safe.bottom - 10; }
+    var availH = Math.max(120, maxBottom - minTop);
+    var spR = W - safe.right - (p.x + p.w) - 24, spL = p.x - safe.left - 24;
+    var wide = short && state.card === 'intro';                  // landscape intro: a wide plate over the middle, 2 x 2 steps
+    var side = !wide && W > H && Math.max(spR, spL) >= 230;
+    var cw = wide ? Math.min(600, W - 24 - safe.left - safe.right) : side ? Math.min(360, Math.max(spR, spL)) : Math.min(360, W - 24 - safe.left - safe.right);
+    elPop.classList.toggle('wide', wide);
+    elPop.style.width = px(cw);
+    elPop.style.maxHeight = px(availH);
+    elPop.style.bottom = 'auto';
+    var ch = Math.min(availH, elPop.offsetHeight || 300), top, left;
+    if (side) {
+      left = spR >= spL ? p.x + p.w + 12 + (spR - cw) / 2 : p.x - 12 - cw - (spL - cw) / 2;
+      top = (minTop + maxBottom - ch) / 2;
+    } else {
+      left = safe.left + (W - safe.left - safe.right - cw) / 2;
+      top = (minTop + maxBottom - ch) / 2;
+      var c = state.card === 'fragments' ? fragCentroid() : null;
+      if (c) {
+        var mid = (minTop + maxBottom) / 2;
+        if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);          // comets above: card in the lower half
+        else top = Math.min(mid - ch, minTop + (mid - minTop - ch) / 2);               // comets below: card in the upper half
+      }
+    }
+    top = Math.max(minTop, Math.min(top, maxBottom - ch));
+    elPop.style.left = px(left);
+    elPop.style.top = px(top);
+  }
   window.addEventListener('resize', function () { doResize(false); });
   window.addEventListener('orientationchange', function () { setTimeout(function () { doResize(true); }, 250); });
   if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { doResize(false); });
@@ -739,13 +1069,17 @@
     last = t;
     if (dt > 0 && dt < 1) { ft[ftI] = dt; ftI = (ftI + 1) % 60; if (ftN < 60) ftN++; }
     if (dt > 0.25 || dt < 0) dt = K.DT;                        // tab switch / clock jump: don't catch up
-    if (state.screen === 'play' && !state.paused) {
+    if (state.screen === 'play' && !state.paused && !state.card) {
       acc += dt;
       var n = 0;
       while (acc >= K.DT && n < K.MAX_STEPS_PER_FRAME) { physStep(); acc -= K.DT; n++; }
       if (n >= K.MAX_STEPS_PER_FRAME && acc > K.DT) acc = 0;    // drop the backlog rather than spiral
       if (state.phase === 'aim') updatePrediction();
       else if (state.phase === 'flight' && state.sim && state.sim.status === 'flying') Sound.droneSpeed(Physics.speed(state.sim) / K.VMAX / 1.4);
+      if (!nudgeDone) {
+        if (nudgeEligible()) { nudgeIdle += dt; if (nudgeIdle > 7) setNudge(true); }
+        else { nudgeIdle = 0; setNudge(false); }
+      }
     } else acc = 0;
     try { Render.frame(state, t); }
     catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
@@ -774,6 +1108,8 @@
     if (state.phase === 'result') resetAttempt();
     else if (state.phase === 'flight') { timers.length = 0; state.sim = null; state.phase = 'aim'; }
     hideCard();
+    popQueue.length = 0;
+    while (state.card) closePopup();
     return true;
   }
   function fastForward(n) {
@@ -794,6 +1130,18 @@
     state: state, Physics: Physics, Levels: Levels, Render: Render, Sound: Sound, Save: Save,
     loadLevel: function (i) { return loadCampaign(i); },
     loadEndless: function (seed) { return startEndless(seed); },
+    loadDaily: function (k) { return loadDaily(k); },
+    dailyPlate: function () { return dailyCache && dailyCache.key === Save.dateKey() ? dailyCache.lv : null; },
+    openCard: function (name) { return requestPopup(name); },
+    closeCard: function () { return closePopup(); },
+    useHint: function () {
+      if (state.screen !== 'play') return false;
+      if (state.paused) resume();
+      popQueue.length = 0;
+      while (state.card) closePopup();
+      return useHint();
+    },
+    Log: typeof Log !== 'undefined' ? Log : null, LogUI: typeof LogUI !== 'undefined' ? LogUI : null,
     launch: function (vx, vy) {
       if (!hookPrepare()) return false;
       if (state.launches >= K.MAX_LAUNCHES) resetAttempt();
@@ -817,7 +1165,10 @@
     fps: fps,
     screen: function (name) {
       if (name == null) return state.screen;
-      if (name === 'play' && state.screen !== 'play') { if (state.mode === 'endless' && state.endless.round > 0) setScreen('play'); else loadCampaign(state.levelIndex); }
+      if (name === 'play' && state.screen !== 'play') {
+        if ((state.mode === 'endless' && state.endless.round > 0) || (state.mode === 'daily' && state.level)) setScreen('play');
+        else loadCampaign(Math.max(0, state.levelIndex));
+      }
       else setScreen(name);
       return state.screen;
     },
@@ -843,7 +1194,8 @@
   setScreen('title');
   try {
     if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(function () {
-      if (thumbsDrawn) drawThumbs(true);
+      if (thumbsDrawn && state.screen === 'select') drawThumbs(true);
+      else if (thumbsDrawn) for (var i = 0; i < cards.length; i++) if (cards[i]) cards[i].done = false;
       placeDom();
     });
   } catch (e) {}

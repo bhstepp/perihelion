@@ -8,13 +8,17 @@
       <h1 class="t-name">Perihelion</h1>
       <div class="rule"></div>
       <p class="t-sub">A Celestial Atlas of Slingshot Trajectories</p>
-      <p class="t-ed">Plates I&ndash;XXX &middot; Engraved MMXXVI</p>
+      <p class="t-ed" id="t-ed">Plates I&ndash;LX &middot; Engraved MMXXVI</p>
     </header>
     <nav class="t-menu">
       <button class="btn primary" data-act="begin">Begin the Atlas</button>
+      <button class="btn daily" data-act="daily"><span class="d-main">Daily Plate</span><span class="d-sub" id="t-daily">Today&rsquo;s plate</span></button>
       <button class="btn" data-act="endless">Endless Survey</button>
       <p class="t-best note" id="t-best"></p>
-      <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+      <div class="t-foot">
+        <button class="txtbtn" data-act="log">Observer&rsquo;s Log</button>
+        <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
+      </div>
     </nav>
   </section>
 
@@ -26,7 +30,7 @@
       <p class="tally" id="tally"></p>
     </header>
     <div class="scroll" id="s-scroll">
-      <div class="grid" id="grid"></div>
+      <div class="atlas" id="grid"></div>
       <p class="colophon note">Each plate admits three launches. Seal it in one for three stars.</p>
     </div>
   </section>
@@ -43,14 +47,23 @@
     <div class="panel" id="sheet-panel">
       <p class="kicker" id="sheet-kicker">Plate I</p>
       <h3 class="c-title">Paused</h3>
-      <p class="note">Tap anywhere to resume.</p>
+      <p class="note" id="sheet-note">Tap anywhere to resume.</p>
       <div class="c-btns">
         <button class="btn primary" data-act="resume">Resume</button>
+        <div class="item">
+          <button class="btn" data-act="hint" id="sheet-hint" aria-disabled="false">Consult the Astronomer</button>
+          <p class="note sm" id="sheet-hint-note">Costs one star. Holds the heavens and shows the first part of a winning course.</p>
+          <p class="note sm why" id="sheet-hint-why" hidden></p>
+        </div>
+        <button class="btn" data-act="howto">How to play</button>
+        <button class="btn" data-act="fragments">About comet fragments</button>
         <button class="btn" data-act="restart">Restart plate</button>
         <button class="btn" data-act="atlas" id="sheet-exit">Return to the Atlas</button>
       </div>
       <button class="txtbtn" data-act="sound" data-sound>Sound: On</button>
     </div>
   </div>
+
+  <div class="card pop" id="pcard" role="dialog" aria-modal="true" aria-live="polite"></div>
 
 </div>

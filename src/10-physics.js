@@ -60,6 +60,8 @@ var Physics = (function () {
       hitBody: -1,
       collected: new Uint8Array(level.frags ? level.frags.length : 0),
       minDist: Infinity,                // closest approach to target centre
+      dist: 0,                          // path length travelled so far, in units
+      minGap: Infinity,                 // closest approach to any non-repulsor body SURFACE (within 60 u), for 'near miss' stats
       events: []                        // {type:'frag', i} pushed as they happen; consumer may clear
     };
   }
@@ -72,6 +74,7 @@ var Physics = (function () {
     sim.vx += _a.x * DT; sim.vy += _a.y * DT;
     sim.x += sim.vx * DT; sim.y += sim.vy * DT;
     sim.abs++; sim.step++;
+    sim.dist += sqrt(sim.vx * sim.vx + sim.vy * sim.vy) * DT;
     var t = sim.abs * DT, x = sim.x, y = sim.y, i, dx, dy, pr = C.PROBE_R, fr2 = C.FRAG_R * C.FRAG_R;
 
     var fr = level.frags, got = sim.collected;
@@ -87,6 +90,7 @@ var Physics = (function () {
       bodyPos(b, t, _q);
       dx = _q.x - x; dy = _q.y - y;
       var d2 = dx * dx + dy * dy;
+      if (b.kind !== 'repulsor') { var gl = b.r + 60; if (d2 < gl * gl) { var gp = sqrt(d2) - b.r; if (gp < sim.minGap) sim.minGap = gp; } }
       if (b.kind === 'blackhole' && b.capture && d2 < b.capture * b.capture) { sim.status = 'captured'; sim.hitBody = i; return sim.status; }
       var rr = b.r + pr;
       if (d2 < rr * rr) { sim.status = 'crash'; sim.hitBody = i; return sim.status; }

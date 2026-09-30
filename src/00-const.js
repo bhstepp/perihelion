@@ -6,7 +6,7 @@ var K = {
   BOUNDS_MARGIN: 220,    // probe is "lost" once it is this far outside the world rect
   DT: 1 / 120,           // fixed physics step (120 Hz)
   MAX_STEPS: 1200,       // 10 s of simulated flight
-  PREDICT_STEPS: 420,    // 35% of flight shown while aiming
+  PREDICT_STEPS: 180,    // 15% of the flight (1.5 s) shown while aiming; was 420 (35%), cut to make plates harder
   EPS2: 400,             // gravity softening, eps = 20 units
   PROBE_R: 6,            // probe collision radius
   FRAG_R: 24,            // comet fragment pickup radius
@@ -15,6 +15,7 @@ var K = {
   VMAX: 640,             // launch speed at full power (units/s)
   MAX_LAUNCHES: 3,
   TRAIL_MAX: 720,        // pooled trail ring size (points)
+  HINT_MAX: 700,         // max points of the astronomer's line (55% of a winning flight, capped)
   MAX_STEPS_PER_FRAME: 16
 };
 

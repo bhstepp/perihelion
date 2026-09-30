@@ -459,6 +459,7 @@ var Render = (function () {
       for (size = 12; size >= 10; size -= 0.5) { g.font = fnt('600', size, FONT.sc); if (spacedWidth(g, cap, size * 0.12) <= maxW) { fit = true; break; } }
       if (!fit) { size = 10; g.font = fnt('600', size, FONT.sc); sq = maxW / spacedWidth(g, cap, size * 0.12); }
     }
+    capInfo.text = cap; capInfo.size = size; capInfo.two = !!hudGeo.two; capInfo.squeeze = sq;
     g.translate(cxm, hudGeo.yCap); g.scale(sq, 1);
     spacedText(g, cap, 0, 0, size * 0.12, 'center');
     g.setTransform(d, 0, 0, d, 0, 0);
@@ -470,6 +471,7 @@ var Render = (function () {
     return true;
   }
   // top band anchors: the plate edges, or the safe screen edges when the plate is narrow (landscape)
+  var capInfo = { text: '', size: 0, two: false, squeeze: 1 };      // last caption layout (read by QA)
   var STARS_W = 46, hudGeo = { xl: 0, xr: 0, yRow: 0, yCap: 0, two: false };
   function hudAnchors() {
     var Pl = layout.plate, sf = layout.safe;
@@ -546,6 +548,15 @@ var Render = (function () {
     for (i = 0; i < 3; i++) {
       (function (mode) { hudSpr.star[mode] = makeSprite(6, function (g, c) { drawStar(g, c, c, 5.2, mode); }); })(i);
     }
+    (function () {                                   // the astronomer's label, drawn rotated along the hint line
+      var str = 'the astronomer\u2019s line', pr = mk(4, 4).getContext('2d');
+      pr.font = fnt('italic 500', 11, FONT.serif);
+      var w = Math.ceil(pr.measureText(str).width) + 4, h = 15, c = mk(w * d, h * d), g = c.getContext('2d');
+      g.setTransform(d, 0, 0, d, 0, 0); g.font = fnt('italic 500', 11, FONT.serif);
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = PAL.brass;
+      g.fillText(str, w / 2, h / 2 + 0.5);
+      hintSpr = { c: c, w: w, hh: h };
+    })();
     starRow.length = 0; roCv = null; ro.dirty = true;
     dirtyHud = false;
   }
@@ -813,11 +824,13 @@ var Render = (function () {
   var ro = { str: '', t: -1e9, phase: '', italic: false, dirty: true };
   function readout(state, now) {
     var ph = state.phase, aim = state.aim, hd = state.hud || {};
-    var key = ph + (aim && aim.active ? (aim.cancel ? 'c' : 'a') : '');
+    var pulling = ph === 'aim' && aim && aim.active && !aim.cancel, held = !!state.frozen && ph === 'aim' && !pulling;
+    var key = ph + (aim && aim.active ? (aim.cancel ? 'c' : 'a') : '') + (held ? 'f' : '');
     if (key === ro.phase && now - ro.t < 100) return;
     var prevS = ro.str, prevI = ro.italic;
     ro.phase = key; ro.t = now; ro.italic = false;
-    if (ph === 'aim' && aim && aim.active) {
+    if (held) { ro.str = 'the heavens are held'; ro.italic = true; }
+    else if (ph === 'aim' && aim && aim.active) {
       if (aim.cancel) { ro.str = 'release to cancel'; ro.italic = true; }
       else ro.str = 'v₀ ' + Math.round(Math.sqrt(aim.vx * aim.vx + aim.vy * aim.vy)) + ' u/s  ·  power ' + Math.round((aim.power || 0) * 100) + '%';
     } else if (ph === 'aim' && !state.launches) { ro.str = 'pull back anywhere to aim'; ro.italic = true; }
@@ -885,16 +898,17 @@ var Render = (function () {
     }
 
     drawFrags(state, now, u);
+    if (state.spotlight) drawSpotlight(state.spotlight, now, u);
     drawGhosts(state, u);
     var showTrail = state.phase === 'flight' || state.phase === 'result';
     if (showTrail) drawTrail(state.trail, u, succ.on ? 0.45 : 1);
     if (succ.on || (state.phase === 'result' && state.result && state.result.success)) drawSuccessPath(state, now, u);
-    aimLbl.on = false;
-    if (state.phase === 'aim') drawAim(state, now, u, d, ox, oy);
+    aimLbl.on = false; hintLbl.on = false;
+    if (state.phase === 'aim') { drawHint(state, now, u, ox, oy); drawAim(state, now, u, d, ox, oy); }
     drawProbe(state, u);
     drawCrashes(now, u);
     ctx.restore();
-    aimLabel(d);
+    aimLabel(d); hintLabel(d);
     ctx.lineCap = 'butt'; ctx.globalAlpha = 1;
     if (state.phase === 'flight' && state.sim) offPlate(state.sim, d, ox, oy);
     drawSeal(state, now, d, shx, shy);
@@ -1006,7 +1020,174 @@ var Render = (function () {
     ctx.globalAlpha = 1; ctx.lineJoin = 'miter';
   }
 
-  var PRED_B = 5, aimLbl = { on: false, x: 0, y: 0, i: 0 };
+  // ---- aiming stub, astronomer's line, spotlight (all allocation-free; dots collected into one scratch buffer)
+  var DOT_MAX = 200, DOTS = new Float32Array(DOT_MAX * 3);          // x, y, key per dot
+  var PRED_SP = 7, PRED_START = 9.5, NB = 10;                        // CSS px between dots, gap left around the probe
+  var BAND_T = []; for (var bq = 0; bq < NB; bq++) BAND_T.push((bq + 0.5) / NB);
+  function smooth(a, b, x) { x = (x - a) / (b - a); x = x < 0 ? 0 : x > 1 ? 1 : x; return x * x * (3 - 2 * x); }
+  // The prediction covers only K.PREDICT_STEPS (1.5 s): a short vermilion stub of dots spaced evenly by ARC LENGTH
+  // (so a slow, tight pull is as legible as a full-power one), tapering in size and dissolving smoothly to nothing.
+  function drawPredict(pr, u) {
+    var n = pr.n, pts = pr.pts, sp = PRED_SP * u, st = PRED_START * u, total = 0, next = st, nd = 0, i, k;
+    var x0 = level.probe.x, y0 = level.probe.y, x, y, dx, dy, seg, f;
+    for (i = 0; i < n; i++) {
+      x = pts[2 * i]; y = pts[2 * i + 1]; dx = x - x0; dy = y - y0; seg = Math.sqrt(dx * dx + dy * dy);
+      while (total + seg >= next && nd < DOT_MAX) {
+        f = seg > 0 ? (next - total) / seg : 0;
+        DOTS[3 * nd] = x0 + dx * f; DOTS[3 * nd + 1] = y0 + dy * f; DOTS[3 * nd + 2] = next; nd++; next += sp;
+      }
+      total += seg; x0 = x; y0 = y;
+    }
+    if (!nd) return;
+    var span = Math.max(total - st, sp), cur = -1, t, b, r;
+    ctx.fillStyle = PAL.vermilion;
+    for (k = 0; k < nd; k++) {
+      t = (DOTS[3 * k + 2] - st) / span; t = t > 1 ? 1 : t;
+      b = Math.min(NB - 1, (t * NB) | 0);
+      if (b !== cur) {
+        if (cur >= 0) ctx.fill();
+        cur = b; ctx.globalAlpha = 0.95 * (1 - smooth(0.05, 1.08, BAND_T[b])); ctx.beginPath();
+      }
+      r = (1.2 - 0.6 * t) * u; x = DOTS[3 * k]; y = DOTS[3 * k + 1];
+      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+    }
+    ctx.fill();
+    // engraver's end mark: a hair-thin tick across the path where the stub ends
+    if (n > 5 && total > st + 4 * u) {
+      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], tx = ex - pts[2 * (n - 6)], ty = ey - pts[2 * (n - 6) + 1];
+      var tl = Math.sqrt(tx * tx + ty * ty) || 1, c = 3.2 * u;
+      ctx.strokeStyle = PAL.vermilion; ctx.globalAlpha = 0.34; ctx.lineWidth = 0.6 * u; ctx.beginPath();
+      ctx.moveTo(ex - ty / tl * c, ey + tx / tl * c); ctx.lineTo(ex + ty / tl * c, ey - tx / tl * c); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Consult the Astronomer: the opening of a winning course as brass dots, a dot every 5 steps, larger than the
+  // vermilion prediction and fading toward the far end. The italic label is drawn after the plate clip (hintLabel).
+  var HINT_SP = 5, HINT_LBL_PX = 58, hintLbl = { on: false, x: 0, y: 0, ang: 0, a: 0 }, hintSpr = null;
+  function drawHint(state, now, u, ox, oy) {
+    var h = state.hint; hintLbl.on = false;
+    if (!h || !h.on || !h.pts || !(h.n > 4)) return;
+    var n = Math.min(h.n | 0, h.pts.length >> 1), pts = h.pts, s = layout.scale;
+    var fade = easeOutCubic((now - (+h.t0 || 0)) / 300);
+    if (!(fade > 0)) return;
+    var px = level.probe.x, py = level.probe.y, skip2 = (K.DRAG_CANCEL + 7) * (K.DRAG_CANCEL + 7), nd = 0, i, dx, dy;
+    for (i = HINT_SP - 1; i < n && nd < DOT_MAX; i += HINT_SP) {
+      dx = pts[2 * i] - px; dy = pts[2 * i + 1] - py;
+      if (dx * dx + dy * dy < skip2) continue;
+      DOTS[3 * nd] = pts[2 * i]; DOTS[3 * nd + 1] = pts[2 * i + 1]; DOTS[3 * nd + 2] = i; nd++;
+    }
+    if (!nd) return;
+    var cur = -1, k, f, b, r, x, y;
+    ctx.fillStyle = PAL.brass;
+    for (k = 0; k < nd; k++) {
+      f = DOTS[3 * k + 2] / (n - 1);
+      b = Math.min(NB - 1, (f * NB) | 0);
+      if (b !== cur) {
+        if (cur >= 0) ctx.fill();
+        cur = b; ctx.globalAlpha = fade * (0.95 - 0.78 * BAND_T[b]); ctx.beginPath();
+      }
+      r = (1.65 - 0.65 * f) * u; x = DOTS[3 * k]; y = DOTS[3 * k + 1];
+      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // label anchor: ~58 px along the line (clear of the probe and the pull ring), set beside the dots
+    if (!hintSpr) return;
+    var a = 0, lim = HINT_LBL_PX / s, acc = 0;
+    for (i = 1; i < n; i++) {
+      dx = pts[2 * i] - pts[2 * i - 2]; dy = pts[2 * i + 1] - pts[2 * i - 1]; acc += Math.sqrt(dx * dx + dy * dy);
+      if (acc >= lim) { a = i; break; }
+    }
+    if (!a) return;
+    // the label spans sw px of the line from the anchor: use the chord over that span for its angle, and stand it
+    // off by the path's own bulge so a curving line never runs through the letters
+    var Pl = layout.plate, sw = hintSpr.w, sh = hintSpr.hh, i1 = a, acc2 = 0;
+    for (i = a + 1; i < n; i++) {
+      dx = pts[2 * i] - pts[2 * i - 2]; dy = pts[2 * i + 1] - pts[2 * i - 1]; acc2 += Math.sqrt(dx * dx + dy * dy);
+      i1 = i; if (acc2 * s >= sw) break;
+    }
+    var i0 = Math.max(0, a - 2);
+    var tx = pts[2 * i1] - pts[2 * i0], ty = pts[2 * i1 + 1] - pts[2 * i0 + 1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
+    tx /= tl; ty /= tl;
+    var ang = Math.atan2(ty, tx); if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+    var ca = Math.cos(ang), sa = Math.sin(ang), hw = Math.abs(ca) * sw / 2 + Math.abs(sa) * sh / 2 + 6, hh = Math.abs(sa) * sw / 2 + Math.abs(ca) * sh / 2 + 6;
+    var ax = ox + pts[2 * a] * s, ay = oy + pts[2 * a + 1] * s, off = 12;
+    var xmin = ox + hw, xmax = ox + Pl.w - hw, ymin = oy + hh, ymax = oy + Pl.h - hh;
+    var best = 1e9, cx = ax, cy = ay, sg, m;
+    for (sg = -1; sg <= 1; sg += 2) {
+      var nx = -ty * sg, ny = tx * sg, push = 0;
+      for (m = a; m <= i1; m++) {                 // how far the path bulges toward this side within the span
+        var dv = ((pts[2 * m] * s + ox - ax) * nx + (pts[2 * m + 1] * s + oy - ay) * ny); if (dv > push) push = dv;
+      }
+      var qx = ax + tx * sw / 2 + nx * (off + push), qy = ay + ty * sw / 2 + ny * (off + push);
+      var kx = qx < xmin ? xmin : qx > xmax ? xmax : qx, ky = qy < ymin ? ymin : qy > ymax ? ymax : qy;
+      var sc = Math.abs(kx - qx) + Math.abs(ky - qy) + push * 0.4;
+      if (sc < best) { best = sc; cx = kx; cy = ky; }
+    }
+    hintLbl.on = true; hintLbl.x = cx; hintLbl.y = cy; hintLbl.ang = ang; hintLbl.a = fade * 0.92;
+  }
+  function hintLabel(d) {
+    if (!hintLbl.on || !hintSpr) return;
+    hintLbl.on = false;
+    var c = Math.cos(hintLbl.ang) * d, s = Math.sin(hintLbl.ang) * d;
+    ctx.setTransform(c, s, -s, c, hintLbl.x * d, hintLbl.y * d); ctx.globalAlpha = hintLbl.a;
+    ctx.drawImage(hintSpr.c, -hintSpr.w / 2, -hintSpr.hh / 2, hintSpr.w, hintSpr.hh);
+    ctx.globalAlpha = 1;
+  }
+
+  // Popup-card spotlight: an engraved dashed ring (slowly turning) with four fine leader ticks round each point.
+  var DASH_S = [0, 0];
+  function drawSpotlight(sl, now, u) {
+    var n = sl.length | 0; if (n < 1) return;
+    if (n > 8) n = 8;
+    var R = K.FRAG_R * 2.2, circ = TAU * R, nd = Math.max(10, Math.round(circ / u / 5.6)), per = circ / nd;
+    var a0 = now * 0.00032, i, k, p, x, y, a, ca, sa;
+    DASH_S[0] = per * 0.56; DASH_S[1] = per * 0.44;
+    ctx.strokeStyle = PAL.paper; ctx.lineCap = 'butt';
+    ctx.globalAlpha = 0.55; ctx.lineWidth = 0.85 * u; ctx.setLineDash(DASH_S); ctx.beginPath();
+    for (i = 0; i < n; i++) { p = sl[i]; if (!p) continue; ctx.moveTo(p.x + R * Math.cos(a0), p.y + R * Math.sin(a0)); ctx.arc(p.x, p.y, R, a0, a0 + TAU); }
+    ctx.stroke(); ctx.setLineDash(DASH_NONE);
+    ctx.globalAlpha = 0.5; ctx.lineWidth = 0.6 * u; ctx.beginPath();
+    for (i = 0; i < n; i++) {
+      p = sl[i]; if (!p) continue; x = p.x; y = p.y;
+      for (k = 0; k < 4; k++) {
+        a = -a0 * 0.5 + k * Math.PI / 2 + Math.PI / 4; ca = Math.cos(a); sa = Math.sin(a);
+        ctx.moveTo(x + ca * (R + 3.2 * u), y + sa * (R + 3.2 * u)); ctx.lineTo(x + ca * (R + 9.5 * u), y + sa * (R + 9.5 * u));
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 0.2; ctx.lineWidth = 0.5 * u; ctx.beginPath();          // faint inner hairline
+    for (i = 0; i < n; i++) { p = sl[i]; if (!p) continue; ctx.moveTo(p.x + R * 0.88, p.y); ctx.arc(p.x, p.y, R * 0.88, 0, TAU); }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  var aimLbl = { on: false, x: 0, y: 0, i: 0 };
+  // Power label placement (screen px). Preferred: just beyond the ruler's end. If that would touch the plate
+  // border, stand beside the ruler (nudged perpendicular to it), fully inside the plate with a margin.
+  var PW_HW = 14, PW_HH = 7, PW_M = 8;
+  function placePower(ox, oy, px, py, ux, uy, L) {
+    var s = layout.scale, Pl = layout.plate;
+    var x0 = ox + PW_HW + PW_M, x1 = ox + Pl.w - PW_HW - PW_M, y0 = oy + PW_HH + PW_M, y1 = oy + Pl.h - PW_HH - PW_M;
+    var sx = ox + px * s, sy = oy + py * s, Ls = L * s, cs = K.DRAG_CANCEL * s;
+    var lx = sx + ux * (Ls + 14), ly = sy + uy * (Ls + 14);
+    if (lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1) { aimLbl.on = true; aimLbl.x = lx; aimLbl.y = ly; return; }
+    var nx = -uy, ny = ux, need = PW_HW * Math.abs(nx) + PW_HH * Math.abs(ny) + 6;
+    var t = Ls + 8, tmin = cs + 4;
+    while (t > tmin) { var qx = sx + ux * t, qy = sy + uy * t; if (qx >= x0 && qx <= x1 && qy >= y0 && qy <= y1) break; t -= 3; }
+    if (t < tmin) t = tmin;
+    var best = 1e9, bx = lx, by = ly;
+    for (var sg = -1; sg <= 1; sg += 2) {
+      var cx = sx + ux * t + nx * need * sg, cy = sy + uy * t + ny * need * sg;
+      var ccx = cx < x0 ? x0 : cx > x1 ? x1 : cx, ccy = cy < y0 ? y0 : cy > y1 ? y1 : cy;
+      var tp = (ccx - sx) * ux + (ccy - sy) * uy; tp = tp < cs ? cs : tp > Ls ? Ls : tp;
+      var ddx = ccx - (sx + ux * tp), ddy = ccy - (sy + uy * tp), dist = Math.sqrt(ddx * ddx + ddy * ddy);
+      var sc = Math.abs(ccx - cx) + Math.abs(ccy - cy) + (dist < need - 1 ? 100 + (need - dist) : 0);
+      if (sc < best) { best = sc; bx = ccx; by = ccy; }
+    }
+    aimLbl.on = true; aimLbl.x = bx; aimLbl.y = by;
+  }
   function aimLabel(d) {
     if (!aimLbl.on) return;
     aimLbl.on = false;
@@ -1025,23 +1206,8 @@ var Render = (function () {
       return;
     }
     var cancel = !!aim.cancel;
-    // prediction: dotted vermilion, one dot every 4 steps, fading toward its end
     var pr = state.predict;
-    if (!cancel && pr && pr.n > 4) {
-      var n = pr.n, pts = pr.pts, r = 1.05 * u;
-      ctx.fillStyle = PAL.vermilion;
-      for (var b = 0; b < PRED_B; b++) {
-        var i0 = Math.floor(b * n / PRED_B), i1 = Math.floor((b + 1) * n / PRED_B);
-        ctx.globalAlpha = 0.95 - 0.8 * (b / (PRED_B - 1));
-        ctx.beginPath();
-        for (i = i0 - (i0 % 4) + 3; i < i1; i += 4) { var x = pts[2 * i], y = pts[2 * i + 1]; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); }
-        ctx.fill();
-      }
-      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], qx = pts[2 * (n - 5)], qy = pts[2 * (n - 5) + 1];
-      var tx = ex - qx, ty = ey - qy, tl = Math.sqrt(tx * tx + ty * ty) || 1, c = 4 * u;
-      ctx.strokeStyle = PAL.vermilion; ctx.globalAlpha = 0.45; ctx.lineWidth = 0.7 * u; ctx.beginPath();
-      ctx.moveTo(ex - ty / tl * c, ey + tx / tl * c); ctx.lineTo(ex + ty / tl * c, ey - tx / tl * c); ctx.stroke();
-    }
+    if (!cancel && pr && pr.n > 4) drawPredict(pr, u);
     // pull line with engraved graduation, power arcs
     var dx = aim.dx || 0, dy = aim.dy || 0, len = Math.sqrt(dx * dx + dy * dy);
     ctx.strokeStyle = cancel ? PAL.vermilion : PAL.paper;
@@ -1062,15 +1228,8 @@ var Render = (function () {
           ctx.globalAlpha = 0.3; ctx.lineWidth = 0.6 * u; ctx.beginPath(); ctx.arc(px, py, K.DRAG_MAX, ang - 0.22, ang + 0.22); ctx.stroke();
         }
         ctx.globalAlpha = 1;
-        // % label: drawn after the plate clip is released (see aimLabel), kept inside the plate
-        var Pl = layout.plate, x0 = ox + 10, x1 = ox + Pl.w - 10, y0 = oy + 10, y1 = oy + Pl.h - 10;
-        var lx = ox + (px + ux * (L + 14 * u)) * layout.scale, ly = oy + (py + uy * (L + 14 * u)) * layout.scale;
-        var cx0 = Math.max(x0, Math.min(x1, lx)), cy0 = Math.max(y0, Math.min(y1, ly));
-        if (cx0 !== lx || cy0 !== ly) {
-          var sg = (-uy * (ox + Pl.w / 2 - cx0) + ux * (oy + Pl.h / 2 - cy0)) >= 0 ? 1 : -1;   // nudge toward the plate
-          cx0 = Math.max(x0, Math.min(x1, cx0 - uy * 12 * sg)); cy0 = Math.max(y0, Math.min(y1, cy0 + ux * 12 * sg));
-        }
-        aimLbl.on = true; aimLbl.x = cx0; aimLbl.y = cy0;
+        // % label: drawn after the plate clip is released (see aimLabel); placed clear of the border and the ruler
+        placePower(ox, oy, px, py, ux, uy, L);
         aimLbl.i = Math.max(0, Math.min(100, Math.round((aim.power || L / K.DRAG_MAX) * 100)));
       }
     }
@@ -1176,7 +1335,8 @@ var Render = (function () {
     // stars (right)
     var res = state.phase === 'result' ? state.result : null, earned = 0, pot = 0;
     var failed = state.phase === 'flight' && state.sim && state.sim.status !== 'flying' && state.sim.status !== 'hit';
-    if (res) earned = res.success ? (res.stars | 0) : 0; else pot = Math.max(0, 4 - ln - (failed ? 1 : 0));
+    if (res) earned = res.success ? (res.stars | 0) : 0;
+    else pot = Math.max(0, Math.min(3, 4 - ln - (failed ? 1 : 0) - (state.hint && state.hint.used ? 1 : 0)));
     var rk = res ? 4 + Math.min(3, earned) : Math.min(3, pot), row = starRow[rk] || (starRow[rk] = buildStarRow(res, earned, pot));
     ctx.drawImage(row, Math.round((hudGeo.xr - 41 + shx) * d), Math.round((y - 8) * d));
     // bottom readout (centre 50% only), re-rendered only when its text changes
@@ -1283,5 +1443,5 @@ var Render = (function () {
   }
 
   return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx,
-           worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; } };
+           worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; }, get caption() { return capInfo; } };
 })();
