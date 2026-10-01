@@ -10,8 +10,11 @@
   var elZoneL = $('zone-l'), elZoneR = $('zone-r'), elProbe = $('safe-probe');
 
   var CAMP = Levels.CAMPAIGN || [];
-  var NPL = Math.min(Save.N, CAMP.length);
-  var VOLS = (Levels.VOLUMES && Levels.VOLUMES.length) ? Levels.VOLUMES : [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }];
+  var VOLS = (Levels.VOLUMES && Levels.VOLUMES.length) ? Levels.VOLUMES : (function () {   // fallback: thirty plates a volume, sized from the campaign
+    var v = [], n = Math.max(1, Math.ceil(CAMP.length / 30)), names = ['Volume I', 'Volume II', 'Volume III', 'Volume IV', 'Volume V'];
+    for (var i = 0; i < n; i++) v.push({ name: names[i] || 'Volume ' + toRoman(i + 1), from: i * 30, to: i * 30 + 29 });
+    return v;
+  })();
   var MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   var STEP_HZ = Math.round(1 / K.DT);
   var FAIL_TEXT = {
@@ -25,13 +28,14 @@
     screen: 'title',
     paused: false,
     mode: 'campaign',                 // 'campaign' | 'endless' | 'daily'
+    custom: false,                    // a test plate from __peri.loadCustom: campaign-like play, levelIndex -1, nothing saved or logged
     daily: null,                      // { key, label } while mode === 'daily'
     level: CAMP[0] || null, levelIndex: 0,
     step: 0,
     frozen: false,                    // the astronomer holds the heavens: step does not advance while aiming
     hint: { on: false, used: false, pts: new Float32Array(K.HINT_MAX * 2), n: 0, t0: 0 },
-    spotlight: null,                  // [{x, y}] world points ringed while the fragment card is open
-    card: null,                       // null | 'intro' | 'fragments': a popup card is open (aim blocked, clock held)
+    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole card is open
+    card: null,                       // null | 'intro' | 'fragments' | 'wormholes': a popup card is open (aim blocked, clock held)
     phase: 'aim',
     aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
     predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
@@ -59,10 +63,22 @@
 
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function hasWormhole(lv) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].kind === 'wormhole') return true; return false; }
+  // every wormhole mouth names a twin that is a different mouth naming it back (Physics.stepSim would throw otherwise)
+  function wormholesMutual(lv) {
+    var bs = lv.bodies;
+    if (!Array.isArray(bs)) return false;
+    for (var i = 0; i < bs.length; i++) {
+      if (!bs[i] || bs[i].kind !== 'wormhole') continue;
+      var j = bs[i].pair;
+      if (typeof j !== 'number' || j !== (j | 0) || j < 0 || j >= bs.length || j === i || !bs[j] || bs[j].kind !== 'wormhole' || bs[j].pair !== i) return false;
+    }
+    return true;
+  }
   function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
 
   // ------------------------------------------------------------------ timers (in physics steps)
-  function logEvent(name, data) { try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
+  function logEvent(name, data) { if (state.custom) return; try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
   function after(steps, fn) { timers.push({ at: tick + Math.max(1, Math.round(steps)), fn: fn }); }
   function afterMs(ms, fn) { after(ms / 1000 * STEP_HZ, fn); }
   function runTimers() {
@@ -156,6 +172,21 @@
     vibrate(10);
   }
 
+  // A wormhole passage: flash at both mouths, a soft sweep, a short buzz. Every call is guarded (RENDER / AUDIO own those functions).
+  var _wa = { x: 0, y: 0 }, _wb = { x: 0, y: 0 };
+  function onWarp(ev, s) {
+    var bs = state.level && state.level.bodies, a = bs && bs[ev.from], b = bs && bs[ev.to];
+    try {
+      if (a && b && typeof Render !== 'undefined' && typeof Render.warp === 'function') {
+        var t = s.abs * K.DT;
+        Physics.bodyPos(a, t, _wa); Physics.bodyPos(b, t, _wb);
+        Render.warp(_wa.x, _wa.y, _wb.x, _wb.y);
+      }
+    } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.warp === 'function') Sound.warp(); } catch (e) {}
+    vibrate(14);
+  }
+
   function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
 
   function endFlight(status) {
@@ -171,7 +202,9 @@
       Sound.chime();
       vibrate([12, 60, 24]);
       var rec = null, plateIndex = -1;
-      if (mode === 'campaign') {
+      if (state.custom) {
+        rec = { improved: false, first: true };                      // a test plate: never written to Save
+      } else if (mode === 'campaign') {
         plateIndex = state.levelIndex;
         rec = Save.recordPlate(plateIndex, stars, countFrags());
       } else if (mode === 'daily') {
@@ -224,7 +257,11 @@
       var st = Physics.stepSim(s, state.level);
       pushTrail(s.x, s.y); pushPath(s.x, s.y);
       if (s.events.length) {
-        for (var i = 0; i < s.events.length; i++) if (s.events[i].type === 'frag') onFrag(s.events[i].i);
+        for (var i = 0; i < s.events.length; i++) {
+          var ev = s.events[i];
+          if (ev.type === 'frag') onFrag(ev.i);
+          else if (ev.type === 'warp') onWarp(ev, s);
+        }
         s.events.length = 0;
       }
       state.hud.speed = Physics.speed(s);
@@ -247,6 +284,7 @@
   function loadCampaign(i) {
     i = Math.max(0, Math.min(CAMP.length - 1, i | 0));
     state.mode = 'campaign';
+    state.custom = false;
     state.daily = null;
     state.levelIndex = i;
     state.level = CAMP[i];
@@ -255,6 +293,22 @@
     setScreen('play');
     autoCards();
     return state.level;
+  }
+
+  // Test hook: any Level object as a plate in campaign-like play. levelIndex is -1; no stars, stats, honours or log events are written.
+  function loadCustom(lv) {
+    if (!lv || !lv.bodies || !lv.probe || !lv.target || !wormholesMutual(lv)) return false;
+    if (!lv.frags) lv.frags = [];
+    state.mode = 'campaign';
+    state.custom = true;
+    state.daily = null;
+    state.levelIndex = -1;
+    state.level = lv;
+    Render.setLevel(lv);
+    resetAttempt();
+    setScreen('play');
+    autoCards();
+    return lv;
   }
 
   // ---- Daily Plate
@@ -293,6 +347,7 @@
     k = (typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k)) ? k : Save.dateKey();
     var lv = makeDaily(k), m = /^DAILY\s*[·:|\-–—]\s*(.+)$/.exec(lv.caption || '');
     state.mode = 'daily';
+    state.custom = false;
     state.daily = { key: k, label: m ? m[1] : dayLabel(k) };
     state.levelIndex = -1;
     state.level = lv;
@@ -328,6 +383,7 @@
     lv.plate = toRoman(r);
     lv.caption = 'ENDLESS · PLATE ' + lv.plate;
     state.mode = 'endless';
+    state.custom = false;
     state.daily = null;
     state.levelIndex = r - 1;
     state.level = lv;
@@ -423,7 +479,7 @@
   function plateHtml(i) {
     var lv = CAMP[i];
     return '<button class="plate" data-i="' + i + '" aria-label="Plate ' + toRoman(i + 1) + '">' +
-      '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Sealed</span></span></span>' +
+      '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Locked</span></span></span>' +
       '<span class="pl-num">' + toRoman(i + 1) + '</span>' +
       '<span class="pl-name">' + escapeHtml(lv.name || '') + '</span>' +
       '<span class="pl-meta"></span></button>';
@@ -506,7 +562,7 @@
     elTally.innerHTML = 'Stars <b>' + tot.stars + '</b>/<b>' + (cards.length * 3) + '</b><span class="sep">&middot;</span>' +
       'Sealed <b>' + tot.sealed + '</b>/<b>' + cards.length + '</b>';
     if (entering) {
-      var sc = $('s-scroll'), idx = state.mode === 'campaign' ? state.levelIndex : Math.max(0, d.unlocked - 1);
+      var sc = $('s-scroll'), idx = state.mode === 'campaign' && state.levelIndex >= 0 ? state.levelIndex : Math.max(0, d.unlocked - 1);
       idx = Math.max(0, Math.min(cards.length - 1, idx));
       if (sc && cards[idx]) {
         requestAnimationFrame(function () {
@@ -534,12 +590,13 @@
     else elNote.classList.remove('on');
   }
 
-  // ---- popup cards (To Observe / Comet Fragments): atlas plates that hold the clock while open
+  // ---- popup cards (To Observe / Comet Fragments / Wormholes): atlas plates that hold the clock while open
   function levelFrags() { return (state.level && state.level.frags && state.level.frags.length) || 0; }
   function popupSafe() { return state.screen === 'play' && state.phase !== 'flight' && !cardVisible(); }
   function autoNext() {
     if (!Save.seen('intro')) return 'intro';
     if (levelFrags() && !Save.seen('fragments')) return 'fragments';
+    if (hasWormhole(state.level) && !Save.seen('wormholes')) return 'wormholes';
     return null;
   }
   function autoCards() { var n = autoNext(); if (n) requestPopup(n); }
@@ -549,7 +606,7 @@
     if (n) showPopup(n, false);
   }
   function requestPopup(name) {
-    if (name !== 'intro' && name !== 'fragments') return null;
+    if (name !== 'intro' && name !== 'fragments' && name !== 'wormholes') return null;
     if (state.card || !popupSafe()) {
       if (state.card !== name && popQueue.indexOf(name) < 0) popQueue.push(name);
       return 'queued';
@@ -567,23 +624,84 @@
         '<li>Reach the brass ring. Fewer launches earn more stars: one launch, three stars.</li></ol>' +
         '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Begin</button></div>';
     }
+    if (name === 'wormholes') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Wormholes</h3><div class="rule"></div>' +
+        '<p class="pop-text">Wormholes come in pairs, marked with the same Greek letter. Fly into one and you leave by its twin at the same speed. A mark such as <span class="m">\u21bb 90\u00b0</span> means your heading turns that far as you pass through. They pull on nothing and do no harm.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
     return '<p class="kicker">Notice</p><h3 class="c-title">Comet Fragments</h3><div class="rule"></div>' +
       '<p class="pop-text">Small brass comets drift on this plate. Fly through one to collect it. They are optional, but a course that gathers them is a harder one. Fragments you collect stay collected across your launches on this plate.</p>' +
       '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
   }
+  // world points a card rings while it is open; wormhole mouths carry their ring radius (mouth.r + 14) and follow their rails
+  var _mp = { x: 0, y: 0 };
+  function spotlightFor(name) {
+    var lv = state.level, out = [], i;
+    if (name === 'fragments') {
+      var f = lv && lv.frags;
+      if (f && f.length) for (i = 0; i < f.length; i++) out.push({ x: f[i].x, y: f[i].y });
+    } else if (name === 'wormholes' && lv) {
+      for (i = 0; i < lv.bodies.length; i++) {
+        var b = lv.bodies[i];
+        if (b.kind !== 'wormhole') continue;
+        Physics.bodyPos(b, state.step * K.DT, _mp);
+        out.push({ x: _mp.x, y: _mp.y, r: b.r + 14, body: i });
+      }
+    }
+    return out.length ? out : null;
+  }
+  // mouths on rails move with state.step (held while a card is open, but keep the rings honest anyway)
+  function refreshSpotlight() {
+    var sp = state.spotlight, lv = state.level;
+    if (state.card !== 'wormholes' || !sp || !lv) return;
+    for (var i = 0; i < sp.length; i++) {
+      var b = lv.bodies[sp[i].body];
+      if (!b || !b.orbit) continue;
+      Physics.bodyPos(b, state.step * K.DT, _mp);
+      sp[i].x = _mp.x; sp[i].y = _mp.y;
+    }
+  }
   function fragCentroid() {
-    var f = state.level && state.level.frags;
+    var f = state.spotlight;
     if (!f || !f.length) return null;
     var sx = 0, sy = 0;
     for (var i = 0; i < f.length; i++) { var p = Render.worldToScreen(f[i].x, f[i].y); sx += p.x; sy += p.y; }
     return { x: sx / f.length, y: sy / f.length };
   }
+  // Card top (CSS px) that hides the least of the ringed points. Each mouth claims a band around it: its ring plus ~34 px, which takes in
+  // the pair label beside it (the card is full width, so only the vertical extent matters). Covering a mouth's centre costs most; among
+  // equal positions the one farthest from the points' centre wins, which is the "half away from them" rule when a clear half exists.
+  // Returns { top, cov }: cov = px of claimed bands the card covers (0 = clear).
+  function quietTop(ch, minTop, maxBottom, cy) {
+    var sp = state.spotlight, sc = (Render.layout && Render.layout.scale) || 1, best = minTop, bs = Infinity, bc = 0, rings = [], i, t;
+    for (i = 0; sp && i < sp.length; i++) { var q = Render.worldToScreen(sp[i].x, sp[i].y), r = (sp[i].r || 0) * sc + 34; rings.push([q.y - r, q.y + r, q.y]); }
+    for (t = minTop; t <= maxBottom - ch + 0.5; t += 2) {
+      var cov = 0, hid = 0;
+      for (i = 0; i < rings.length; i++) {
+        cov += Math.max(0, Math.min(t + ch, rings[i][1]) - Math.max(t, rings[i][0]));
+        if (rings[i][2] >= t - 4 && rings[i][2] <= t + ch + 4) hid++;
+      }
+      var sc2 = (cov + hid * 400) * 1000 - Math.abs(t + ch / 2 - cy);
+      if (sc2 < bs) { bs = sc2; best = t; bc = cov + hid * 400; }
+    }
+    return { top: best, cov: bc };
+  }
+  // Two wormhole cards of the same text: the full one, and a compact one (no kicker or rule, smaller type) for plates where no band clears the mouths.
+  function placeWormCard(ch, minTop, maxBottom, cy) {
+    var full = quietTop(ch, minTop, maxBottom, cy);
+    if (full.cov === 0) return full.top;
+    elPop.classList.add('compact');
+    var ch2 = Math.min(maxBottom - minTop, elPop.offsetHeight || ch), cmp = quietTop(ch2, minTop, maxBottom, cy);
+    if (cmp.cov < full.cov) return cmp.top;
+    elPop.classList.remove('compact');
+    return full.top;
+  }
+
   function showPopup(name, fromSheet) {
     state.card = name;
     popFromSheet = !!fromSheet;
     clearAim();
-    var f = state.level && state.level.frags;
-    state.spotlight = (name === 'fragments' && f && f.length) ? f.map(function (q) { return { x: q.x, y: q.y }; }) : null;
+    state.spotlight = spotlightFor(name);
     elPop.innerHTML = popHtml(name);
     ui.classList.add('card-open');
     if (fromSheet) { elSheet.classList.add('sub'); elCard.classList.add('held'); }
@@ -633,6 +751,7 @@
   function kicker() {
     if (state.mode === 'endless') return 'Endless &middot; Plate ' + toRoman(state.endless.round);
     if (state.mode === 'daily') return 'Daily Plate' + (state.daily ? ' &middot; ' + escapeHtml(state.daily.label) : '');
+    if (state.custom) return 'Plate &middot; ' + escapeHtml((state.level && (state.level.plate || state.level.name)) || 'Test');
     return 'Plate ' + toRoman(state.levelIndex + 1);
   }
   function statsLine() {
@@ -646,9 +765,9 @@
     if (state.screen !== 'play' || !state.result || !state.result.success) return;
     var r = state.result, h;
     if (state.mode === 'campaign') {
-      var last = state.levelIndex >= CAMP.length - 1;
+      var last = state.custom || state.levelIndex >= CAMP.length - 1;
       var rec = r.record || {};
-      var note = last ? 'The atlas is complete.' : (r.stars === 3 ? 'A clean passage, in a single launch.' : (rec.improved && !rec.first ? 'A finer record than before.' : escapeHtml(state.level.name || '')));
+      var note = state.custom ? escapeHtml(state.level.name || '') : last ? 'The atlas is complete.' : (r.stars === 3 ? 'A clean passage, in a single launch.' : (rec.improved && !rec.first ? 'A finer record than before.' : escapeHtml(state.level.name || '')));
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Sealed</h3>' +
         '<p class="note">' + note + '</p>' +
         '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
@@ -704,22 +823,37 @@
   }
 
   // ---- Consult the Astronomer
+  // The astronomer draws the plate's full-clear course (every fragment, then the target) when one is engraved, else the plain winning one.
+  function hintSol(lv) { var c = lv && typeof Levels !== 'undefined' && Levels.clearFor ? Levels.clearFor(lv) : null; return c || (lv && lv.solution) || null; }
   function canHint() {
     var lv = state.level;
-    return state.screen === 'play' && state.phase === 'aim' && !!(lv && lv.solution) && !state.hint.used && !state.card &&
+    return state.screen === 'play' && state.phase === 'aim' && !!hintSol(lv) && !state.hint.used && !state.card &&
       state.launches < K.MAX_LAUNCHES && !cardVisible();
   }
   function hintWhy() {
     if (state.hint.used) return 'Already consulted on this attempt.';
-    if (!state.level || !state.level.solution) return 'No course is engraved for this plate.';
+    if (!hintSol(state.level)) return 'No course is engraved for this plate.';
     if (state.phase !== 'aim' || cardVisible()) return 'Only while a launch is being aimed.';
     return '';
   }
   function useHint() {
     if (!canHint()) return false;
-    var lv = state.level, sol = lv.solution, t0 = sol.t0Step | 0;
-    var sim = Physics.simulate(lv, sol.vx, sol.vy, t0, K.MAX_STEPS, hintBuf);
-    var n = Math.min(K.HINT_MAX, Math.floor(0.55 * sim.n)), h = state.hint;
+    var lv = state.level, sol = hintSol(lv), t0 = sol.t0Step | 0, h = state.hint;
+    // Fly the course once, noting the step at which the last fragment is gathered.
+    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, i;
+    while (sim.status === 'flying' && sim.step < K.MAX_STEPS) {
+      Physics.stepSim(sim, lv);
+      hintBuf[2 * total] = sim.x; hintBuf[2 * total + 1] = sim.y; total++;      // a wormhole passage is one long jump between two consecutive points
+      var c = 0; for (i = 0; i < sim.collected.length; i++) c += sim.collected[i];
+      if (c > got) { got = c; lastFrag = total; }
+      if (sim.warps > warps) { warps = sim.warps; lastWarp = total; }
+    }
+    // The line is the first 55% of the course; on a full-clear course it runs on to just past the last fragment, and on a course through
+    // wormholes to just past the last passage, so the exit's heading is shown (never the final approach: at most 92%).
+    var n = Math.floor(0.55 * total);
+    if (got) n = Math.max(n, Math.min(lastFrag + 24, Math.floor(0.92 * total)));
+    if (warps) n = Math.max(n, Math.min(lastWarp + 24, Math.floor(0.92 * total)));
+    n = Math.min(K.HINT_MAX, n);
     h.pts.set(hintBuf.subarray(0, 2 * n));
     h.n = n; h.on = true; h.used = true; h.t0 = nowMs();
     state.step = t0; state.frozen = true;
@@ -734,6 +868,7 @@
     $('sheet-kicker').innerHTML = kicker();
     $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : (state.mode === 'daily' ? 'Return to the Title' : 'Return to the Atlas');
     var ok = canHint(), hb = $('sheet-hint'), why = $('sheet-hint-why'), wt = ok ? '' : hintWhy();
+    var wb = $('sheet-worm'); if (wb) wb.hidden = !hasWormhole(state.level);       // "About wormholes" only on plates that have one
     hb.setAttribute('aria-disabled', String(!ok));
     why.textContent = wt; why.hidden = !wt;
     refreshSoundButtons();
@@ -787,11 +922,12 @@
         break;
       case 'howto': if (state.paused) showPopup('intro', true); break;
       case 'fragments': if (state.paused) showPopup('fragments', true); break;
+      case 'wormholes': if (state.paused) showPopup('wormholes', true); break;
       case 'pop-ok': closePopup(); break;
       case 'atlas': setScreen(state.mode === 'campaign' ? 'select' : 'title'); break;
       case 'next':
         if (state.mode === 'endless') nextEndless();
-        else if (state.levelIndex + 1 < CAMP.length) loadCampaign(state.levelIndex + 1);
+        else if (!state.custom && state.levelIndex + 1 < CAMP.length) loadCampaign(state.levelIndex + 1);
         else setScreen('select');
         break;
       case 'replay': case 'retry': resetAttempt(); break;
@@ -1035,6 +1171,7 @@
     var side = !wide && W > H && Math.max(spR, spL) >= 230;
     var cw = wide ? Math.min(600, W - 24 - safe.left - safe.right) : side ? Math.min(360, Math.max(spR, spL)) : Math.min(360, W - 24 - safe.left - safe.right);
     elPop.classList.toggle('wide', wide);
+    elPop.classList.remove('compact');
     elPop.style.width = px(cw);
     elPop.style.maxHeight = px(availH);
     elPop.style.bottom = 'auto';
@@ -1045,13 +1182,15 @@
     } else {
       left = safe.left + (W - safe.left - safe.right - cw) / 2;
       top = (minTop + maxBottom - ch) / 2;
-      var c = state.card === 'fragments' ? fragCentroid() : null;
+      var c = (state.card === 'fragments' || state.card === 'wormholes') ? fragCentroid() : null;
       if (c) {
         var mid = (minTop + maxBottom) / 2;
-        if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);          // comets above: card in the lower half
+        if (state.card === 'wormholes') top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths can sit anywhere: the clearest band, away from them
+        else if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);     // comets above: card in the lower half
         else top = Math.min(mid - ch, minTop + (mid - minTop - ch) / 2);               // comets below: card in the upper half
       }
     }
+    if (elPop.classList.contains('compact')) ch = Math.min(availH, elPop.offsetHeight || ch);
     top = Math.max(minTop, Math.min(top, maxBottom - ch));
     elPop.style.left = px(left);
     elPop.style.top = px(top);
@@ -1081,6 +1220,7 @@
         else { nudgeIdle = 0; setNudge(false); }
       }
     } else acc = 0;
+    if (state.card === 'wormholes') refreshSpotlight();
     try { Render.frame(state, t); }
     catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
   }
@@ -1131,6 +1271,7 @@
     loadLevel: function (i) { return loadCampaign(i); },
     loadEndless: function (seed) { return startEndless(seed); },
     loadDaily: function (k) { return loadDaily(k); },
+    loadCustom: function (lv) { return loadCustom(lv); },
     dailyPlate: function () { return dailyCache && dailyCache.key === Save.dateKey() ? dailyCache.lv : null; },
     openCard: function (name) { return requestPopup(name); },
     closeCard: function () { return closePopup(); },
@@ -1166,7 +1307,7 @@
     screen: function (name) {
       if (name == null) return state.screen;
       if (name === 'play' && state.screen !== 'play') {
-        if ((state.mode === 'endless' && state.endless.round > 0) || (state.mode === 'daily' && state.level)) setScreen('play');
+        if ((state.mode === 'endless' && state.endless.round > 0) || (state.mode === 'daily' && state.level) || (state.custom && state.level)) setScreen('play');
         else loadCampaign(Math.max(0, state.levelIndex));
       }
       else setScreen(name);

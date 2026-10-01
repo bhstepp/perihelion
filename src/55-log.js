@@ -12,7 +12,11 @@
    - "clean sweep" compares fragsThisAttempt with the number of fragments on the plate (level.frags.length; falls back to
      data.fragsTotal when no level is given).
    - Campaign-only counts (cartographer, volumes, perfectionist, self_reliant) use plateIndex >= 0 and treat the plate being
-     sealed as sealed even if Save.recordPlate has not run yet. */
+     sealed as sealed even if Save.recordPlate has not run yet.
+   - Volume ranges come from Levels.VOLUMES (Volumes I and II fall back to 0-29 / 30-59 if Levels is missing); a volume that
+     does not exist never unlocks its honour. Plate counts come from Save.N. Honours are only ever added, never revoked.
+   - Wormholes: flightEnd counts sim.warps (stat 'warps') and remembers whether the winning flight warped; plateSealed uses
+     that for the gate honours (stat 'gateSeals' counts sealed flights that warped). */
 var Log = (function () {
   var ROM_VOL = [{ from: 0, to: 29 }, { from: 30, to: 59 }];
 
@@ -31,9 +35,11 @@ var Log = (function () {
   function hasPair(level) {
     var b = level && level.bodies;
     if (!b) return false;
-    for (var i = 0; i < b.length; i++) if (b[i] && b[i].pair !== undefined && b[i].pair !== null) return true;
+    for (var i = 0; i < b.length; i++) if (b[i] && b[i].kind !== 'wormhole' && b[i].pair !== undefined && b[i].pair !== null) return true;
     return false;
   }
+  function vol(i) { var v; try { v = Levels.VOLUMES[i]; } catch (e) {} return v || ROM_VOL[i] || null; }
+  function volDone(c, i, min) { var v = vol(i); return !!v && v.to >= v.from && sealedAll(c, v.from, v.to, min); }
   function sealedNow(c) { return c.ev === 'plateSealed'; }
   function oneShot(c) { return sealedNow(c) && c.data.launches === 1; }
 
@@ -57,20 +63,30 @@ var Log = (function () {
       test: function (c) { return c.totals.sealed >= 10; } },
     { id: 'cartographer_30', name: 'Journeyman Cartographer', blurb: 'Seal thirty plates of the Atlas.',
       test: function (c) { return c.totals.sealed >= 30; } },
-    { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal all sixty plates of the Atlas.',
+    { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal sixty plates of the Atlas.',
       test: function (c) { return c.totals.sealed >= 60; } },
+    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal all ninety plates of the Atlas.',
+      test: function (c) { return c.totals.sealed >= 90; } },
     { id: 'volume_one', name: 'Volume I, Complete', blurb: 'Seal every plate of Volume I.',
-      test: function (c) { return sealedAll(c, ROM_VOL[0].from, ROM_VOL[0].to, 1); } },
+      test: function (c) { return volDone(c, 0, 1); } },
     { id: 'volume_two', name: 'Volume II, Complete', blurb: 'Seal every plate of Volume II.',
-      test: function (c) { return sealedAll(c, ROM_VOL[1].from, ROM_VOL[1].to, 1); } },
+      test: function (c) { return volDone(c, 1, 1); } },
+    { id: 'volume_three', name: 'Volume III, Complete', blurb: 'Seal every plate of Volume III.',
+      test: function (c) { return volDone(c, 2, 1); } },
     { id: 'perfectionist', name: 'The Perfectionist', blurb: 'Three stars on every plate of Volume I.',
-      test: function (c) { return sealedAll(c, ROM_VOL[0].from, ROM_VOL[0].to, 3); } },
+      test: function (c) { return volDone(c, 0, 3); } },
     { id: 'event_horizon', name: 'Event Horizon', blurb: 'Seal a plate holding a black hole with a single launch.',
       test: function (c) { return oneShot(c) && hasKind(c.level, 'blackhole'); } },
     { id: 'contrary_star', name: 'Contrary Star', blurb: 'Seal a plate holding a repulsor with a single launch.',
       test: function (c) { return oneShot(c) && hasKind(c.level, 'repulsor'); } },
     { id: 'binary_star', name: 'Binary Star', blurb: 'Seal a plate holding a binary pair with a single launch.',
       test: function (c) { return oneShot(c) && hasPair(c.level); } },
+    { id: 'first_gate', name: 'Through the Gate', blurb: 'Seal a plate with a flight that passed a wormhole.',
+      test: function (c) { return sealedNow(c) && c.warps >= 1; } },
+    { id: 'double_gate', name: 'Twice Through', blurb: 'Seal a plate with one flight that passed two wormholes.',
+      test: function (c) { return sealedNow(c) && c.warps >= 2; } },
+    { id: 'gate_keeper', name: 'Keeper of the Gates', blurb: 'Seal ten flights that passed a wormhole.',
+      test: function (c) { return c.stat('gateSeals') >= 10; } },
     { id: 'persistence', name: 'Persistence of Vision', blurb: 'Seal a plate on your third and final launch.',
       test: function (c) { return sealedNow(c) && c.data.launches === 3; } },
     { id: 'long_way_round', name: 'The Long Way Round', blurb: 'Win with a flight of 960 steps or more.',
@@ -99,7 +115,7 @@ var Log = (function () {
 
   // ---- helpers -------------------------------------------------------------------------------------------------------
   var STAT_NAMES = ['launches', 'wins', 'losses', 'crashes', 'lost', 'distance', 'frags', 'hints', 'nearMiss', 'threads',
-    'platesNoHint', 'dailyWins', 'endlessRounds'];
+    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps'];
 
   function num(x, dflt) { x = Number(x); return isFinite(x) ? x : dflt; }
   function stat(n) { try { return Save.stat(n) || 0; } catch (e) { return 0; } }
@@ -135,7 +151,7 @@ var Log = (function () {
   function starsNow(pending) {
     var a = [], i, src = null;
     try { src = Save.data.stars; } catch (e) {}
-    var n = 60; try { n = Save.N || 60; } catch (e) {}
+    var n = 90; try { n = Save.N || 90; } catch (e) {}
     for (i = 0; i < n; i++) a.push(src && src[i] ? src[i] : 0);
     if (pending && pending.idx >= 0 && pending.idx < n) a[pending.idx] = Math.max(a[pending.idx], pending.stars > 0 ? pending.stars : 1);
     return a;
@@ -163,7 +179,7 @@ var Log = (function () {
     var full = {
       ev: c.ev, data: c.data || {}, level: c.level || null, win: !!c.win,
       minGap: c.minGap === undefined ? Infinity : c.minGap, minDist: c.minDist === undefined ? Infinity : c.minDist,
-      steps: c.steps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
+      steps: c.steps || 0, warps: c.warps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
       endlessRound: c.endlessRound || 0,
       stars: stars, totals: c.totals || totalsOf(stars), stat: stat, dailyBest: 0
     };
@@ -192,6 +208,7 @@ var Log = (function () {
   // ---- events --------------------------------------------------------------------------------------------------------
   function isWin(status) { return status === 'hit'; }
 
+  var last = { lv: null, w: 0 };      // the latest flightEnd: its plate and (if it hit) how many times it warped
   var handlers = {
     launch: function (d) {
       bump('launches');
@@ -211,6 +228,9 @@ var Log = (function () {
       if (win && gap <= 12) bump('threads');
       var fd = fragDelta(d.level, d.fragsThisAttempt);
       if (fd > 0) bump('frags', fd);
+      var wp = Math.max(0, Math.floor(num(sim.warps, 0)));
+      if (wp > 0) bump('warps', wp);
+      last = { lv: d.level, w: win ? wp : 0 };
       return { ev: 'flightEnd', data: d, level: d.level, win: win, minGap: gap, minDist: num(sim.minDist, Infinity),
         steps: num(sim.step, 0), aimOff: win ? aimOffset(sim, d.level) : Infinity };
     },
@@ -221,10 +241,13 @@ var Log = (function () {
       if (fd > 0) bump('frags', fd);
       var idx = num(d.plateIndex, -1);
       if (idx >= 0 && !d.hintUsed) bump('platesNoHint');
+      var wp = (last.lv || null) === level ? last.w : 0;
+      last = { lv: null, w: 0 };
+      if (wp > 0) bump('gateSeals');
       var stars = starsNow({ idx: idx, stars: num(d.stars, 1) });
       var plateFrags = level && level.frags ? level.frags.length : num(d.fragsTotal, 0);
       return { ev: 'plateSealed', data: d, level: level, stars: stars, totals: totalsOf(stars),
-        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)) };
+        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp };
     },
 
     hint: function (d) {

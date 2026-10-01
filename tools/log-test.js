@@ -25,6 +25,7 @@ function world(opts) {
     Sound: { ach() { sounds.push(1); } },
     LogUI: { toast(t, s, o) { toasts.push({ t, s, o }); } }
   });
+  if (opts.volumes) ctx.Levels = { VOLUMES: opts.volumes };
   vm.runInContext(SRC('50-save.js') + '\n' + SRC('55-log.js') + '\n', ctx, { filename: 'save+log' });
   const W = { ctx, Save: ctx.Save, Log: ctx.Log, toasts, sounds, store };
   W.ev = (n, d) => ctx.Log.event(n, d);
@@ -105,6 +106,68 @@ function logicTests() {
   W = world(); const s2 = new Array(60).fill(0); for (let i = 30; i < 59; i++) s2[i] = 1; W.seedStars(s2); seal(W, { plateIndex: 59, stars: 1 }); check('volume_two', W.has('volume_two') && !W.has('volume_one'));
   W = world(); W.seedStars(new Array(29).fill(3)); seal(W, { plateIndex: 29, stars: 3 }); check('perfectionist', W.has('perfectionist') && W.has('volume_one'));
   W = world(); const s3 = new Array(29).fill(3); s3[4] = 2; W.seedStars(s3); seal(W, { plateIndex: 29, stars: 3 }); check('perfectionist: one two-star plate no', !W.has('perfectionist') && W.has('volume_one'));
+
+  // cartographer_60 keeps its condition (sixty plates sealed); cartographer_90 needs all ninety
+  check('Save.N is 90', world().Save.N === 90);
+  W = world(); W.seedStars(new Array(89).fill(1)); seal(W, { plateIndex: 89, stars: 1 });
+  check('cartographer_90: all ninety', W.has('cartographer_90') && W.has('cartographer_60') && W.has('cartographer_30'));
+  W = world(); W.seedStars(new Array(88).fill(1)); seal(W, { plateIndex: 89, stars: 1 }); check('cartographer_90: 89 of 90 no', !W.has('cartographer_90') && W.has('cartographer_60'));
+  W = world(); W.seedStars(new Array(60).fill(1)); W.ev('launch', { launchNo: 1 }); check('cartographer_60: retro for a 60-plate veteran, 90 needs more', W.has('cartographer_60') && !W.has('cartographer_90'));
+  W = world(); W.seedStars(new Array(59).fill(1)); seal(W, { plateIndex: 75, stars: 1 }); check('cartographer_60: sixty sealed anywhere counts', W.has('cartographer_60'));
+  W = world(); W.Save.data.ach.cartographer_60 = '2026-01-01'; W.Save.data.ach.volume_two = '2026-01-02'; W.Save.data.ach.perfectionist = '2026-01-03';
+  W.ev('launch', { launchNo: 1 }); W.ev('flightEnd', { status: 'lost', sim: {}, level: L() }); seal(W, { plateIndex: 0, stars: 1 });
+  check('held honours are never revoked (nothing sealed now)', W.has('cartographer_60') && W.has('volume_two') && W.has('perfectionist') && W.Save.data.ach.cartographer_60 === '2026-01-01');
+  W = world(); W.Save.data.ach.cartographer_60 = '2026-01-01'; W.ev('launch', { launchNo: 1 });
+  check('a held honour keeps its date', W.Save.data.ach.cartographer_60 === '2026-01-01');
+
+  // volumes from Levels.VOLUMES: two volumes (as shipped before Volume III) and three
+  const V2 = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }], V3 = V2.concat([{ name: 'Volume III', from: 60, to: 89 }]);
+  const vs = (from, to, n) => { const a = new Array(90).fill(0); for (let i = from; i <= to; i++) a[i] = n || 1; return a; };
+  W = world({ volumes: V2 }); W.seedStars(vs(0, 89).map((x, i) => i < 89 ? 3 : 0)); seal(W, { plateIndex: 89, stars: 3 });
+  check('volume_three never unlocks while the volume does not exist', !W.has('volume_three') && W.has('volume_two') && W.has('volume_one'));
+  W = world(); W.seedStars(vs(0, 89).map((x, i) => i < 89 ? 3 : 0)); seal(W, { plateIndex: 89, stars: 3 });
+  check('volume_three never unlocks with no Levels at all (and Volumes I/II still use their defaults)', !W.has('volume_three') && W.has('volume_two') && W.has('volume_one') && W.has('cartographer_90'));
+  W = world({ volumes: V3 }); W.seedStars(vs(60, 88)); seal(W, { plateIndex: 89, stars: 1 });
+  check('volume_three: Volume III sealed (plates 60-89)', W.has('volume_three') && !W.has('volume_one') && !W.has('volume_two') && !W.has('cartographer_90'));
+  W = world({ volumes: V3 }); W.seedStars(vs(60, 87)); seal(W, { plateIndex: 89, stars: 1 }); check('volume_three: one plate missing no', !W.has('volume_three'));
+  W = world({ volumes: V3 }); W.seedStars(vs(0, 88, 3)); seal(W, { plateIndex: 89, stars: 3 });
+  check('all three volumes: volume_one/two/three, perfectionist, cartographer_90', ['volume_one', 'volume_two', 'volume_three', 'perfectionist', 'cartographer_90'].every(i => W.has(i)));
+  W = world({ volumes: V3 }); W.seedStars(vs(60, 88, 1)); seal(W, { plateIndex: 89, stars: 1 }); check('perfectionist stays Volume I only (Volume III at one star no)', !W.has('perfectionist'));
+  W = world({ volumes: [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }, { name: 'Volume III', from: 60, to: 119 }] }); W.seedStars(vs(60, 89)); seal(W, { plateIndex: 89, stars: 1 });
+  check('volume_three: a range beyond Save.N never unlocks', !W.has('volume_three'));
+  W = world({ volumes: [{}, null, 7] }); let th = false; try { W.seedStars(vs(0, 88)); seal(W, { plateIndex: 89, stars: 1 }); } catch (e) { th = true; }
+  check('malformed Levels.VOLUMES never throws or unlocks volumes', !th && !W.has('volume_three') && !W.has('volume_one'));
+
+  // gates: wormhole plates carry `pair` on their mouths, which must not read as a binary star
+  const LW = L({ bodies: [{ kind: 'wormhole', r: 32, mu: 0, pair: 1 }, { kind: 'wormhole', r: 32, mu: 0, pair: 0 }] });
+  const hitW = (W, lv, warps, extra) => flight(W, 'hit', simHit({ sim: { warps } }), lv, extra);
+  W = world(); hitW(W, LW, 1); seal(W, { level: LW, launches: 1 });
+  check('first_gate: sealed with a flight that warped once', W.has('first_gate') && !W.has('double_gate'));
+  check('a wormhole plate is not a binary star', !W.has('binary_star'));
+  W = world(); hitW(W, LW, 2); seal(W, { level: LW });
+  check('double_gate: one flight, two passages (also first_gate)', W.has('double_gate') && W.has('first_gate'));
+  W = world(); hitW(W, LW, 0); seal(W, { level: LW }); check('first_gate: a plate with a wormhole but no passage no', !W.has('first_gate'));
+  W = world(); flight(W, 'lost', simHit({ sim: { warps: 3 } }), LW); hitW(W, LW, 0); seal(W, { level: LW, launches: 2, stars: 2 });
+  check('first_gate: only the sealing flight counts (an earlier warp that missed does not)', !W.has('first_gate') && !W.has('double_gate') && W.stat('warps') === 3);
+  W = world(); hitW(W, LW, 1); hitW(W, LW, 1); seal(W, { level: LW }); check('double_gate: passages of two separate flights do not add up', !W.has('double_gate'));
+  W = world(); hitW(W, LW, 1); seal(W, { level: L() }); check('first_gate: a flight of another plate does not count', !W.has('first_gate'));
+  W = world(); hitW(W, LW, 1); seal(W, { level: LW, mode: 'daily', plateIndex: -1 }); check('first_gate: any mode counts', W.has('first_gate'));
+  W = world(); hitW(W, LW, 2); seal(W, { level: LW }); seal(W, { level: LW }); eq('gateSeals: a seal without a fresh flight is not counted twice', W.stat('gateSeals'), 1);
+  check('binary_star stays honest for real pairs alongside a wormhole', (() => { const W2 = world(), LP2 = L({ bodies: [{ kind: 'planet', r: 40, mu: 1, pair: 1 }, { kind: 'planet', r: 40, mu: 1, pair: 0 }, LW.bodies[0], LW.bodies[1]] }); hitW(W2, LP2, 1); seal(W2, { level: LP2, launches: 1 }); return W2.has('binary_star') && W2.has('first_gate'); })());
+
+  // gate_keeper and the warps stat
+  W = world(); for (let i = 0; i < 9; i++) { hitW(W, LW, 1); seal(W, { level: LW, plateIndex: i }); }
+  check('gate_keeper: nine no', !W.has('gate_keeper')); eq('gateSeals nine', W.stat('gateSeals'), 9);
+  hitW(W, LW, 3); seal(W, { level: LW, plateIndex: 9 }); check('gate_keeper: tenth sealed warping flight', W.has('gate_keeper')); eq('warps counts every passage', W.stat('warps'), 12);
+  W = world(); for (let i = 0; i < 12; i++) flight(W, 'hit', simHit({ sim: { warps: 2 } }), LW); check('gate_keeper: winning flights that were not sealed do not count', !W.has('gate_keeper') && W.stat('warps') === 24);
+  W = world(); flight(W, 'crash', simHit({ sim: { warps: 2 } })); flight(W, 'lost', simHit({ sim: { warps: 1 } })); flight(W, 'timeout', simHit({ sim: { warps: 4 } }));
+  eq('warps counted on every flightEnd, hit or not', W.stat('warps'), 7);
+  W = world(); flight(W, 'hit', simHit({ sim: { warps: -2 } })); flight(W, 'hit', simHit({ sim: { warps: NaN } })); flight(W, 'hit', simHit({ sim: { warps: 1.9 } })); flight(W, 'hit', simHit({ sim: { warps: 'x' } }));
+  eq('warps: garbage and negatives ignored, fractions floored', W.stat('warps'), 1);
+  W = world(); flight(W, 'hit', simHit()); eq('warps: a sim with no warps field adds nothing', W.stat('warps'), 0);
+  eq('snapshot carries warps', W.Log.snapshot().stats.warps, 0);
+  W = world(); hitW(W, LW, 2); eq('snapshot stats.warps', W.Log.snapshot().stats.warps, 2);
+  W = world({ brokenStorage: true }); hitW(W, LW, 2); seal(W, { level: LW }); check('memory-only Save: gate honours still unlock', W.has('first_gate') && W.has('double_gate'));
 
   // event_horizon / contrary_star / binary_star
   const LB = L({ bodies: [{ kind: 'blackhole', r: 12, capture: 40, mu: 1 }] }), LR = L({ bodies: [{ kind: 'repulsor', r: 20, mu: -1 }] });
@@ -247,9 +310,9 @@ async function browserTests() {
       stats: { launches: 143, wins: 61, losses: 82, crashes: 40, lost: 42, distance: 184230, frags: 31, hints: 3, nearMiss: 17, threads: 5, platesNoHint: 22, dailyWins: 8, endlessRounds: 12 }, ach }));
   };
   const seedFull = () => {
-    const stars = [], frags = []; for (let i = 0; i < 60; i++) { stars.push(3); frags.push(1); }
-    localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars, frags, unlocked: 60, muted: true, seen: { intro: true, fragments: true },
-      stats: { launches: 1234567, wins: 999999, distance: 98765432, nearMiss: 1500, threads: 250 } }));
+    const stars = [], frags = []; for (let i = 0; i < 90; i++) { stars.push(3); frags.push(1); }
+    localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars, frags, unlocked: 90, muted: true, seen: { intro: true, fragments: true },
+      stats: { launches: 1234567, wins: 999999, distance: 98765432, nearMiss: 1500, threads: 250, warps: 1234567 } }));
   };
 
   async function open(opts, seed) {
@@ -371,7 +434,7 @@ async function browserTests() {
     return { n: out.length, clashes: out.filter(o => o.clash), errs: out.filter(o => o.err), highest: out.filter(o => o.top !== undefined).sort((a, b) => a.top - b.top).slice(0, 3), toastBottom: R2.b };
   }, [{ l: 0, r: 390, t: r1.t, b: r1.b }, NOTCH]);
   // (the full-width rect is the worst case: any target that clears it clears the real, narrower banner)
-  check('no target of the 60 plates + 28 daily plates reaches the banner band', hit.n === 88 && hit.clashes.length === 0 && hit.errs.length === 0, JSON.stringify({ n: hit.n, clashes: hit.clashes, errs: hit.errs, highest: hit.highest, toastBottom: hit.toastBottom }));
+  check('no target of the 90 plates + 28 daily plates reaches the banner band', hit.n === 118 && hit.clashes.length === 0 && hit.errs.length === 0, JSON.stringify({ n: hit.n, clashes: hit.clashes, errs: hit.errs, highest: hit.highest, toastBottom: hit.toastBottom }));
   check('no console errors (half-full)', s.errors.length === 0, s.errors.join(' | '));
   await s.ctx.close();
 
@@ -382,6 +445,15 @@ async function browserTests() {
   await shot(s.page, 'log-full.png');
   m = await s.page.evaluate(() => { const sc = document.querySelector('.lg-scroll'); return { overflowX: sc.scrollWidth > sc.clientWidth, count: document.querySelector('.lg-count').textContent, figs: Array.from(document.querySelectorAll('.lg-fig b')).map(e => e.scrollWidth <= e.parentElement.clientWidth) }; });
   check('full state: no overflow, figures fit their boxes', !m.overflowX && m.figs.every(Boolean) && new RegExp(NH + ' of ' + NH).test(m.count), JSON.stringify(m));
+  m = await s.page.evaluate(() => {
+    const sc = document.querySelector('.lg-scroll'), W = sc.clientWidth; sc.scrollTop = sc.scrollHeight; const cards = Array.from(document.querySelectorAll('.lg-hon')), last = cards[cards.length - 1].getBoundingClientRect(), box = sc.getBoundingClientRect();
+    const rows = Array.from(document.querySelectorAll('.lg-ledger li')), figs = Array.from(document.querySelectorAll('.lg-fig b')).map(e => e.textContent);
+    return { n: cards.length, clipped: cards.filter(c => c.scrollWidth > c.clientWidth || Array.from(c.children).some(k => k.scrollWidth > k.clientWidth + 1)).length, offscreen: cards.filter(c => { const r = c.getBoundingClientRect(); return r.left < 0 || r.right > innerWidth; }).length,
+      lastVisible: last.bottom <= box.bottom + 1, rowsFit: rows.every(r => r.scrollWidth <= r.clientWidth), rows: rows.map(r => r.textContent), figs, pageW: document.documentElement.scrollWidth <= innerWidth, W };
+  });
+  check('full state, 390x844: all ' + NH + ' honours fit and the last is reachable', m.n === NH && m.clipped === 0 && m.offscreen === 0 && m.lastVisible && m.rowsFit && m.pageW, JSON.stringify(m));
+  check('full state: totals read x/90 and x/270; gates passed is shown', m.figs[0] === '90/90' && m.figs[1] === '270/270' && m.rows.some(r => /Gates passed/.test(r) && /1,234,567/.test(r)), JSON.stringify(m.figs) + ' ' + JSON.stringify(m.rows));
+  await shot(s.page, 'log-full-end.png');
   check('no console errors (full)', s.errors.length === 0, s.errors.join(' | '));
   await s.ctx.close();
 

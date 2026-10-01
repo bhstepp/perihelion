@@ -201,7 +201,7 @@ var LogUI = (function () {
 
   function render(snap) {
     var t = snap.totals || {}, st = snap.stats || {}, dl = snap.daily || {}, ach = snap.achievements || [];
-    var N = 60; try { N = Save.N || 60; } catch (e) {}
+    var N = 90; try { N = Save.N || 90; } catch (e) {}
     var got = 0, i;
     for (i = 0; i < ach.length; i++) if (ach[i].unlocked) got++;
     var hit = st.launches > 0 ? Math.round(100 * (st.hitRate || 0)) + '<i>%</i>' : '&mdash;';
@@ -218,7 +218,8 @@ var LogUI = (function () {
       row('Hit rate', hit) +
       row('Distance flown', fmt(st.distance || 0), 'u') +
       row('Near misses', fmt(st.nearMiss || 0)) +
-      row('Needles threaded', fmt(st.threads || 0)) + '</ul>';
+      row('Needles threaded', fmt(st.threads || 0)) +
+      row('Gates passed', fmt(st.warps || 0)) + '</ul>';
     if (!(st.launches > 0)) h += '<p class="lg-note">Nothing observed as yet. The log fills as you fly.</p>';
     h += '</section>';
 

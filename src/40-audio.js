@@ -32,31 +32,6 @@ var Sound = (function () {
     return ctx;
   }
 
-  // iOS routes Web Audio through the "ambient" session, which the ringer/silent switch mutes. Playing a silent
-  // HTML <audio> element (and asking for a 'playback' session where supported) makes Web Audio audible even
-  // with the switch on silent. The element is paused whenever the app is suspended.
-  var keepEl = null;
-  function silentWavUri() {
-    var n = 8000, s = '', i;   // 1 s, 8-bit mono, 8 kHz, value 128 = silence
-    function u32(v) { return String.fromCharCode(v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >> 24) & 255); }
-    function u16(v) { return String.fromCharCode(v & 255, (v >> 8) & 255); }
-    s += 'RIFF' + u32(36 + n) + 'WAVEfmt ' + u32(16) + u16(1) + u16(1) + u32(8000) + u32(8000) + u16(1) + u16(8) + 'data' + u32(n);
-    for (i = 0; i < n; i++) s += '\x80';
-    return 'data:audio/wav;base64,' + btoa(s);
-  }
-  function primeSession() {
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
-    try {
-      if (!keepEl) {
-        keepEl = new Audio();
-        keepEl.src = silentWavUri();
-        keepEl.loop = true; keepEl.preload = 'auto';
-        keepEl.setAttribute('playsinline', ''); keepEl.setAttribute('webkit-playsinline', '');
-      }
-      if (keepEl.paused && !suspendedByApp) { var p = keepEl.play(); if (p && p.catch) p.catch(function () {}); }
-    } catch (e) { keepEl = null; }
-  }
-
   function silentBlip(c) {   // a silent buffer started inside the gesture fully unlocks output on older iOS
     try { var b = c.createBuffer(1, 1, 22050), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } catch (e) {}
   }
@@ -66,7 +41,6 @@ var Sound = (function () {
   function unlock(cb) {
     var c = ensure();
     if (!c) return;
-    primeSession();
     if (c.state !== 'running' && !suspendedByApp) {
       silentBlip(c);
       try {
@@ -101,12 +75,10 @@ var Sound = (function () {
   function suspend() {
     suspendedByApp = true;
     droneStop();
-    if (keepEl) { try { keepEl.pause(); } catch (e) {} }
     if (ctx && ctx.state === 'running') { try { var p = ctx.suspend(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
   }
   function resume() {
     suspendedByApp = false;
-    if (keepEl && keepEl.paused) { try { var k = keepEl.play(); if (k && k.catch) k.catch(function () {}); } catch (e) {} }
     if (ctx && ctx.state !== 'running') { try { var p = ctx.resume(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
   }
 
@@ -250,6 +222,37 @@ var Sound = (function () {
     } catch (e) {}
   }
 
+  // ---- warp: soft wormhole passage (~0.35 s). A sine glides down then up, with a faint filtered breath of noise.
+  //      Quieter than bell; smooth sine-shaped envelope with a 25 ms fade in/out so there are no clicks. ----
+  function warp() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.01, D = 0.35;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(520, t);
+      o.frequency.exponentialRampToValueAtTime(190, t + D * 0.5);
+      o.frequency.exponentialRampToValueAtTime(430, t + D);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.11, t + 0.04);
+      g.gain.setValueAtTime(0.11, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t + D + 0.03);
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
+      bp.frequency.setValueAtTime(900, t);
+      bp.frequency.exponentialRampToValueAtTime(380, t + D * 0.5);
+      bp.frequency.exponentialRampToValueAtTime(800, t + D);
+      var gn = ctx.createGain();
+      gn.gain.setValueAtTime(0.0001, t);
+      gn.gain.exponentialRampToValueAtTime(0.035, t + 0.08);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      src.connect(bp); bp.connect(gn); gn.connect(master);
+      src.start(t, Math.random() * 1.0); src.stop(t + D + 0.03);
+    } catch (e) {}
+  }
+
   // ---- launch: soft whoosh, bandpassed noise sweep ----
   function launch(power) {
     if (!ready()) return;
@@ -270,7 +273,7 @@ var Sound = (function () {
   return {
     unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
     droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
-    chime: chime, ach: ach, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    chime: chime, ach: ach, warp: warp, thump: thump, pluck: pluck, tick: tick, launch: launch,
     get state() { return ctx ? ctx.state : 'none'; }
   };
 })();

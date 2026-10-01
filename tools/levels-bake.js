@@ -5,16 +5,18 @@
    Volume I (plates 1-30, index 0..29) is FROZEN: its 30 literal lines in src/20-levels.js are never rewritten (players hold
    stars against them; tools/levels-golden.json pins their sha256). This tool bakes Volume II (index 30..59, plates XXXI..LX)
    and writes the module as  [30 frozen lines].concat([30 new lines])  between the @CAMPAIGN markers.
+   Volume II is pinned too (tools/levels-golden.json "lines2") and Volume III (plates 61-90, wormholes) lives in tools/levels-bake3.js; this tool
+   carries the Volume III lines over verbatim when it rewrites the module, and --verify checks all 90 plates (Volume III through levels-bake3.js).
    usage: node tools/levels-bake.js               bake the missing Volume II plates (2 worker processes, resumable: each finished
                                                   plate is cached in tools/levels-cache/), then write the module when all 30 exist
           node tools/levels-bake.js --only 30,31  bake + print only those indices (no write, no cache; works for 0..59)
           node tools/levels-bake.js --assemble    write the module from the cache only (no baking)
-          node tools/levels-bake.js --verify      verify all 60 plates + the Volume I hashes (tools/load.js, vm context) */
+          node tools/levels-bake.js --verify      verify all 90 plates + the Volume I and II hashes (tools/load.js, vm context; Volume III via levels-bake3.js) */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm'), cp = require('child_process');
 const ROOT = path.join(__dirname, '..'), LEVELS = path.join(ROOT, 'src', '20-levels.js'), CACHE = path.join(__dirname, 'levels-cache');
 const GOLDEN = path.join(__dirname, 'levels-golden.json');
-const V2 = 30, NTOTAL = 60;
+const V2 = 30, V3 = 60, NTOTAL = 60, NALL = 90;   // NTOTAL: plates this tool bakes (Volumes I+II); NALL: the whole campaign (Volume III is baked by tools/levels-bake3.js)
 // Volume II names: obsolete constellations and 19th-century observatory matters (none reused from Levels.NAMES).
 const NAMES2 = ['Argo Navis', 'Quadrans Muralis', 'Custos Messium', 'Honores Frederici', 'Globus Aerostaticus',
   'Brandenburg Sceptre', 'Mons Maenalus', 'Telescopium Herschelii', 'Officina Typographica', 'Machina Electrica',
@@ -190,7 +192,8 @@ function writeModule(v2levels) {
   if (v1.length !== V2 || v2levels.length !== NTOTAL - V2) throw new Error('need 30 + 30 plates');
   const gold = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')).lines;
   v1.forEach((l, i) => { if (sha(l) !== gold[i]) throw new Error('Volume I plate ' + (i + 1) + ' differs from tools/levels-golden.json; refusing to write'); });
-  const body = '/*@CAMPAIGN*/var CAMPAIGN = [\n' + v1.join('\n') + '\n  ].concat([\n' + v2levels.map(l => '    ' + lit(l)).join(',\n') + '\n  ]);/*@END*/';
+  const v3 = campaignLines(src).slice(NTOTAL); // Volume III lines (levels-bake3.js) are carried over verbatim
+  const body = '/*@CAMPAIGN*/var CAMPAIGN = [\n' + v1.join('\n') + '\n  ].concat([\n' + v2levels.map(l => '    ' + lit(l)).join(',\n') + '\n  ])' + (v3.length ? '.concat([\n' + v3.join('\n') + '\n  ])' : '') + ';/*@END*/';
   fs.writeFileSync(LEVELS, src.slice(0, a) + body + src.slice(b + 8));
 }
 
@@ -211,16 +214,19 @@ function verify() {
   let ok = true; const ids = new Set(), names = new Set();
   // Volume I is frozen: same text as when players started earning stars
   const gold = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')).lines, lines = campaignLines(fs.readFileSync(LEVELS, 'utf8'));
-  if (lines.length !== NTOTAL) { console.log('CAMPAIGN literal lines', lines.length); ok = false; }
+  if (lines.length !== NALL) { console.log('CAMPAIGN literal lines', lines.length, '(want ' + NALL + ')'); ok = false; }
   for (let i = 0; i < V2; i++) if (!lines[i] || sha(lines[i]) !== gold[i]) { console.log('L' + (i + 1), 'FROZEN PLATE CHANGED'); ok = false; }
-  if (C.length !== NTOTAL) { console.log('CAMPAIGN length', C.length); ok = false; }
+  { const g2 = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')).lines2; // Volume II is pinned as well (added with Volume III)
+    if (!g2 || g2.length !== 30) { console.log('tools/levels-golden.json has no lines2 (Volume II pins)'); ok = false; }
+    else for (let i = V2; i < NTOTAL; i++) if (!lines[i] || sha(lines[i]) !== g2[i - V2]) { console.log('L' + (i + 1), 'FROZEN PLATE CHANGED (Volume II)'); ok = false; } }
+  if (C.length !== NALL) { console.log('CAMPAIGN length', C.length, '(want ' + NALL + ')'); ok = false; }
   { const eh = require('./levels-endless-hash.js')(LEVELS), want = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')).endless.hash; if (eh !== want) { console.log('Endless generate() output changed vs golden'); ok = false; } }
-  const V = G.Levels.VOLUMES; if (!V || V.length !== 2 || V[0].from !== 0 || V[0].to !== 29 || V[1].from !== 30 || V[1].to !== 59 || V[0].name !== 'Volume I' || V[1].name !== 'Volume II') { console.log('VOLUMES wrong'); ok = false; }
+  const V = G.Levels.VOLUMES; if (!V || V.length !== 3 || V[0].from !== 0 || V[0].to !== 29 || V[1].from !== 30 || V[1].to !== 59 || V[2].from !== 60 || V[2].to !== 89 || V[0].name !== 'Volume I' || V[1].name !== 'Volume II' || V[2].name !== 'Volume III') { console.log('VOLUMES wrong'); ok = false; }
   const rows = [], PW = []; for (let j = 0; j < NP; j++) PW.push(PWR(j));
   C.forEach((L, i) => {
-    const s = L.solution, sim = G.Physics.simulate(L, s.vx, s.vy, s.t0Step, K.MAX_STEPS), vol2 = i >= V2, moving = L.bodies.some(b => b.orbit);
+    const s = L.solution, sim = G.Physics.simulate(L, s.vx, s.vy, s.t0Step, K.MAX_STEPS), vol2 = i >= V2 && i < NTOTAL, moving = L.bodies.some(b => b.orbit);
     const probs = [];
-    if (s.t0Step !== 0) probs.push('t0Step');
+    if (s.t0Step !== 0 && i < NTOTAL) probs.push('t0Step');   // Volume III solutions may start at any launch time (verify3 holds them to the stricter rules)
     if (sim.status !== 'hit') probs.push('solution ' + sim.status);
     for (let q = 0; q < L.frags.length; q++) if (sim.collected[q]) probs.push('solution collects frag ' + q);
     if (L.index !== i || L.plate !== G.toRoman(i + 1) || L.id !== 'c' + String(i + 1).padStart(2, '0')) probs.push('index/plate/id');
@@ -231,7 +237,7 @@ function verify() {
       else if (fs2.vx === s.vx && fs2.vy === s.vy) probs.push('fragSolution === solution');
     }
     const sa = Math.atan2(s.vy, s.vx) / Math.PI * 180, sp = Math.hypot(s.vx, s.vy) / K.VMAX;
-    if (g.robust(L, sa, sp, 0) < 8) probs.push('solution not robust');
+    if (g.robust(L, sa, sp, i >= NTOTAL ? s.t0Step | 0 : 0) < 8) probs.push('solution not robust');
     if (i >= 5) for (const t0 of moving ? [0, 90, 200, 333] : [0]) if (g.straightHits(L, t0, PW)) probs.push('straight shot hits at t0=' + t0);
     for (let a = 0; a < L.bodies.length; a++) {
       if (g.pointGap(L.bodies[a], L.probe.x, L.probe.y) < 140) probs.push('probe clearance');
@@ -274,8 +280,14 @@ function verify() {
     if (probs.length) { ok = false; console.log('L' + (i + 1), L.name, probs.join('; ')); }
   });
   if (rows.length) { console.log('plate name                    bodies hit%   frags r  timing'); for (const r of rows) console.log(String(r[0]).padStart(5), String(r[1]).padEnd(24), String(r[2]).padStart(5), String(r[3]).padStart(7), String(r[4]).padStart(5), String(r[5]).padStart(3), ' ' + r[6]); }
-  console.log(ok ? 'verify: all ' + C.length + ' baked plates OK (Volume I text unchanged vs levels-golden.json; solutions hit & robust >= 8/9, straight shots miss from L6, fragment paths collect all, clearances hold, solutions collect no fragments; Volume II: 4-7 bodies, r 26-38, 2-3 frags, hit ratio in band, robust at >= 3 of 4 launch times)' : 'verify: FAILED');
+  console.log(ok ? 'verify: all ' + C.length + ' baked plates pass the common checks (Volume I and II text unchanged vs levels-golden.json; solutions hit & robust >= 8/9, straight shots miss from L6, fragment paths collect all, clearances hold, solutions collect no fragments; Volume II: 4-7 bodies, r 26-38, 2-3 frags, hit ratio in band, robust at >= 3 of 4 launch times; Volume III: see verify3 below)' : 'verify: FAILED');
   return ok;
+}
+
+// Volumes I-II here (sync), Volume III in tools/levels-bake3.js (2 worker processes, started first so they overlap with this run).
+function verifyAll() {
+  const p3 = require('./levels-bake3.js').verify3(2), ok = verify();
+  return p3.then(ok3 => ok && ok3);
 }
 
 /* ---------- main ---------- */
@@ -286,10 +298,10 @@ if (argv[0] === '--worker') {
   const out = argv[1].split(',').map(Number).map(i => { const r = bakeLevel(C, G, i); if (r.stats.seed) r.stats.name = (G.Levels.NAMES.slice(0, 30).concat(NAMES2))[i]; return r; });
   process.stdout.write(JSON.stringify(out));
 } else if (argv[0] === '--verify') {
-  process.exit(verify() ? 0 : 1);
+  verifyAll().then(ok => process.exit(ok ? 0 : 1));
 } else if (argv[0] === '--assemble') {
   const lv = []; for (let i = V2; i < NTOTAL; i++) { if (!fs.existsSync(cacheFile(i))) { console.log('missing cache for index', i); process.exit(1); } lv.push(JSON.parse(fs.readFileSync(cacheFile(i), 'utf8')).level); }
-  writeModule(lv); console.log('wrote', path.relative(ROOT, LEVELS), (fs.statSync(LEVELS).size / 1024).toFixed(1) + ' KB'); process.exit(verify() ? 0 : 1);
+  writeModule(lv); console.log('wrote', path.relative(ROOT, LEVELS), (fs.statSync(LEVELS).size / 1024).toFixed(1) + ' KB'); verifyAll().then(ok => process.exit(ok ? 0 : 1));
 } else {
   const only = argv[0] === '--only' ? argv[1].split(',').map(Number) : null;
   fs.mkdirSync(CACHE, { recursive: true });
@@ -318,6 +330,6 @@ if (argv[0] === '--worker') {
     const lv = []; for (let i = V2; i < NTOTAL; i++) { if (!fs.existsSync(cacheFile(i))) { console.log('NOT writing: plate', i + 1, 'has no bake yet'); process.exit(1); } lv.push(JSON.parse(fs.readFileSync(cacheFile(i), 'utf8')).level); }
     writeModule(lv);
     console.log('wrote', path.relative(ROOT, LEVELS), (fs.statSync(LEVELS).size / 1024).toFixed(1) + ' KB');
-    process.exit(verify() ? 0 : 1);
+    verifyAll().then(ok => process.exit(ok ? 0 : 1));
   }).catch(e => { console.error(e); process.exit(1); });
 }

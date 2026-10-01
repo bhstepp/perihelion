@@ -355,6 +355,15 @@ var Levels = (function () {
   // flights (not ms) so results are identical on every device: candidates at the asked difficulty get CAND_SIMS each
   // within STAGE_CAPS[0]; if none proves finger-robust, cheaper archetypes follow (3-body repulsor plate at 0.69,
   // planet + moon at 0.2, two planets at 0.1), each with its own small cap. Worst case ~730 flights.
+  // Candidate seed n for a plate seed. Candidate 0 is the seed itself. Later candidates are HASHED from (seed, n): the old linear rule
+  // seed + n*golden made round r's candidate n identical to round (r+n)'s first candidate, so at high difficulty (many failed
+  // candidates) consecutive Endless rounds converged on the very same plate.
+  function candSeed(seed, n) {
+    if (!n) return seed >>> 0;
+    var h = (seed ^ Math.imul(n, 0x85EBCA6B)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x7FEB352D); h = Math.imul(h ^ (h >>> 15), 0x846CA68B);
+    return (h ^ (h >>> 16)) >>> 0;
+  }
   function generate(seed, difficulty) {
     var d = Math.max(0, Math.min(1, +difficulty || 0)), k, L, s, cap, fb = false;
     var ds = [d, Math.min(d, 0.69), Math.min(d, 0.2), Math.min(d, 0.1)];
@@ -363,7 +372,7 @@ var Levels = (function () {
       if (g && !fb) { fb = true; genStats.fallback++; }
       cap = nSims + STAGE_CAPS[g];
       for (k = 0; k < 48 && nSims < cap; k++) {
-        s = (seed + Math.imul(k + 101 * g, 0x9E3779B1)) >>> 0;
+        s = candSeed(seed, k + 101 * g);
         if ((L = attempt(seed, s, ds[g], CAND_SIMS, cap))) return L;
       }
     }
@@ -390,7 +399,7 @@ var Levels = (function () {
       cap = nSims + DAILY_CAPS[g]; hardCap = cap + 20;
       try {
         for (k = 0; k < 48 && nSims < cap; k++) {
-          s = (seed + Math.imul(k + 101 * g, 0x9E3779B1)) >>> 0;
+          s = candSeed(seed, k + 101 * g);
           if ((L = attempt(seed, s, ds[g], CAND_SIMS, cap))) { genStats.stage[g]++; return L; }
         }
       } finally { hardCap = Infinity; }
@@ -470,11 +479,140 @@ var Levels = (function () {
     {id:"c58",index:57,seed:521967,difficulty:1.56,name:"The Nautical Almanac",plate:"LVIII",probe:{x:488,y:1351},target:{x:702,y:387,r:27},bodies:[{kind:"planet",r:52,mu:1.12e7,x:554,y:917,orbit:null},{kind:"repulsor",r:23,mu:-9.46e6,x:555,y:680,orbit:null},{kind:"planet",r:52,mu:9.93e6,x:711,y:1216,orbit:null},{kind:"blackhole",r:14,capture:42,mu:3.69e7,x:411,y:1056,orbit:null},{kind:"planet",r:47,mu:7.9e6,orbit:{cx:329,cy:860,rad:91,omega:.672,phase:.103},pair:1},{kind:"planet",r:39,mu:4.04e6,orbit:{cx:329,cy:860,rad:91,omega:.672,phase:3.245},pair:1},{kind:"moon",r:14,mu:165000,orbit:{cx:711,cy:1216,rad:106,omega:1.103,phase:.633}}],frags:[{x:167,y:790},{x:424,y:582},{x:559,y:519}],solution:{vx:367.089,vy:-524.257,t0Step:0},fragSolution:{vx:-504.978,vy:-84.504,t0Step:0}},
     {id:"c59",index:58,seed:598598,difficulty:1.58,name:"The Great Comet",plate:"LIX",probe:{x:642,y:1473},target:{x:315,y:261,r:27},bodies:[{kind:"planet",r:46,mu:8.02e6,x:417,y:738,orbit:null},{kind:"repulsor",r:29,mu:-1.07e7,x:263,y:463,orbit:null},{kind:"planet",r:37,mu:3.02e6,orbit:{cx:245,cy:976,rad:98,omega:-.771,phase:.309},pair:1},{kind:"planet",r:37,mu:3.51e6,orbit:{cx:245,cy:976,rad:98,omega:-.771,phase:3.451},pair:1},{kind:"blackhole",r:14,capture:46,mu:3.84e7,x:487,y:940,orbit:null},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:417,cy:738,rad:100,omega:-1.02,phase:4.053}}],frags:[{x:786,y:1014},{x:656,y:627},{x:544,y:499}],solution:{vx:122.118,vy:-628.241,t0Step:0},fragSolution:{vx:201.681,vy:-363.842,t0Step:0}},
     {id:"c60",index:59,seed:1170229,difficulty:1.6,name:"Halley's Return",plate:"LX",probe:{x:246,y:1427},target:{x:656,y:363,r:27},bodies:[{kind:"planet",r:59,mu:1.45e7,x:489,y:870,orbit:null},{kind:"repulsor",r:30,mu:-1.34e7,x:469,y:704,orbit:null},{kind:"planet",r:35,mu:3.54e6,orbit:{cx:286,cy:977,rad:86,omega:-.658,phase:3.694},pair:1},{kind:"planet",r:41,mu:5.65e6,orbit:{cx:286,cy:977,rad:86,omega:-.658,phase:6.836},pair:1},{kind:"planet",r:33,mu:2.17e6,orbit:{cx:250,cy:664,rad:117,omega:-.603,phase:2.654},pair:2},{kind:"planet",r:37,mu:4.27e6,orbit:{cx:250,cy:664,rad:117,omega:-.603,phase:5.796},pair:2}],frags:[{x:858,y:860},{x:812,y:697}],solution:{vx:385.162,vy:-511.127,t0Step:0},fragSolution:{vx:189.891,vy:28.379,t0Step:0}}
+  ]).concat([
+    {id:"c61",index:60,seed:739820,difficulty:1.62,name:"The Looking-Glass",plate:"LXI",probe:{x:377,y:1343},target:{x:700,y:237,r:38},bodies:[{kind:"repulsor",r:25,mu:-1.05e7,x:570,y:609,orbit:null},{kind:"wormhole",r:36,mu:0,x:234,y:693,orbit:null,pair:2,turn:0},{kind:"wormhole",r:37,mu:0,x:746,y:446,orbit:null,pair:1,turn:0}],frags:[{x:343,y:932},{x:312,y:802}],solution:{vx:-89.317,vy:-439.006,t0Step:0},fragSolution:{vx:-29.284,vy:-334.721,t0Step:0}},
+    {id:"c62",index:61,seed:668917,difficulty:1.64,name:"The Aperture",plate:"LXII",probe:{x:723,y:1362},target:{x:229,y:417,r:38},bodies:[{kind:"repulsor",r:28,mu:-1.15e7,x:398,y:725,orbit:null},{kind:"wormhole",r:34,mu:0,x:192,y:708,orbit:null,pair:2,turn:0},{kind:"wormhole",r:36,mu:0,x:809,y:678,orbit:null,pair:1,turn:0}],frags:[{x:779,y:971},{x:806,y:808}],solution:{vx:-5.864,vy:-335.949,t0Step:0},fragSolution:{vx:44.472,vy:-461.864,t0Step:0}},
+    {id:"c63",index:62,seed:77014,difficulty:1.66,name:"Camera Obscura",plate:"LXIII",probe:{x:238,y:1468},target:{x:483,y:203,r:37},bodies:[{kind:"repulsor",r:26,mu:-1.04e7,x:377,y:836,orbit:null},{kind:"wormhole",r:34,mu:0,x:645,y:945,orbit:null,pair:2,turn:0},{kind:"wormhole",r:34,mu:0,x:95,y:702,orbit:null,pair:1,turn:0}],frags:[{x:176,y:1063},{x:570,y:676}],solution:{vx:200.639,vy:-327.414,t0Step:0},fragSolution:{vx:-82.39,vy:-586.239,t0Step:0}},
+    {id:"c64",index:63,seed:84111,difficulty:1.68,name:"The Speculum",plate:"LXIV",probe:{x:479,y:1415},target:{x:299,y:595,r:36},bodies:[{kind:"repulsor",r:25,mu:-1.22e7,x:373,y:999,orbit:null},{kind:"planet",r:57,mu:4.55e6,x:288,y:879,orbit:null},{kind:"wormhole",r:35,mu:0,x:649,y:1147,orbit:null,pair:3,turn:0},{kind:"wormhole",r:31,mu:0,x:79,y:942,orbit:null,pair:2,turn:0}],frags:[{x:359,y:1221},{x:207,y:1041},{x:459,y:957}],solution:{vx:153.12,vy:-352.151,t0Step:0},fragSolution:{vx:-339.148,vy:-542.751,t0Step:0}},
+    {id:"c65",index:64,seed:256208,difficulty:1.7,name:"The Postern Gate",plate:"LXV",probe:{x:270,y:1319},target:{x:736,y:479,r:36},bodies:[{kind:"blackhole",r:16,capture:44,mu:2.77e7,x:510,y:913,orbit:null},{kind:"repulsor",r:23,mu:-1.39e7,x:416,y:1043,orbit:null},{kind:"wormhole",r:31,mu:0,x:156,y:392,orbit:null,pair:3,turn:0},{kind:"wormhole",r:32,mu:0,x:774,y:789,orbit:null,pair:2,turn:0}],frags:[{x:315,y:1074},{x:231,y:761}],solution:{vx:0,vy:-336,t0Step:0},fragSolution:{vx:112.17,vy:-433.73,t0Step:0}},
+    {id:"c66",index:65,seed:80305,difficulty:1.72,name:"The Mirror Door",plate:"LXVI",probe:{x:636,y:1448},target:{x:342,y:286,r:35},bodies:[{kind:"repulsor",r:25,mu:-9.75e6,x:453,y:806,orbit:null},{kind:"planet",r:41,mu:1.34e6,x:561,y:493,orbit:null},{kind:"wormhole",r:32,mu:0,x:786,y:750,orbit:null,pair:3,turn:0},{kind:"wormhole",r:30,mu:0,x:222,y:844,orbit:null,pair:2,turn:0}],frags:[{x:551,y:1256},{x:534,y:614}],solution:{vx:56.547,vy:-460.541,t0Step:0},fragSolution:{vx:-185.783,vy:-407.663,t0Step:0}},
+    {id:"c67",index:66,seed:317402,difficulty:1.74,name:"The Periscope",plate:"LXVII",probe:{x:662,y:1317},target:{x:231,y:331,r:34},bodies:[{kind:"repulsor",r:30,mu:-1.27e7,x:438,y:824,orbit:null},{kind:"planet",r:60,mu:9.44e6,x:504,y:1037,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:504,cy:1037,rad:112,omega:-1.325,phase:5.096}},{kind:"wormhole",r:30,mu:0,x:347,y:1191,orbit:null,pair:4,turn:1.5707963267948966},{kind:"wormhole",r:32,mu:0,x:77,y:715,orbit:null,pair:3,turn:-1.5707963267948966}],frags:[{x:473,y:1305},{x:187,y:619}],solution:{vx:-488.303,vy:-153.961,t0Step:380},fragSolution:{vx:-125.857,vy:23.326,t0Step:0}},
+    {id:"c68",index:67,seed:831499,difficulty:1.76,name:"The Kaleidoscope",plate:"LXVIII",probe:{x:230,y:1407},target:{x:713,y:274,r:34},bodies:[{kind:"repulsor",r:26,mu:-1.49e7,x:497,y:822,orbit:null},{kind:"planet",r:59,mu:5.78e6,x:510,y:1112,orbit:null},{kind:"wormhole",r:31,mu:0,x:767,y:1200,orbit:null,pair:3,turn:-1.5707963267948966},{kind:"wormhole",r:28,mu:0,x:812,y:531,orbit:null,pair:2,turn:1.5707963267948966}],frags:[{x:525,y:1356},{x:653,y:1302}],solution:{vx:449.603,vy:-168.1,t0Step:0},fragSolution:{vx:187.449,vy:-41.556,t0Step:0}},
+    {id:"c69",index:68,seed:2338596,difficulty:1.78,name:"The Heliostat",plate:"LXIX",probe:{x:516,y:1379},target:{x:280,y:634,r:33},bodies:[{kind:"repulsor",r:25,mu:-1.22e7,x:355,y:886,orbit:null},{kind:"planet",r:63,mu:1.08e7,x:373,y:1092,orbit:null},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:373,cy:1092,rad:127,omega:1.297,phase:3.195}},{kind:"wormhole",r:34,mu:0,x:644,y:850,orbit:null,pair:4,turn:.7853981633974483},{kind:"wormhole",r:34,mu:0,x:87,y:752,orbit:null,pair:3,turn:-.7853981633974483}],frags:[{x:407,y:1275},{x:145,y:856},{x:460,y:814}],solution:{vx:149.843,vy:-370.874,t0Step:1445},fragSolution:{vx:-412.875,vy:-378.331,t0Step:0}},
+    {id:"c70",index:69,seed:384693,difficulty:1.8,name:"Newton's Prism",plate:"LXX",probe:{x:261,y:1368},target:{x:351,y:455,r:33},bodies:[{kind:"repulsor",r:28,mu:-1.3e7,x:302,y:791,orbit:null},{kind:"planet",r:52,mu:4.72e6,x:553,y:418,orbit:null},{kind:"wormhole",r:28,mu:0,x:738,y:744,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:26,mu:0,x:127,y:440,orbit:null,pair:2,turn:-.7853981633974483}],frags:[{x:416,y:1157},{x:590,y:934},{x:682,y:832}],solution:{vx:159.196,vy:-384.334,t0Step:0},fragSolution:{vx:348.936,vy:-517.319,t0Step:0}},
+    {id:"c71",index:70,seed:1021790,difficulty:1.82,name:"The Diagonal Mirror",plate:"LXXI",probe:{x:667,y:1463},target:{x:232,y:216,r:32},bodies:[{kind:"repulsor",r:25,mu:-1.01e7,x:419,y:750,orbit:null},{kind:"planet",r:39,mu:3.15e6,x:417,y:1145,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:417,cy:1145,rad:90,omega:-.621,phase:.006}},{kind:"wormhole",r:29,mu:0,x:102,y:468,orbit:null,pair:4,turn:-1.5707963267948966},{kind:"wormhole",r:31,mu:0,x:186,y:1215,orbit:null,pair:3,turn:1.5707963267948966}],frags:[{x:431,y:1402},{x:290,y:1327}],solution:{vx:-373.898,vy:-182.362,t0Step:1305},fragSolution:{vx:-166.905,vy:-55.846,t0Step:0}},
+    {id:"c72",index:71,seed:500887,difficulty:1.84,name:"The Turning Door",plate:"LXXII",probe:{x:493,y:1292},target:{x:665,y:376,r:32},bodies:[{kind:"repulsor",r:27,mu:-1.01e7,x:555,y:857,orbit:null},{kind:"planet",r:54,mu:7.16e6,x:475,y:501,orbit:null},{kind:"wormhole",r:27,mu:0,x:615,y:634,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:26,mu:0,x:794,y:1089,orbit:null,pair:2,turn:-.7853981633974483}],frags:[{x:641,y:1124},{x:691,y:492}],solution:{vx:355.422,vy:-272.725,t0Step:0},fragSolution:{vx:125.178,vy:-166.116,t0Step:0}},
+    {id:"c73",index:72,seed:122984,difficulty:1.86,name:"The Revolving Door",plate:"LXXIII",probe:{x:205,y:1358},target:{x:563,y:679,r:32},bodies:[{kind:"repulsor",r:24,mu:-1.03e7,x:353,y:1093,orbit:null},{kind:"repulsor",r:24,mu:-9.97e6,x:291,y:960,orbit:null},{kind:"wormhole",r:34,mu:0,x:119,y:862,orbit:null,pair:3,turn:0},{kind:"wormhole",r:31,mu:0,x:643,y:1229,orbit:{cx:665,cy:1265,rad:42,omega:.855,phase:4.166},pair:2,turn:0}],frags:[{x:352,y:1203},{x:594,y:1188}],solution:{vx:476.374,vy:-187.649,t0Step:357},fragSolution:{vx:358.568,vy:-450.782,t0Step:0}},
+    {id:"c74",index:73,seed:806081,difficulty:1.88,name:"The Zoetrope",plate:"LXXIV",probe:{x:629,y:1281},target:{x:246,y:442,r:31},bodies:[{kind:"repulsor",r:28,mu:-1.38e7,x:492,y:1006,orbit:null},{kind:"blackhole",r:13,capture:38,mu:2.58e7,x:492,y:806,orbit:null},{kind:"wormhole",r:30,mu:0,x:727,y:633,orbit:{cx:707,cy:685,rad:56,omega:.465,phase:5.074},pair:3,turn:0},{kind:"wormhole",r:28,mu:0,x:208,y:731,orbit:null,pair:2,turn:0}],frags:[{x:718,y:937},{x:749,y:803}],solution:{vx:33.495,vy:-639.123,t0Step:806},fragSolution:{vx:-2.792,vy:-319.988,t0Step:0}},
+    {id:"c75",index:74,seed:336178,difficulty:1.9,name:"The Magic Lantern",plate:"LXXV",probe:{x:437,y:1326},target:{x:693,y:307,r:31},bodies:[{kind:"repulsor",r:26,mu:-1.44e7,x:616,y:695,orbit:null},{kind:"repulsor",r:28,mu:-1.16e7,x:218,y:229,orbit:null},{kind:"wormhole",r:28,mu:0,x:646,y:988,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:30,mu:0,x:438,y:327,orbit:{cx:404,cy:375,rad:59,omega:.573,phase:5.32},pair:2,turn:-.7853981633974483}],frags:[{x:593,y:1112},{x:550,y:324}],solution:{vx:117.14,vy:-263.101,t0Step:394},fragSolution:{vx:225.719,vy:-368.341,t0Step:0}},
+    {id:"c76",index:75,seed:83275,difficulty:1.92,name:"The Stereoscope",plate:"LXXVI",probe:{x:691,y:1287},target:{x:553,y:560,r:30},bodies:[{kind:"repulsor",r:25,mu:-1.05e7,x:650,y:989,orbit:null},{kind:"blackhole",r:14,capture:43,mu:3.63e7,x:663,y:284,orbit:null},{kind:"wormhole",r:31,mu:0,x:372,y:911,orbit:{cx:358,cy:965,rad:56,omega:-.659,phase:4.963},pair:3,turn:-1.5707963267948966},{kind:"wormhole",r:31,mu:0,x:710,y:398,orbit:null,pair:2,turn:1.5707963267948966}],frags:[{x:426,y:473},{x:650,y:176}],solution:{vx:-309.485,vy:-485.793,t0Step:1186},fragSolution:{vx:-255.979,vy:-461.799,t0Step:0}},
+    {id:"c77",index:76,seed:270372,difficulty:1.94,name:"The Phantasmagoria",plate:"LXXVII",probe:{x:231,y:1303},target:{x:742,y:408,r:30},bodies:[{kind:"repulsor",r:29,mu:-1.29e7,x:425,y:924,orbit:null},{kind:"planet",r:56,mu:4.96e6,x:314,y:582,orbit:null},{kind:"repulsor",r:27,mu:-9.3e6,x:818,y:638,orbit:null},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:314,cy:582,rad:138,omega:-1.479,phase:4.979}},{kind:"wormhole",r:29,mu:0,x:734,y:1088,orbit:null,pair:5,turn:-.7853981633974483},{kind:"wormhole",r:31,mu:0,x:581,y:680,orbit:{cx:617,cy:719,rad:53,omega:.85,phase:3.977},pair:4,turn:.7853981633974483}],frags:[{x:420,y:1094},{x:587,y:1052},{x:739,y:612}],solution:{vx:330.035,vy:-253.245,t0Step:734},fragSolution:{vx:305.535,vy:-327.646,t0Step:0}},
+    {id:"c78",index:77,seed:1738469,difficulty:1.96,name:"Foucault's Pendulum",plate:"LXXVIII",probe:{x:399,y:1415},target:{x:296,y:320,r:30},bodies:[{kind:"planet",r:74,mu:1.41e7,x:360,y:725,orbit:null},{kind:"blackhole",r:13,capture:49,mu:2.88e7,x:152,y:759,orbit:null},{kind:"repulsor",r:26,mu:-8.14e6,x:396,y:1148,orbit:null},{kind:"wormhole",r:26,mu:0,x:119,y:1105,orbit:{cx:153,cy:1029,rad:83,omega:.909,phase:1.992},pair:4,turn:1.5707963267948966},{kind:"wormhole",r:27,mu:0,x:114,y:436,orbit:null,pair:3,turn:-1.5707963267948966}],frags:[{x:288,y:1290},{x:194,y:1187}],solution:{vx:-171.033,vy:-616.723,t0Step:503},fragSolution:{vx:-374.322,vy:-479.111,t0Step:0}},
+    {id:"c79",index:78,seed:5655566,difficulty:1.98,name:"The Enfilade",plate:"LXXIX",probe:{x:343,y:1382},target:{x:749,y:412,r:30},bodies:[{kind:"repulsor",r:26,mu:-1.12e7,x:545,y:942,orbit:null},{kind:"planet",r:45,mu:3.14e6,x:680,y:754,orbit:null},{kind:"moon",r:16,mu:246000,orbit:{cx:680,cy:754,rad:97,omega:1.164,phase:1.696}},{kind:"wormhole",r:30,mu:0,x:129,y:640,orbit:null,pair:4,turn:0},{kind:"wormhole",r:31,mu:0,x:813,y:606,orbit:null,pair:3,turn:0},{kind:"wormhole",r:30,mu:0,x:264,y:1117,orbit:null,pair:6,turn:0},{kind:"wormhole",r:28,mu:0,x:231,y:950,orbit:null,pair:5,turn:0}],frags:[{x:293,y:1041},{x:218,y:780}],solution:{vx:-107.669,vy:-401.825,t0Step:397},fragSolution:{vx:-42.939,vy:-445.937,t0Step:0}},
+    {id:"c80",index:79,seed:9152663,difficulty:2,name:"The Gallery of Mirrors",plate:"LXXX",probe:{x:164,y:1398},target:{x:519,y:577,r:29},bodies:[{kind:"planet",r:75,mu:1.3e7,x:348,y:984,orbit:null},{kind:"planet",r:41,mu:3.41e6,x:549,y:742,orbit:null},{kind:"wormhole",r:27,mu:0,x:489,y:844,orbit:null,pair:3,turn:-.7853981633974483},{kind:"wormhole",r:29,mu:0,x:356,y:722,orbit:null,pair:2,turn:.7853981633974483},{kind:"wormhole",r:31,mu:0,x:484,y:1106,orbit:null,pair:5,turn:.7853981633974483},{kind:"wormhole",r:29,mu:0,x:164,y:825,orbit:null,pair:4,turn:-.7853981633974483}],frags:[{x:158,y:1165},{x:261,y:924}],solution:{vx:425.827,vy:-363.691,t0Step:0},fragSolution:{vx:-30.744,vy:-205.715,t0Step:0}},
+    {id:"c81",index:80,seed:7264760,difficulty:2.02,name:"The Antechamber",plate:"LXXXI",probe:{x:716,y:1405},target:{x:268,y:254,r:29},bodies:[{kind:"repulsor",r:29,mu:-1e7,x:488,y:781,orbit:null},{kind:"planet",r:42,mu:3.44e6,x:520,y:954,orbit:null},{kind:"moon",r:14,mu:165000,orbit:{cx:520,cy:954,rad:94,omega:1.349,phase:4.614}},{kind:"wormhole",r:29,mu:0,x:218,y:475,orbit:{cx:153,cy:477,rad:65,omega:-.627,phase:6.253},pair:4,turn:0},{kind:"wormhole",r:26,mu:0,x:765,y:450,orbit:null,pair:3,turn:0},{kind:"wormhole",r:30,mu:0,x:315,y:1184,orbit:null,pair:6,turn:1.5707963267948966},{kind:"wormhole",r:27,mu:0,x:614,y:740,orbit:null,pair:5,turn:-1.5707963267948966}],frags:[{x:495,y:1296},{x:644,y:679}],solution:{vx:-22.609,vy:-431.408,t0Step:785},fragSolution:{vx:-458.206,vy:-228.453,t0Step:0}},
+    {id:"c82",index:81,seed:1829857,difficulty:2.04,name:"The Colonnade",plate:"LXXXII",probe:{x:375,y:1451},target:{x:703,y:414,r:29},bodies:[{kind:"blackhole",r:14,capture:46,mu:3.87e7,x:500,y:1087,orbit:null},{kind:"repulsor",r:30,mu:-1.09e7,x:235,y:837,orbit:null},{kind:"wormhole",r:27,mu:0,x:98,y:583,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:731,y:803,orbit:null,pair:2,turn:-.7853981633974483},{kind:"wormhole",r:30,mu:0,x:719,y:1070,orbit:null,pair:5,turn:-1.5707963267948966},{kind:"wormhole",r:27,mu:0,x:358,y:809,orbit:null,pair:4,turn:1.5707963267948966}],frags:[{x:348,y:1300},{x:430,y:714}],solution:{vx:512.782,vy:-326.678,t0Step:0},fragSolution:{vx:-92.898,vy:-372.594,t0Step:0}},
+    {id:"c83",index:82,seed:176954,difficulty:2.06,name:"The Vestibule",plate:"LXXXIII",probe:{x:634,y:1461},target:{x:161,y:623,r:28},bodies:[{kind:"repulsor",r:30,mu:-1.03e7,x:404,y:1080,orbit:null},{kind:"planet",r:43,mu:4.11e6,x:378,y:713,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:378,cy:713,rad:100,omega:1.379,phase:.945}},{kind:"wormhole",r:29,mu:0,x:199,y:1228,orbit:null,pair:4,turn:.7853981633974483},{kind:"wormhole",r:25,mu:0,x:252,y:923,orbit:null,pair:3,turn:-.7853981633974483},{kind:"wormhole",r:27,mu:0,x:735,y:568,orbit:null,pair:6,turn:0},{kind:"wormhole",r:29,mu:0,x:126,y:929,orbit:null,pair:5,turn:0}],frags:[{x:344,y:1306},{x:208,y:815}],solution:{vx:-14.24,vy:-543.814,t0Step:1128},fragSolution:{vx:-518.405,vy:-317.679,t0Step:0}},
+    {id:"c84",index:83,seed:72051,difficulty:2.08,name:"The Twin Portals",plate:"LXXXIV",probe:{x:162,y:1361},target:{x:477,y:485,r:28},bodies:[{kind:"planet",r:75,mu:1.8e7,x:319,y:976,orbit:null},{kind:"repulsor",r:29,mu:-1.1e7,x:361,y:708,orbit:null},{kind:"wormhole",r:26,mu:0,x:115,y:872,orbit:null,pair:3,turn:1.5707963267948966},{kind:"wormhole",r:25,mu:0,x:252,y:507,orbit:null,pair:2,turn:-1.5707963267948966},{kind:"wormhole",r:24,mu:0,x:515,y:1140,orbit:null,pair:5,turn:-1.5707963267948966},{kind:"wormhole",r:24,mu:0,x:640,y:745,orbit:null,pair:4,turn:1.5707963267948966}],frags:[{x:131,y:1195},{x:102,y:1043},{x:349,y:507}],solution:{vx:396.17,vy:-172.26,t0Step:0},fragSolution:{vx:-129.737,vy:-610.364,t0Step:0}},
+    {id:"c85",index:84,seed:546148,difficulty:2.1,name:"The Anamorphosis",plate:"LXXXV",probe:{x:696,y:1289},target:{x:259,y:184,r:28},bodies:[{kind:"repulsor",r:25,mu:-1.46e7,x:496,y:830,orbit:null},{kind:"planet",r:44,mu:3.03e6,x:524,y:235,orbit:null},{kind:"repulsor",r:23,mu:-8.34e6,x:651,y:383,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:524,cy:235,rad:106,omega:-1.369,phase:1.779}},{kind:"wormhole",r:25,mu:0,x:722,y:473,orbit:null,pair:5,turn:-1.5707963267948966},{kind:"wormhole",r:28,mu:0,x:460,y:484,orbit:null,pair:4,turn:1.5707963267948966},{kind:"wormhole",r:26,mu:0,x:788,y:759,orbit:null,pair:7,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:377,y:705,orbit:null,pair:6,turn:-.7853981633974483}],frags:[{x:657,y:1069},{x:479,y:712}],solution:{vx:12.984,vy:-495.83,t0Step:765},fragSolution:{vx:-65.077,vy:-410.878,t0Step:0}},
+    {id:"c86",index:85,seed:145245,difficulty:2.12,name:"Daguerre's Diorama",plate:"LXXXVI",probe:{x:566,y:1310},target:{x:613,y:454,r:28},bodies:[{kind:"repulsor",r:29,mu:-1.21e7,x:571,y:860,orbit:null},{kind:"blackhole",r:15,capture:44,mu:2.69e7,x:206,y:709,orbit:null},{kind:"moon",r:19,mu:412000,orbit:{cx:206,cy:709,rad:117,omega:.593,phase:5.019}},{kind:"wormhole",r:27,mu:0,x:471,y:958,orbit:null,pair:4,turn:0},{kind:"wormhole",r:26,mu:0,x:692,y:746,orbit:null,pair:3,turn:0},{kind:"wormhole",r:29,mu:0,x:772,y:1062,orbit:null,pair:6,turn:1.5707963267948966},{kind:"wormhole",r:29,mu:0,x:258,y:160,orbit:null,pair:5,turn:-1.5707963267948966}],frags:[{x:523,y:1119},{x:672,y:690},{x:635,y:564}],solution:{vx:306.611,vy:-429.853,t0Step:1044},fragSolution:{vx:-116.012,vy:-596.829,t0Step:0}},
+    {id:"c87",index:86,seed:4815342,difficulty:2.14,name:"The Panopticon",plate:"LXXXVII",probe:{x:242,y:1477},target:{x:461,y:535,r:27},bodies:[{kind:"repulsor",r:30,mu:-1.13e7,x:375,y:987,orbit:null},{kind:"blackhole",r:14,capture:38,mu:3.35e7,x:425,y:1239,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:425,cy:1239,rad:97,omega:-1.487,phase:2.068}},{kind:"wormhole",r:26,mu:0,x:126,y:1237,orbit:{cx:182,cy:1217,rad:59,omega:.481,phase:2.799},pair:4,turn:-.7853981633974483},{kind:"wormhole",r:26,mu:0,x:676,y:851,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:393,y:668,orbit:null,pair:6,turn:.7853981633974483},{kind:"wormhole",r:26,mu:0,x:541,y:908,orbit:null,pair:5,turn:-.7853981633974483}],frags:[{x:129,y:1374},{x:606,y:742},{x:537,y:622}],solution:{vx:-286.307,vy:-424.467,t0Step:1500},fragSolution:{vx:-257.741,vy:-128.505,t0Step:0}},
+    {id:"c88",index:87,seed:2315439,difficulty:2.16,name:"The Hall of Mirrors",plate:"LXXXVIII",probe:{x:735,y:1417},target:{x:242,y:299,r:27},bodies:[{kind:"planet",r:51,mu:7.61e6,x:535,y:978,orbit:null},{kind:"blackhole",r:12,capture:40,mu:3.64e7,x:341,y:871,orbit:null},{kind:"repulsor",r:24,mu:-1.14e7,x:615,y:1186,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:341,cy:871,rad:97,omega:-.61,phase:5.276}},{kind:"wormhole",r:25,mu:0,x:771,y:1080,orbit:null,pair:5,turn:.7853981633974483},{kind:"wormhole",r:25,mu:0,x:77,y:432,orbit:null,pair:4,turn:-.7853981633974483},{kind:"wormhole",r:29,mu:0,x:107,y:573,orbit:null,pair:7,turn:-1.5707963267948966},{kind:"wormhole",r:25,mu:0,x:463,y:1283,orbit:null,pair:6,turn:1.5707963267948966}],frags:[{x:737,y:1274},{x:750,y:1136},{x:122,y:394}],solution:{vx:-520.26,vy:-282.478,t0Step:200},fragSolution:{vx:-33.495,vy:-639.123,t0Step:0}},
+    {id:"c89",index:88,seed:5786536,difficulty:2.18,name:"The Labyrinth",plate:"LXXXIX",probe:{x:364,y:1359},target:{x:604,y:358,r:26},bodies:[{kind:"repulsor",r:25,mu:-9.89e6,x:524,y:737,orbit:null},{kind:"blackhole",r:14,capture:42,mu:3.6e7,x:751,y:537,orbit:null},{kind:"repulsor",r:28,mu:-1.2e7,x:802,y:1008,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:751,cy:537,rad:92,omega:-1.381,phase:2.154}},{kind:"wormhole",r:29,mu:0,x:728,y:898,orbit:null,pair:5,turn:1.5707963267948966},{kind:"wormhole",r:26,mu:0,x:294,y:757,orbit:null,pair:4,turn:-1.5707963267948966},{kind:"wormhole",r:28,mu:0,x:418,y:970,orbit:{cx:457,cy:938,rad:50,omega:.578,phase:2.451},pair:7,turn:-.7853981633974483},{kind:"wormhole",r:27,mu:0,x:804,y:86,orbit:null,pair:6,turn:.7853981633974483}],frags:[{x:440,y:1172},{x:645,y:117}],solution:{vx:-16.052,vy:-367.65,t0Step:459},fragSolution:{vx:82.658,vy:-173.296,t0Step:0}},
+    {id:"c90",index:89,seed:5562633,difficulty:2.2,name:"The Leviathan of Parsonstown",plate:"XC",probe:{x:178,y:1355},target:{x:517,y:676,r:26},bodies:[{kind:"repulsor",r:29,mu:-1.04e7,x:411,y:932,orbit:null},{kind:"blackhole",r:14,capture:44,mu:3.96e7,x:525,y:360,orbit:null},{kind:"repulsor",r:25,mu:-1.38e7,x:296,y:360,orbit:null},{kind:"moon",r:22,mu:639000,orbit:{cx:525,cy:360,rad:100,omega:.848,phase:3.085}},{kind:"wormhole",r:26,mu:0,x:483,y:1193,orbit:{cx:399,cy:1150,rad:94,omega:.651,phase:.477},pair:5,turn:-.7853981633974483},{kind:"wormhole",r:24,mu:0,x:196,y:740,orbit:null,pair:4,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:627,y:945,orbit:null,pair:7,turn:1.5707963267948966},{kind:"wormhole",r:30,mu:0,x:333,y:470,orbit:null,pair:6,turn:-1.5707963267948966}],frags:[{x:309,y:1291},{x:264,y:600},{x:582,y:886}],solution:{vx:406.831,vy:-451.832,t0Step:1211},fragSolution:{vx:233.15,vy:-140.09,t0Step:0}}
   ]);/*@END*/
 
-  var VOLUMES = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }];
+  // Full-clear courses (tools/levels-clear.js): one launch that gathers every fragment and hits the target. Drawn by the hint.
+  /*@CLEAR*/var CLEAR = [
+    null,
+    null,
+    null,
+    {vx:30.104,vy:-286.422,t0Step:0},
+    {vx:143.211,vy:-15.052,t0Step:0},
+    {vx:357.912,vy:-511.151,t0Step:260},
+    {vx:212.926,vy:-569.497,t0Step:0},
+    {vx:228.697,vy:-580.581,t0Step:0},
+    {vx:-363.691,vy:-425.827,t0Step:0},
+    {vx:-100.64,vy:-403.643,t0Step:700},
+    {vx:15.497,vy:-591.797,t0Step:0},
+    {vx:45.442,vy:-153.411,t0Step:0},
+    {vx:143.984,vy:-171.594,t0Step:0},
+    {vx:367.089,vy:-524.257,t0Step:0},
+    {vx:225.916,vy:203.416,t0Step:0},
+    {vx:-43.528,vy:-622.48,t0Step:260},
+    {vx:-253.804,vy:-570.052,t0Step:120},
+    {vx:121.216,vy:-595.794,t0Step:120},
+    {vx:-116.012,vy:-596.829,t0Step:450},
+    {vx:66.898,vy:-636.494,t0Step:0},
+    {vx:86.963,vy:-324.551,t0Step:700},
+    {vx:208.364,vy:-605.132,t0Step:450},
+    {vx:-319.89,vy:8.377,t0Step:0},
+    {vx:-36.257,vy:-414.417,t0Step:450},
+    {vx:-283.29,vy:-555.988,t0Step:260},
+    {vx:-297.734,vy:117.28,t0Step:0},
+    {vx:-66.829,vy:-507.62,t0Step:700},
+    {vx:-415.647,vy:-486.66,t0Step:0},
+    {vx:157.362,vy:-587.283,t0Step:0},
+    {vx:339.855,vy:-523.33,t0Step:120},
+    {vx:55.4,vy:-298.909,t0Step:0},
+    {vx:-255.523,vy:-15.628,t0Step:0},
+    {vx:127.595,vy:-627.152,t0Step:0},
+    {vx:-147.281,vy:-62.517,t0Step:0},
+    {vx:152.595,vy:-48.113,t0Step:0},
+    {vx:-379.867,vy:-495.052,t0Step:0},
+    {vx:336.551,vy:244.519,t0Step:0},
+    {vx:-300.702,vy:-109.446,t0Step:0},
+    {vx:-219.884,vy:-42.741,t0Step:0},
+    {vx:-295.819,vy:218.895,t0Step:0},
+    {vx:140.369,vy:-608.007,t0Step:450},
+    {vx:-267.868,vy:-47.232,t0Step:0},
+    {vx:390.518,vy:-86.576,t0Step:0},
+    {vx:197.82,vy:-64.276,t0Step:0},
+    {vx:-447.932,vy:7.819,t0Step:700},
+    {vx:-201.281,vy:-130.713,t0Step:0},
+    {vx:47.413,vy:-541.93,t0Step:120},
+    {vx:-216.713,vy:-277.38,t0Step:0},
+    {vx:179.841,vy:-67.24,t0Step:450},
+    {vx:-182.44,vy:-596.734,t0Step:0},
+    {vx:415.747,vy:14.518,t0Step:0},
+    {vx:-193.527,vy:-76.232,t0Step:0},
+    {vx:-229.151,vy:-245.735,t0Step:260},
+    {vx:-218.69,vy:48.482,t0Step:0},
+    {vx:366.866,vy:28.873,t0Step:0},
+    {vx:-85.138,vy:-569.673,t0Step:0},
+    {vx:-224.162,vy:-154.062,t0Step:260},
+    {vx:-493.283,vy:-51.846,t0Step:700},
+    {vx:192.757,vy:-386.612,t0Step:450},
+    {vx:207.873,vy:7.259,t0Step:260},
+    {vx:-29.284,vy:-334.721,t0Step:0},
+    {vx:44.472,vy:-461.864,t0Step:0},
+    {vx:-82.39,vy:-586.239,t0Step:0},
+    {vx:-339.148,vy:-542.751,t0Step:0},
+    {vx:108.381,vy:-434.692,t0Step:0},
+    {vx:-185.783,vy:-407.663,t0Step:0},
+    {vx:-126.055,vy:22.227,t0Step:450},
+    {vx:187.449,vy:-41.556,t0Step:0},
+    {vx:-412.875,vy:-378.331,t0Step:0},
+    {vx:348.936,vy:-517.319,t0Step:0},
+    {vx:-166.905,vy:-55.846,t0Step:0},
+    {vx:125.178,vy:-166.116,t0Step:0},
+    {vx:352.419,vy:-435.202,t0Step:0},
+    {vx:-2.792,vy:-319.988,t0Step:0},
+    {vx:225.719,vy:-368.341,t0Step:0},
+    {vx:-255.979,vy:-461.799,t0Step:0},
+    {vx:294.623,vy:-315.945,t0Step:0},
+    {vx:-374.322,vy:-479.111,t0Step:0},
+    {vx:-42.939,vy:-445.937,t0Step:0},
+    {vx:-27.299,vy:-222.33,t0Step:0},
+    {vx:-458.206,vy:-228.453,t0Step:0},
+    {vx:-92.898,vy:-372.594,t0Step:0},
+    {vx:-518.405,vy:-317.679,t0Step:0},
+    {vx:-129.737,vy:-610.364,t0Step:0},
+    {vx:-65.077,vy:-410.878,t0Step:260},
+    {vx:-116.012,vy:-596.829,t0Step:0},
+    {vx:-258.853,vy:-126.251,t0Step:0},
+    {vx:-33.495,vy:-639.123,t0Step:700},
+    {vx:94.43,vy:-185.329,t0Step:120},
+    {vx:233.15,vy:-140.09,t0Step:0}
+  ];/*@ENDCLEAR*/
 
-  return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, VOLUMES: VOLUMES, generate: generate, daily: daily, solve: solve, NAMES: NAMES,
+  // Full-clear course for a baked campaign plate (or null): used by the hint. Generated plates (Daily, Endless) have none.
+  var CLEAR_BY_ID = {}; CAMPAIGN.forEach(function (l, i) { if (CLEAR[i]) CLEAR_BY_ID[l.id] = CLEAR[i]; });
+  function clearFor(level) { return level && level.id && CLEAR_BY_ID[level.id] || null; }
+
+  var VOLUMES = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }, { name: 'Volume III', from: 60, to: 89 }];
+
+  return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, CLEAR: CLEAR, clearFor: clearFor, VOLUMES: VOLUMES, generate: generate, daily: daily, solve: solve, NAMES: NAMES,
     // internal: shared with tools/levels-bake.js so the bake uses exactly the runtime generator
     _gen: { sims: function () { return nSims; }, genStats: genStats, build: build, recipe: recipe, robust: robust, hit: hit, launch: launch, placeFrags: placeFrags,
       pointGap: pointGap, bodyGap: bodyGap, straightHits: straightHits, finish: finish, d3: d3 } };
