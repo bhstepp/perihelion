@@ -6,7 +6,7 @@ var K = {
   BOUNDS_MARGIN: 220,    // probe is "lost" once it is this far outside the world rect
   DT: 1 / 120,           // fixed physics step (120 Hz)
   MAX_STEPS: 1200,       // 10 s of simulated flight
-  PREDICT_STEPS: 180,    // 15% of the flight (1.5 s) shown while aiming; was 420 (35%), cut to make plates harder
+  PREDICT_STEPS: 270,    // 22.5% of the flight (2.25 s) shown while aiming; was 420 (35%), then 180 (too little), now 270
   EPS2: 400,             // gravity softening, eps = 20 units
   PROBE_R: 6,            // probe collision radius
   FRAG_R: 24,            // comet fragment pickup radius
@@ -15,7 +15,9 @@ var K = {
   VMAX: 640,             // launch speed at full power (units/s)
   MAX_LAUNCHES: 3,
   TRAIL_MAX: 720,        // pooled trail ring size (points)
-  HINT_MAX: 700,         // max points of the astronomer's line (55% of a winning flight, capped)
+  WARP_GAP: 4,           // a probe leaving a wormhole appears this far outside the twin mouth's radius
+  WARP_JUMP: 40,         // RENDER: two consecutive path points farther apart than this are a wormhole jump: never connect them
+  HINT_MAX: 1100,        // max points of the astronomer's line (55% of a winning flight, or up to the last fragment on a full-clear course)
   MAX_STEPS_PER_FRAME: 16
 };
 

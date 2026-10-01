@@ -203,6 +203,13 @@ svg.comet.off circle { fill: var(--paper-45); }
 .card.pop.wide .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
 .pop-text { font-family: var(--serif); font-weight: 500; font-size: 17.5px; line-height: 1.24; color: var(--paper-90); margin: 2px 0 4px; text-align: center; }
 .pop .c-btns { grid-template-columns: 1fr; margin-top: 6px; }
+.pop-text .m { font-family: var(--mono); font-size: .8em; letter-spacing: .02em; color: var(--brass); white-space: nowrap; }
+.btn[hidden] { display: none; }
+.card.pop.compact { padding: 11px 16px 10px; gap: 6px; }
+.card.pop.compact .kicker, .card.pop.compact .rule { display: none; }
+.card.pop.compact .c-title { font-size: 21px; }
+.card.pop.compact .pop-text { font-size: 15.5px; line-height: 1.17; margin: 0; }
+.card.pop.compact .c-btns { margin-top: 2px; }
 
 /* pause sheet */
 .overlay { position: absolute; inset: 0; background: var(--ink-veil); display: flex; align-items: center; justify-content: center;
@@ -276,7 +283,7 @@ svg.comet.off circle { fill: var(--paper-45); }
       <h1 class="t-name">Perihelion</h1>
       <div class="rule"></div>
       <p class="t-sub">A Celestial Atlas of Slingshot Trajectories</p>
-      <p class="t-ed" id="t-ed">Plates I&ndash;LX &middot; Engraved MMXXVI</p>
+      <p class="t-ed" id="t-ed">Plates I&ndash;XC &middot; Engraved MMXXVI</p>
     </header>
     <nav class="t-menu">
       <button class="btn primary" data-act="begin">Begin the Atlas</button>
@@ -320,11 +327,12 @@ svg.comet.off circle { fill: var(--paper-45); }
         <button class="btn primary" data-act="resume">Resume</button>
         <div class="item">
           <button class="btn" data-act="hint" id="sheet-hint" aria-disabled="false">Consult the Astronomer</button>
-          <p class="note sm" id="sheet-hint-note">Costs one star. Holds the heavens and shows the first part of a winning course.</p>
+          <p class="note sm" id="sheet-hint-note">Costs one star. Holds the heavens and shows the course that gathers the comets and reaches the ring (all but the last approach).</p>
           <p class="note sm why" id="sheet-hint-why" hidden></p>
         </div>
         <button class="btn" data-act="howto">How to play</button>
         <button class="btn" data-act="fragments">About comet fragments</button>
+        <button class="btn" data-act="wormholes" id="sheet-worm" hidden>About wormholes</button>
         <button class="btn" data-act="restart">Restart plate</button>
         <button class="btn" data-act="atlas" id="sheet-exit">Return to the Atlas</button>
       </div>
@@ -347,7 +355,7 @@ var K = {
   BOUNDS_MARGIN: 220,    // probe is "lost" once it is this far outside the world rect
   DT: 1 / 120,           // fixed physics step (120 Hz)
   MAX_STEPS: 1200,       // 10 s of simulated flight
-  PREDICT_STEPS: 180,    // 15% of the flight (1.5 s) shown while aiming; was 420 (35%), cut to make plates harder
+  PREDICT_STEPS: 270,    // 22.5% of the flight (2.25 s) shown while aiming; was 420 (35%), then 180 (too little), now 270
   EPS2: 400,             // gravity softening, eps = 20 units
   PROBE_R: 6,            // probe collision radius
   FRAG_R: 24,            // comet fragment pickup radius
@@ -356,7 +364,9 @@ var K = {
   VMAX: 640,             // launch speed at full power (units/s)
   MAX_LAUNCHES: 3,
   TRAIL_MAX: 720,        // pooled trail ring size (points)
-  HINT_MAX: 700,         // max points of the astronomer's line (55% of a winning flight, capped)
+  WARP_GAP: 4,           // a probe leaving a wormhole appears this far outside the twin mouth's radius
+  WARP_JUMP: 40,         // RENDER: two consecutive path points farther apart than this are a wormhole jump: never connect them
+  HINT_MAX: 1100,        // max points of the astronomer's line (55% of a winning flight, or up to the last fragment on a full-clear course)
   MAX_STEPS_PER_FRAME: 16
 };
 
@@ -395,7 +405,8 @@ function toRoman(n) {
    body collisions (per body: blackhole capture, then crash) -> target -> bounds -> timeout (K.MAX_STEPS).
    Gravity is softened Newtonian: a = mu*d / (|d|^2 + EPS2)^1.5 (mu < 0 = repulsor).
    DETERMINISM RULE: numeric behaviour is FROZEN (baked levels + solutions depend on it; see
-   tools/physics-golden.json). Time is ALWAYS abs*DT from an integer step counter, never accumulated.
+   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3) are a pure addition: a separate branch that never runs for
+   the older kinds, so every older flight is bit-identical. Time is ALWAYS abs*DT from an integer step counter, never accumulated.
    predict/simulate and the live flight run the very same createSim + stepSim, so a predicted point is
    bit-identical (===) to the live probe at that step. Never reorder float ops here; `node tools/physics-test.js`
    must stay green. Guards for bad input (NaN/Infinity) only change results for non-finite values. */
@@ -451,8 +462,9 @@ var Physics = (function () {
       collected: new Uint8Array(level.frags ? level.frags.length : 0),
       minDist: Infinity,                // closest approach to target centre
       dist: 0,                          // path length travelled so far, in units
+      warps: 0,                         // wormhole passages so far
       minGap: Infinity,                 // closest approach to any non-repulsor body SURFACE (within 60 u), for 'near miss' stats
-      events: []                        // {type:'frag', i} pushed as they happen; consumer may clear
+      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} pushed as they happen; consumer may clear
     };
   }
 
@@ -480,6 +492,19 @@ var Physics = (function () {
       bodyPos(b, t, _q);
       dx = _q.x - x; dy = _q.y - y;
       var d2 = dx * dx + dy * dy;
+      if (b.kind === 'wormhole') {
+        // Mouth: inert to gravity (mu 0) and harmless. Entering it (centre within r) leaves by the twin b.pair, speed kept, velocity
+        // turned by b.turn (radians), placed just outside the twin's mouth along the new heading so it cannot re-enter at once.
+        if (d2 < b.r * b.r) {
+          var tw = bs[b.pair], th = b.turn || 0, wc = cos(th), ws = sin(th), wvx = sim.vx * wc - sim.vy * ws, wvy = sim.vx * ws + sim.vy * wc;
+          var wl = sqrt(wvx * wvx + wvy * wvy), ux = wl > 1e-9 ? wvx / wl : 0, uy = wl > 1e-9 ? wvy / wl : -1, wo = tw.r + C.WARP_GAP;
+          bodyPos(tw, t, _q);
+          sim.vx = wvx; sim.vy = wvy;
+          sim.x = x = _q.x + ux * wo; sim.y = y = _q.y + uy * wo;
+          sim.warps++; sim.events.push({ type: 'warp', from: i, to: b.pair, step: sim.step });
+        }
+        continue;
+      }
       if (b.kind !== 'repulsor') { var gl = b.r + 60; if (d2 < gl * gl) { var gp = sqrt(d2) - b.r; if (gp < sim.minGap) sim.minGap = gp; } }
       if (b.kind === 'blackhole' && b.capture && d2 < b.capture * b.capture) { sim.status = 'captured'; sim.hitBody = i; return sim.status; }
       var rr = b.r + pr;
@@ -587,6 +612,30 @@ var Physics = (function () {
         if (m.vx !== vx + a.x * DT || m.x !== x + m.vx * DT) return 'int@' + m.abs;
       }
       return m.step > 99 || 'short';
+    });
+    function W(x, y, r, pair, turn, orb) { return { kind: 'wormhole', x: x, y: y, r: r, mu: 0, orbit: orb || null, pair: pair, turn: turn || 0 }; }
+    chk('wormhole: twin exit, speed kept, turn applied, events, no re-entry, predict === simulate', function () {
+      var l = L(1400, [W(450, 1100, 30, 1), W(650, 500, 30, 0)]), s = createSim(l, 0, -300, 0), sp = 300, n = 0, prev = null, ev = null;
+      while (stepSim(s, l) === 'flying' && n++ < 400) { if (s.events.length && !ev) ev = s.events[0]; if (s.warps > 1) return 'reentered'; }
+      if (s.warps !== 1 || !ev || ev.type !== 'warp' || ev.from !== 0 || ev.to !== 1) return 'event ' + JSON.stringify(ev);
+      var q = createSim(l, 0, -300, 0); while (q.warps === 0) stepSim(q, l);
+      if (Math.abs(speed(q) - sp) > 1e-9 || q.vx !== 0 && Math.abs(q.vx) > 1e-9) return 'speed/dir ' + q.vx + ',' + q.vy;
+      if (Math.abs(q.x - 650) > 1e-9 || Math.abs(q.y - (500 - 30 - C.WARP_GAP)) > 1e-9) return 'exit ' + q.x + ',' + q.y;
+      var lt = L(1400, [W(450, 1100, 30, 1, Math.PI / 2), W(650, 500, 30, 0, -Math.PI / 2)]), t = createSim(lt, 0, -300, 0); while (t.warps === 0) stepSim(t, lt);
+      if (Math.abs(speed(t) - sp) > 1e-9 || Math.abs(t.vx - 300) > 1e-9 && Math.abs(t.vx + 300) > 1e-9) return 'turn ' + t.vx + ',' + t.vy;
+      var pp = new Float64Array(2 * N), f2 = new Float32Array(2 * Q), a2 = S(lt, 0, -300, 0, N, pp), b2 = predict(lt, 0, -300, 0, f2);
+      for (var i = 0; i < b2.n; i++) if (f2[2 * i] !== Math.fround(pp[2 * i]) || f2[2 * i + 1] !== Math.fround(pp[2 * i + 1])) return 'pred@' + i;
+      return a2.warps >= 1 || 'no warp in simulate';
+    });
+    chk('wormhole: harmless and not a near-miss; moving mouth; older kinds unaffected', function () {
+      var l = L(1400, [W(450, 1100, 30, 1), W(650, 500, 30, 0)]), s = S(l, 0, -300, 0, N);
+      if (s.status === 'crash' || s.hitBody !== -1 || s.minGap !== Infinity) return 'wormhole treated as a hazard ' + s.status + ' ' + s.minGap;
+      var lm = L(1400, [W(450, 1100, 30, 1), W(650, 500, 30, 0, 0, { cx: 650, cy: 600, rad: 100, omega: 1.1, phase: 0.3 })]), q = createSim(lm, 0, -300, 0);
+      while (q.warps === 0 && q.step < 400) stepSim(q, lm);
+      var g = { x: 0, y: 0 }; bodyPos(lm.bodies[1], q.abs * DT, g);
+      if (q.warps !== 1 || Math.abs(Math.hypot(q.x - g.x, q.y - g.y) - (30 + C.WARP_GAP)) > 1e-9) return 'moving mouth exit';
+      var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withW = L(1420, [B(330, 780, 70, 2.4e7), W(100, 100, 30, 2), W(800, 100, 30, 1)]);
+      return same(S(plain, 90, -400), S(withW, 90, -400)) || 'an unrelated wormhole pair changed a flight';
     });
     for (var i = 0, ok = true; i < cks.length; i++) ok = ok && cks[i].ok;
     return { ok: ok, checks: cks };
@@ -957,6 +1006,15 @@ var Levels = (function () {
   // flights (not ms) so results are identical on every device: candidates at the asked difficulty get CAND_SIMS each
   // within STAGE_CAPS[0]; if none proves finger-robust, cheaper archetypes follow (3-body repulsor plate at 0.69,
   // planet + moon at 0.2, two planets at 0.1), each with its own small cap. Worst case ~730 flights.
+  // Candidate seed n for a plate seed. Candidate 0 is the seed itself. Later candidates are HASHED from (seed, n): the old linear rule
+  // seed + n*golden made round r's candidate n identical to round (r+n)'s first candidate, so at high difficulty (many failed
+  // candidates) consecutive Endless rounds converged on the very same plate.
+  function candSeed(seed, n) {
+    if (!n) return seed >>> 0;
+    var h = (seed ^ Math.imul(n, 0x85EBCA6B)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x7FEB352D); h = Math.imul(h ^ (h >>> 15), 0x846CA68B);
+    return (h ^ (h >>> 16)) >>> 0;
+  }
   function generate(seed, difficulty) {
     var d = Math.max(0, Math.min(1, +difficulty || 0)), k, L, s, cap, fb = false;
     var ds = [d, Math.min(d, 0.69), Math.min(d, 0.2), Math.min(d, 0.1)];
@@ -965,7 +1023,7 @@ var Levels = (function () {
       if (g && !fb) { fb = true; genStats.fallback++; }
       cap = nSims + STAGE_CAPS[g];
       for (k = 0; k < 48 && nSims < cap; k++) {
-        s = (seed + Math.imul(k + 101 * g, 0x9E3779B1)) >>> 0;
+        s = candSeed(seed, k + 101 * g);
         if ((L = attempt(seed, s, ds[g], CAND_SIMS, cap))) return L;
       }
     }
@@ -992,7 +1050,7 @@ var Levels = (function () {
       cap = nSims + DAILY_CAPS[g]; hardCap = cap + 20;
       try {
         for (k = 0; k < 48 && nSims < cap; k++) {
-          s = (seed + Math.imul(k + 101 * g, 0x9E3779B1)) >>> 0;
+          s = candSeed(seed, k + 101 * g);
           if ((L = attempt(seed, s, ds[g], CAND_SIMS, cap))) { genStats.stage[g]++; return L; }
         }
       } finally { hardCap = Infinity; }
@@ -1072,11 +1130,140 @@ var Levels = (function () {
     {id:"c58",index:57,seed:521967,difficulty:1.56,name:"The Nautical Almanac",plate:"LVIII",probe:{x:488,y:1351},target:{x:702,y:387,r:27},bodies:[{kind:"planet",r:52,mu:1.12e7,x:554,y:917,orbit:null},{kind:"repulsor",r:23,mu:-9.46e6,x:555,y:680,orbit:null},{kind:"planet",r:52,mu:9.93e6,x:711,y:1216,orbit:null},{kind:"blackhole",r:14,capture:42,mu:3.69e7,x:411,y:1056,orbit:null},{kind:"planet",r:47,mu:7.9e6,orbit:{cx:329,cy:860,rad:91,omega:.672,phase:.103},pair:1},{kind:"planet",r:39,mu:4.04e6,orbit:{cx:329,cy:860,rad:91,omega:.672,phase:3.245},pair:1},{kind:"moon",r:14,mu:165000,orbit:{cx:711,cy:1216,rad:106,omega:1.103,phase:.633}}],frags:[{x:167,y:790},{x:424,y:582},{x:559,y:519}],solution:{vx:367.089,vy:-524.257,t0Step:0},fragSolution:{vx:-504.978,vy:-84.504,t0Step:0}},
     {id:"c59",index:58,seed:598598,difficulty:1.58,name:"The Great Comet",plate:"LIX",probe:{x:642,y:1473},target:{x:315,y:261,r:27},bodies:[{kind:"planet",r:46,mu:8.02e6,x:417,y:738,orbit:null},{kind:"repulsor",r:29,mu:-1.07e7,x:263,y:463,orbit:null},{kind:"planet",r:37,mu:3.02e6,orbit:{cx:245,cy:976,rad:98,omega:-.771,phase:.309},pair:1},{kind:"planet",r:37,mu:3.51e6,orbit:{cx:245,cy:976,rad:98,omega:-.771,phase:3.451},pair:1},{kind:"blackhole",r:14,capture:46,mu:3.84e7,x:487,y:940,orbit:null},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:417,cy:738,rad:100,omega:-1.02,phase:4.053}}],frags:[{x:786,y:1014},{x:656,y:627},{x:544,y:499}],solution:{vx:122.118,vy:-628.241,t0Step:0},fragSolution:{vx:201.681,vy:-363.842,t0Step:0}},
     {id:"c60",index:59,seed:1170229,difficulty:1.6,name:"Halley's Return",plate:"LX",probe:{x:246,y:1427},target:{x:656,y:363,r:27},bodies:[{kind:"planet",r:59,mu:1.45e7,x:489,y:870,orbit:null},{kind:"repulsor",r:30,mu:-1.34e7,x:469,y:704,orbit:null},{kind:"planet",r:35,mu:3.54e6,orbit:{cx:286,cy:977,rad:86,omega:-.658,phase:3.694},pair:1},{kind:"planet",r:41,mu:5.65e6,orbit:{cx:286,cy:977,rad:86,omega:-.658,phase:6.836},pair:1},{kind:"planet",r:33,mu:2.17e6,orbit:{cx:250,cy:664,rad:117,omega:-.603,phase:2.654},pair:2},{kind:"planet",r:37,mu:4.27e6,orbit:{cx:250,cy:664,rad:117,omega:-.603,phase:5.796},pair:2}],frags:[{x:858,y:860},{x:812,y:697}],solution:{vx:385.162,vy:-511.127,t0Step:0},fragSolution:{vx:189.891,vy:28.379,t0Step:0}}
+  ]).concat([
+    {id:"c61",index:60,seed:739820,difficulty:1.62,name:"The Looking-Glass",plate:"LXI",probe:{x:377,y:1343},target:{x:700,y:237,r:38},bodies:[{kind:"repulsor",r:25,mu:-1.05e7,x:570,y:609,orbit:null},{kind:"wormhole",r:36,mu:0,x:234,y:693,orbit:null,pair:2,turn:0},{kind:"wormhole",r:37,mu:0,x:746,y:446,orbit:null,pair:1,turn:0}],frags:[{x:343,y:932},{x:312,y:802}],solution:{vx:-89.317,vy:-439.006,t0Step:0},fragSolution:{vx:-29.284,vy:-334.721,t0Step:0}},
+    {id:"c62",index:61,seed:668917,difficulty:1.64,name:"The Aperture",plate:"LXII",probe:{x:723,y:1362},target:{x:229,y:417,r:38},bodies:[{kind:"repulsor",r:28,mu:-1.15e7,x:398,y:725,orbit:null},{kind:"wormhole",r:34,mu:0,x:192,y:708,orbit:null,pair:2,turn:0},{kind:"wormhole",r:36,mu:0,x:809,y:678,orbit:null,pair:1,turn:0}],frags:[{x:779,y:971},{x:806,y:808}],solution:{vx:-5.864,vy:-335.949,t0Step:0},fragSolution:{vx:44.472,vy:-461.864,t0Step:0}},
+    {id:"c63",index:62,seed:77014,difficulty:1.66,name:"Camera Obscura",plate:"LXIII",probe:{x:238,y:1468},target:{x:483,y:203,r:37},bodies:[{kind:"repulsor",r:26,mu:-1.04e7,x:377,y:836,orbit:null},{kind:"wormhole",r:34,mu:0,x:645,y:945,orbit:null,pair:2,turn:0},{kind:"wormhole",r:34,mu:0,x:95,y:702,orbit:null,pair:1,turn:0}],frags:[{x:176,y:1063},{x:570,y:676}],solution:{vx:200.639,vy:-327.414,t0Step:0},fragSolution:{vx:-82.39,vy:-586.239,t0Step:0}},
+    {id:"c64",index:63,seed:84111,difficulty:1.68,name:"The Speculum",plate:"LXIV",probe:{x:479,y:1415},target:{x:299,y:595,r:36},bodies:[{kind:"repulsor",r:25,mu:-1.22e7,x:373,y:999,orbit:null},{kind:"planet",r:57,mu:4.55e6,x:288,y:879,orbit:null},{kind:"wormhole",r:35,mu:0,x:649,y:1147,orbit:null,pair:3,turn:0},{kind:"wormhole",r:31,mu:0,x:79,y:942,orbit:null,pair:2,turn:0}],frags:[{x:359,y:1221},{x:207,y:1041},{x:459,y:957}],solution:{vx:153.12,vy:-352.151,t0Step:0},fragSolution:{vx:-339.148,vy:-542.751,t0Step:0}},
+    {id:"c65",index:64,seed:256208,difficulty:1.7,name:"The Postern Gate",plate:"LXV",probe:{x:270,y:1319},target:{x:736,y:479,r:36},bodies:[{kind:"blackhole",r:16,capture:44,mu:2.77e7,x:510,y:913,orbit:null},{kind:"repulsor",r:23,mu:-1.39e7,x:416,y:1043,orbit:null},{kind:"wormhole",r:31,mu:0,x:156,y:392,orbit:null,pair:3,turn:0},{kind:"wormhole",r:32,mu:0,x:774,y:789,orbit:null,pair:2,turn:0}],frags:[{x:315,y:1074},{x:231,y:761}],solution:{vx:0,vy:-336,t0Step:0},fragSolution:{vx:112.17,vy:-433.73,t0Step:0}},
+    {id:"c66",index:65,seed:80305,difficulty:1.72,name:"The Mirror Door",plate:"LXVI",probe:{x:636,y:1448},target:{x:342,y:286,r:35},bodies:[{kind:"repulsor",r:25,mu:-9.75e6,x:453,y:806,orbit:null},{kind:"planet",r:41,mu:1.34e6,x:561,y:493,orbit:null},{kind:"wormhole",r:32,mu:0,x:786,y:750,orbit:null,pair:3,turn:0},{kind:"wormhole",r:30,mu:0,x:222,y:844,orbit:null,pair:2,turn:0}],frags:[{x:551,y:1256},{x:534,y:614}],solution:{vx:56.547,vy:-460.541,t0Step:0},fragSolution:{vx:-185.783,vy:-407.663,t0Step:0}},
+    {id:"c67",index:66,seed:317402,difficulty:1.74,name:"The Periscope",plate:"LXVII",probe:{x:662,y:1317},target:{x:231,y:331,r:34},bodies:[{kind:"repulsor",r:30,mu:-1.27e7,x:438,y:824,orbit:null},{kind:"planet",r:60,mu:9.44e6,x:504,y:1037,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:504,cy:1037,rad:112,omega:-1.325,phase:5.096}},{kind:"wormhole",r:30,mu:0,x:347,y:1191,orbit:null,pair:4,turn:1.5707963267948966},{kind:"wormhole",r:32,mu:0,x:77,y:715,orbit:null,pair:3,turn:-1.5707963267948966}],frags:[{x:473,y:1305},{x:187,y:619}],solution:{vx:-488.303,vy:-153.961,t0Step:380},fragSolution:{vx:-125.857,vy:23.326,t0Step:0}},
+    {id:"c68",index:67,seed:831499,difficulty:1.76,name:"The Kaleidoscope",plate:"LXVIII",probe:{x:230,y:1407},target:{x:713,y:274,r:34},bodies:[{kind:"repulsor",r:26,mu:-1.49e7,x:497,y:822,orbit:null},{kind:"planet",r:59,mu:5.78e6,x:510,y:1112,orbit:null},{kind:"wormhole",r:31,mu:0,x:767,y:1200,orbit:null,pair:3,turn:-1.5707963267948966},{kind:"wormhole",r:28,mu:0,x:812,y:531,orbit:null,pair:2,turn:1.5707963267948966}],frags:[{x:525,y:1356},{x:653,y:1302}],solution:{vx:449.603,vy:-168.1,t0Step:0},fragSolution:{vx:187.449,vy:-41.556,t0Step:0}},
+    {id:"c69",index:68,seed:2338596,difficulty:1.78,name:"The Heliostat",plate:"LXIX",probe:{x:516,y:1379},target:{x:280,y:634,r:33},bodies:[{kind:"repulsor",r:25,mu:-1.22e7,x:355,y:886,orbit:null},{kind:"planet",r:63,mu:1.08e7,x:373,y:1092,orbit:null},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:373,cy:1092,rad:127,omega:1.297,phase:3.195}},{kind:"wormhole",r:34,mu:0,x:644,y:850,orbit:null,pair:4,turn:.7853981633974483},{kind:"wormhole",r:34,mu:0,x:87,y:752,orbit:null,pair:3,turn:-.7853981633974483}],frags:[{x:407,y:1275},{x:145,y:856},{x:460,y:814}],solution:{vx:149.843,vy:-370.874,t0Step:1445},fragSolution:{vx:-412.875,vy:-378.331,t0Step:0}},
+    {id:"c70",index:69,seed:384693,difficulty:1.8,name:"Newton's Prism",plate:"LXX",probe:{x:261,y:1368},target:{x:351,y:455,r:33},bodies:[{kind:"repulsor",r:28,mu:-1.3e7,x:302,y:791,orbit:null},{kind:"planet",r:52,mu:4.72e6,x:553,y:418,orbit:null},{kind:"wormhole",r:28,mu:0,x:738,y:744,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:26,mu:0,x:127,y:440,orbit:null,pair:2,turn:-.7853981633974483}],frags:[{x:416,y:1157},{x:590,y:934},{x:682,y:832}],solution:{vx:159.196,vy:-384.334,t0Step:0},fragSolution:{vx:348.936,vy:-517.319,t0Step:0}},
+    {id:"c71",index:70,seed:1021790,difficulty:1.82,name:"The Diagonal Mirror",plate:"LXXI",probe:{x:667,y:1463},target:{x:232,y:216,r:32},bodies:[{kind:"repulsor",r:25,mu:-1.01e7,x:419,y:750,orbit:null},{kind:"planet",r:39,mu:3.15e6,x:417,y:1145,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:417,cy:1145,rad:90,omega:-.621,phase:.006}},{kind:"wormhole",r:29,mu:0,x:102,y:468,orbit:null,pair:4,turn:-1.5707963267948966},{kind:"wormhole",r:31,mu:0,x:186,y:1215,orbit:null,pair:3,turn:1.5707963267948966}],frags:[{x:431,y:1402},{x:290,y:1327}],solution:{vx:-373.898,vy:-182.362,t0Step:1305},fragSolution:{vx:-166.905,vy:-55.846,t0Step:0}},
+    {id:"c72",index:71,seed:500887,difficulty:1.84,name:"The Turning Door",plate:"LXXII",probe:{x:493,y:1292},target:{x:665,y:376,r:32},bodies:[{kind:"repulsor",r:27,mu:-1.01e7,x:555,y:857,orbit:null},{kind:"planet",r:54,mu:7.16e6,x:475,y:501,orbit:null},{kind:"wormhole",r:27,mu:0,x:615,y:634,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:26,mu:0,x:794,y:1089,orbit:null,pair:2,turn:-.7853981633974483}],frags:[{x:641,y:1124},{x:691,y:492}],solution:{vx:355.422,vy:-272.725,t0Step:0},fragSolution:{vx:125.178,vy:-166.116,t0Step:0}},
+    {id:"c73",index:72,seed:122984,difficulty:1.86,name:"The Revolving Door",plate:"LXXIII",probe:{x:205,y:1358},target:{x:563,y:679,r:32},bodies:[{kind:"repulsor",r:24,mu:-1.03e7,x:353,y:1093,orbit:null},{kind:"repulsor",r:24,mu:-9.97e6,x:291,y:960,orbit:null},{kind:"wormhole",r:34,mu:0,x:119,y:862,orbit:null,pair:3,turn:0},{kind:"wormhole",r:31,mu:0,x:643,y:1229,orbit:{cx:665,cy:1265,rad:42,omega:.855,phase:4.166},pair:2,turn:0}],frags:[{x:352,y:1203},{x:594,y:1188}],solution:{vx:476.374,vy:-187.649,t0Step:357},fragSolution:{vx:358.568,vy:-450.782,t0Step:0}},
+    {id:"c74",index:73,seed:806081,difficulty:1.88,name:"The Zoetrope",plate:"LXXIV",probe:{x:629,y:1281},target:{x:246,y:442,r:31},bodies:[{kind:"repulsor",r:28,mu:-1.38e7,x:492,y:1006,orbit:null},{kind:"blackhole",r:13,capture:38,mu:2.58e7,x:492,y:806,orbit:null},{kind:"wormhole",r:30,mu:0,x:727,y:633,orbit:{cx:707,cy:685,rad:56,omega:.465,phase:5.074},pair:3,turn:0},{kind:"wormhole",r:28,mu:0,x:208,y:731,orbit:null,pair:2,turn:0}],frags:[{x:718,y:937},{x:749,y:803}],solution:{vx:33.495,vy:-639.123,t0Step:806},fragSolution:{vx:-2.792,vy:-319.988,t0Step:0}},
+    {id:"c75",index:74,seed:336178,difficulty:1.9,name:"The Magic Lantern",plate:"LXXV",probe:{x:437,y:1326},target:{x:693,y:307,r:31},bodies:[{kind:"repulsor",r:26,mu:-1.44e7,x:616,y:695,orbit:null},{kind:"repulsor",r:28,mu:-1.16e7,x:218,y:229,orbit:null},{kind:"wormhole",r:28,mu:0,x:646,y:988,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:30,mu:0,x:438,y:327,orbit:{cx:404,cy:375,rad:59,omega:.573,phase:5.32},pair:2,turn:-.7853981633974483}],frags:[{x:593,y:1112},{x:550,y:324}],solution:{vx:117.14,vy:-263.101,t0Step:394},fragSolution:{vx:225.719,vy:-368.341,t0Step:0}},
+    {id:"c76",index:75,seed:83275,difficulty:1.92,name:"The Stereoscope",plate:"LXXVI",probe:{x:691,y:1287},target:{x:553,y:560,r:30},bodies:[{kind:"repulsor",r:25,mu:-1.05e7,x:650,y:989,orbit:null},{kind:"blackhole",r:14,capture:43,mu:3.63e7,x:663,y:284,orbit:null},{kind:"wormhole",r:31,mu:0,x:372,y:911,orbit:{cx:358,cy:965,rad:56,omega:-.659,phase:4.963},pair:3,turn:-1.5707963267948966},{kind:"wormhole",r:31,mu:0,x:710,y:398,orbit:null,pair:2,turn:1.5707963267948966}],frags:[{x:426,y:473},{x:650,y:176}],solution:{vx:-309.485,vy:-485.793,t0Step:1186},fragSolution:{vx:-255.979,vy:-461.799,t0Step:0}},
+    {id:"c77",index:76,seed:270372,difficulty:1.94,name:"The Phantasmagoria",plate:"LXXVII",probe:{x:231,y:1303},target:{x:742,y:408,r:30},bodies:[{kind:"repulsor",r:29,mu:-1.29e7,x:425,y:924,orbit:null},{kind:"planet",r:56,mu:4.96e6,x:314,y:582,orbit:null},{kind:"repulsor",r:27,mu:-9.3e6,x:818,y:638,orbit:null},{kind:"moon",r:20,mu:4.8e5,orbit:{cx:314,cy:582,rad:138,omega:-1.479,phase:4.979}},{kind:"wormhole",r:29,mu:0,x:734,y:1088,orbit:null,pair:5,turn:-.7853981633974483},{kind:"wormhole",r:31,mu:0,x:581,y:680,orbit:{cx:617,cy:719,rad:53,omega:.85,phase:3.977},pair:4,turn:.7853981633974483}],frags:[{x:420,y:1094},{x:587,y:1052},{x:739,y:612}],solution:{vx:330.035,vy:-253.245,t0Step:734},fragSolution:{vx:305.535,vy:-327.646,t0Step:0}},
+    {id:"c78",index:77,seed:1738469,difficulty:1.96,name:"Foucault's Pendulum",plate:"LXXVIII",probe:{x:399,y:1415},target:{x:296,y:320,r:30},bodies:[{kind:"planet",r:74,mu:1.41e7,x:360,y:725,orbit:null},{kind:"blackhole",r:13,capture:49,mu:2.88e7,x:152,y:759,orbit:null},{kind:"repulsor",r:26,mu:-8.14e6,x:396,y:1148,orbit:null},{kind:"wormhole",r:26,mu:0,x:119,y:1105,orbit:{cx:153,cy:1029,rad:83,omega:.909,phase:1.992},pair:4,turn:1.5707963267948966},{kind:"wormhole",r:27,mu:0,x:114,y:436,orbit:null,pair:3,turn:-1.5707963267948966}],frags:[{x:288,y:1290},{x:194,y:1187}],solution:{vx:-171.033,vy:-616.723,t0Step:503},fragSolution:{vx:-374.322,vy:-479.111,t0Step:0}},
+    {id:"c79",index:78,seed:5655566,difficulty:1.98,name:"The Enfilade",plate:"LXXIX",probe:{x:343,y:1382},target:{x:749,y:412,r:30},bodies:[{kind:"repulsor",r:26,mu:-1.12e7,x:545,y:942,orbit:null},{kind:"planet",r:45,mu:3.14e6,x:680,y:754,orbit:null},{kind:"moon",r:16,mu:246000,orbit:{cx:680,cy:754,rad:97,omega:1.164,phase:1.696}},{kind:"wormhole",r:30,mu:0,x:129,y:640,orbit:null,pair:4,turn:0},{kind:"wormhole",r:31,mu:0,x:813,y:606,orbit:null,pair:3,turn:0},{kind:"wormhole",r:30,mu:0,x:264,y:1117,orbit:null,pair:6,turn:0},{kind:"wormhole",r:28,mu:0,x:231,y:950,orbit:null,pair:5,turn:0}],frags:[{x:293,y:1041},{x:218,y:780}],solution:{vx:-107.669,vy:-401.825,t0Step:397},fragSolution:{vx:-42.939,vy:-445.937,t0Step:0}},
+    {id:"c80",index:79,seed:9152663,difficulty:2,name:"The Gallery of Mirrors",plate:"LXXX",probe:{x:164,y:1398},target:{x:519,y:577,r:29},bodies:[{kind:"planet",r:75,mu:1.3e7,x:348,y:984,orbit:null},{kind:"planet",r:41,mu:3.41e6,x:549,y:742,orbit:null},{kind:"wormhole",r:27,mu:0,x:489,y:844,orbit:null,pair:3,turn:-.7853981633974483},{kind:"wormhole",r:29,mu:0,x:356,y:722,orbit:null,pair:2,turn:.7853981633974483},{kind:"wormhole",r:31,mu:0,x:484,y:1106,orbit:null,pair:5,turn:.7853981633974483},{kind:"wormhole",r:29,mu:0,x:164,y:825,orbit:null,pair:4,turn:-.7853981633974483}],frags:[{x:158,y:1165},{x:261,y:924}],solution:{vx:425.827,vy:-363.691,t0Step:0},fragSolution:{vx:-30.744,vy:-205.715,t0Step:0}},
+    {id:"c81",index:80,seed:7264760,difficulty:2.02,name:"The Antechamber",plate:"LXXXI",probe:{x:716,y:1405},target:{x:268,y:254,r:29},bodies:[{kind:"repulsor",r:29,mu:-1e7,x:488,y:781,orbit:null},{kind:"planet",r:42,mu:3.44e6,x:520,y:954,orbit:null},{kind:"moon",r:14,mu:165000,orbit:{cx:520,cy:954,rad:94,omega:1.349,phase:4.614}},{kind:"wormhole",r:29,mu:0,x:218,y:475,orbit:{cx:153,cy:477,rad:65,omega:-.627,phase:6.253},pair:4,turn:0},{kind:"wormhole",r:26,mu:0,x:765,y:450,orbit:null,pair:3,turn:0},{kind:"wormhole",r:30,mu:0,x:315,y:1184,orbit:null,pair:6,turn:1.5707963267948966},{kind:"wormhole",r:27,mu:0,x:614,y:740,orbit:null,pair:5,turn:-1.5707963267948966}],frags:[{x:495,y:1296},{x:644,y:679}],solution:{vx:-22.609,vy:-431.408,t0Step:785},fragSolution:{vx:-458.206,vy:-228.453,t0Step:0}},
+    {id:"c82",index:81,seed:1829857,difficulty:2.04,name:"The Colonnade",plate:"LXXXII",probe:{x:375,y:1451},target:{x:703,y:414,r:29},bodies:[{kind:"blackhole",r:14,capture:46,mu:3.87e7,x:500,y:1087,orbit:null},{kind:"repulsor",r:30,mu:-1.09e7,x:235,y:837,orbit:null},{kind:"wormhole",r:27,mu:0,x:98,y:583,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:731,y:803,orbit:null,pair:2,turn:-.7853981633974483},{kind:"wormhole",r:30,mu:0,x:719,y:1070,orbit:null,pair:5,turn:-1.5707963267948966},{kind:"wormhole",r:27,mu:0,x:358,y:809,orbit:null,pair:4,turn:1.5707963267948966}],frags:[{x:348,y:1300},{x:430,y:714}],solution:{vx:512.782,vy:-326.678,t0Step:0},fragSolution:{vx:-92.898,vy:-372.594,t0Step:0}},
+    {id:"c83",index:82,seed:176954,difficulty:2.06,name:"The Vestibule",plate:"LXXXIII",probe:{x:634,y:1461},target:{x:161,y:623,r:28},bodies:[{kind:"repulsor",r:30,mu:-1.03e7,x:404,y:1080,orbit:null},{kind:"planet",r:43,mu:4.11e6,x:378,y:713,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:378,cy:713,rad:100,omega:1.379,phase:.945}},{kind:"wormhole",r:29,mu:0,x:199,y:1228,orbit:null,pair:4,turn:.7853981633974483},{kind:"wormhole",r:25,mu:0,x:252,y:923,orbit:null,pair:3,turn:-.7853981633974483},{kind:"wormhole",r:27,mu:0,x:735,y:568,orbit:null,pair:6,turn:0},{kind:"wormhole",r:29,mu:0,x:126,y:929,orbit:null,pair:5,turn:0}],frags:[{x:344,y:1306},{x:208,y:815}],solution:{vx:-14.24,vy:-543.814,t0Step:1128},fragSolution:{vx:-518.405,vy:-317.679,t0Step:0}},
+    {id:"c84",index:83,seed:72051,difficulty:2.08,name:"The Twin Portals",plate:"LXXXIV",probe:{x:162,y:1361},target:{x:477,y:485,r:28},bodies:[{kind:"planet",r:75,mu:1.8e7,x:319,y:976,orbit:null},{kind:"repulsor",r:29,mu:-1.1e7,x:361,y:708,orbit:null},{kind:"wormhole",r:26,mu:0,x:115,y:872,orbit:null,pair:3,turn:1.5707963267948966},{kind:"wormhole",r:25,mu:0,x:252,y:507,orbit:null,pair:2,turn:-1.5707963267948966},{kind:"wormhole",r:24,mu:0,x:515,y:1140,orbit:null,pair:5,turn:-1.5707963267948966},{kind:"wormhole",r:24,mu:0,x:640,y:745,orbit:null,pair:4,turn:1.5707963267948966}],frags:[{x:131,y:1195},{x:102,y:1043},{x:349,y:507}],solution:{vx:396.17,vy:-172.26,t0Step:0},fragSolution:{vx:-129.737,vy:-610.364,t0Step:0}},
+    {id:"c85",index:84,seed:546148,difficulty:2.1,name:"The Anamorphosis",plate:"LXXXV",probe:{x:696,y:1289},target:{x:259,y:184,r:28},bodies:[{kind:"repulsor",r:25,mu:-1.46e7,x:496,y:830,orbit:null},{kind:"planet",r:44,mu:3.03e6,x:524,y:235,orbit:null},{kind:"repulsor",r:23,mu:-8.34e6,x:651,y:383,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:524,cy:235,rad:106,omega:-1.369,phase:1.779}},{kind:"wormhole",r:25,mu:0,x:722,y:473,orbit:null,pair:5,turn:-1.5707963267948966},{kind:"wormhole",r:28,mu:0,x:460,y:484,orbit:null,pair:4,turn:1.5707963267948966},{kind:"wormhole",r:26,mu:0,x:788,y:759,orbit:null,pair:7,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:377,y:705,orbit:null,pair:6,turn:-.7853981633974483}],frags:[{x:657,y:1069},{x:479,y:712}],solution:{vx:12.984,vy:-495.83,t0Step:765},fragSolution:{vx:-65.077,vy:-410.878,t0Step:0}},
+    {id:"c86",index:85,seed:145245,difficulty:2.12,name:"Daguerre's Diorama",plate:"LXXXVI",probe:{x:566,y:1310},target:{x:613,y:454,r:28},bodies:[{kind:"repulsor",r:29,mu:-1.21e7,x:571,y:860,orbit:null},{kind:"blackhole",r:15,capture:44,mu:2.69e7,x:206,y:709,orbit:null},{kind:"moon",r:19,mu:412000,orbit:{cx:206,cy:709,rad:117,omega:.593,phase:5.019}},{kind:"wormhole",r:27,mu:0,x:471,y:958,orbit:null,pair:4,turn:0},{kind:"wormhole",r:26,mu:0,x:692,y:746,orbit:null,pair:3,turn:0},{kind:"wormhole",r:29,mu:0,x:772,y:1062,orbit:null,pair:6,turn:1.5707963267948966},{kind:"wormhole",r:29,mu:0,x:258,y:160,orbit:null,pair:5,turn:-1.5707963267948966}],frags:[{x:523,y:1119},{x:672,y:690},{x:635,y:564}],solution:{vx:306.611,vy:-429.853,t0Step:1044},fragSolution:{vx:-116.012,vy:-596.829,t0Step:0}},
+    {id:"c87",index:86,seed:4815342,difficulty:2.14,name:"The Panopticon",plate:"LXXXVII",probe:{x:242,y:1477},target:{x:461,y:535,r:27},bodies:[{kind:"repulsor",r:30,mu:-1.13e7,x:375,y:987,orbit:null},{kind:"blackhole",r:14,capture:38,mu:3.35e7,x:425,y:1239,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:425,cy:1239,rad:97,omega:-1.487,phase:2.068}},{kind:"wormhole",r:26,mu:0,x:126,y:1237,orbit:{cx:182,cy:1217,rad:59,omega:.481,phase:2.799},pair:4,turn:-.7853981633974483},{kind:"wormhole",r:26,mu:0,x:676,y:851,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:393,y:668,orbit:null,pair:6,turn:.7853981633974483},{kind:"wormhole",r:26,mu:0,x:541,y:908,orbit:null,pair:5,turn:-.7853981633974483}],frags:[{x:129,y:1374},{x:606,y:742},{x:537,y:622}],solution:{vx:-286.307,vy:-424.467,t0Step:1500},fragSolution:{vx:-257.741,vy:-128.505,t0Step:0}},
+    {id:"c88",index:87,seed:2315439,difficulty:2.16,name:"The Hall of Mirrors",plate:"LXXXVIII",probe:{x:735,y:1417},target:{x:242,y:299,r:27},bodies:[{kind:"planet",r:51,mu:7.61e6,x:535,y:978,orbit:null},{kind:"blackhole",r:12,capture:40,mu:3.64e7,x:341,y:871,orbit:null},{kind:"repulsor",r:24,mu:-1.14e7,x:615,y:1186,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:341,cy:871,rad:97,omega:-.61,phase:5.276}},{kind:"wormhole",r:25,mu:0,x:771,y:1080,orbit:null,pair:5,turn:.7853981633974483},{kind:"wormhole",r:25,mu:0,x:77,y:432,orbit:null,pair:4,turn:-.7853981633974483},{kind:"wormhole",r:29,mu:0,x:107,y:573,orbit:null,pair:7,turn:-1.5707963267948966},{kind:"wormhole",r:25,mu:0,x:463,y:1283,orbit:null,pair:6,turn:1.5707963267948966}],frags:[{x:737,y:1274},{x:750,y:1136},{x:122,y:394}],solution:{vx:-520.26,vy:-282.478,t0Step:200},fragSolution:{vx:-33.495,vy:-639.123,t0Step:0}},
+    {id:"c89",index:88,seed:5786536,difficulty:2.18,name:"The Labyrinth",plate:"LXXXIX",probe:{x:364,y:1359},target:{x:604,y:358,r:26},bodies:[{kind:"repulsor",r:25,mu:-9.89e6,x:524,y:737,orbit:null},{kind:"blackhole",r:14,capture:42,mu:3.6e7,x:751,y:537,orbit:null},{kind:"repulsor",r:28,mu:-1.2e7,x:802,y:1008,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:751,cy:537,rad:92,omega:-1.381,phase:2.154}},{kind:"wormhole",r:29,mu:0,x:728,y:898,orbit:null,pair:5,turn:1.5707963267948966},{kind:"wormhole",r:26,mu:0,x:294,y:757,orbit:null,pair:4,turn:-1.5707963267948966},{kind:"wormhole",r:28,mu:0,x:418,y:970,orbit:{cx:457,cy:938,rad:50,omega:.578,phase:2.451},pair:7,turn:-.7853981633974483},{kind:"wormhole",r:27,mu:0,x:804,y:86,orbit:null,pair:6,turn:.7853981633974483}],frags:[{x:440,y:1172},{x:645,y:117}],solution:{vx:-16.052,vy:-367.65,t0Step:459},fragSolution:{vx:82.658,vy:-173.296,t0Step:0}},
+    {id:"c90",index:89,seed:5562633,difficulty:2.2,name:"The Leviathan of Parsonstown",plate:"XC",probe:{x:178,y:1355},target:{x:517,y:676,r:26},bodies:[{kind:"repulsor",r:29,mu:-1.04e7,x:411,y:932,orbit:null},{kind:"blackhole",r:14,capture:44,mu:3.96e7,x:525,y:360,orbit:null},{kind:"repulsor",r:25,mu:-1.38e7,x:296,y:360,orbit:null},{kind:"moon",r:22,mu:639000,orbit:{cx:525,cy:360,rad:100,omega:.848,phase:3.085}},{kind:"wormhole",r:26,mu:0,x:483,y:1193,orbit:{cx:399,cy:1150,rad:94,omega:.651,phase:.477},pair:5,turn:-.7853981633974483},{kind:"wormhole",r:24,mu:0,x:196,y:740,orbit:null,pair:4,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:627,y:945,orbit:null,pair:7,turn:1.5707963267948966},{kind:"wormhole",r:30,mu:0,x:333,y:470,orbit:null,pair:6,turn:-1.5707963267948966}],frags:[{x:309,y:1291},{x:264,y:600},{x:582,y:886}],solution:{vx:406.831,vy:-451.832,t0Step:1211},fragSolution:{vx:233.15,vy:-140.09,t0Step:0}}
   ]);/*@END*/
 
-  var VOLUMES = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }];
+  // Full-clear courses (tools/levels-clear.js): one launch that gathers every fragment and hits the target. Drawn by the hint.
+  /*@CLEAR*/var CLEAR = [
+    null,
+    null,
+    null,
+    {vx:30.104,vy:-286.422,t0Step:0},
+    {vx:143.211,vy:-15.052,t0Step:0},
+    {vx:357.912,vy:-511.151,t0Step:260},
+    {vx:212.926,vy:-569.497,t0Step:0},
+    {vx:228.697,vy:-580.581,t0Step:0},
+    {vx:-363.691,vy:-425.827,t0Step:0},
+    {vx:-100.64,vy:-403.643,t0Step:700},
+    {vx:15.497,vy:-591.797,t0Step:0},
+    {vx:45.442,vy:-153.411,t0Step:0},
+    {vx:143.984,vy:-171.594,t0Step:0},
+    {vx:367.089,vy:-524.257,t0Step:0},
+    {vx:225.916,vy:203.416,t0Step:0},
+    {vx:-43.528,vy:-622.48,t0Step:260},
+    {vx:-253.804,vy:-570.052,t0Step:120},
+    {vx:121.216,vy:-595.794,t0Step:120},
+    {vx:-116.012,vy:-596.829,t0Step:450},
+    {vx:66.898,vy:-636.494,t0Step:0},
+    {vx:86.963,vy:-324.551,t0Step:700},
+    {vx:208.364,vy:-605.132,t0Step:450},
+    {vx:-319.89,vy:8.377,t0Step:0},
+    {vx:-36.257,vy:-414.417,t0Step:450},
+    {vx:-283.29,vy:-555.988,t0Step:260},
+    {vx:-297.734,vy:117.28,t0Step:0},
+    {vx:-66.829,vy:-507.62,t0Step:700},
+    {vx:-415.647,vy:-486.66,t0Step:0},
+    {vx:157.362,vy:-587.283,t0Step:0},
+    {vx:339.855,vy:-523.33,t0Step:120},
+    {vx:55.4,vy:-298.909,t0Step:0},
+    {vx:-255.523,vy:-15.628,t0Step:0},
+    {vx:127.595,vy:-627.152,t0Step:0},
+    {vx:-147.281,vy:-62.517,t0Step:0},
+    {vx:152.595,vy:-48.113,t0Step:0},
+    {vx:-379.867,vy:-495.052,t0Step:0},
+    {vx:336.551,vy:244.519,t0Step:0},
+    {vx:-300.702,vy:-109.446,t0Step:0},
+    {vx:-219.884,vy:-42.741,t0Step:0},
+    {vx:-295.819,vy:218.895,t0Step:0},
+    {vx:140.369,vy:-608.007,t0Step:450},
+    {vx:-267.868,vy:-47.232,t0Step:0},
+    {vx:390.518,vy:-86.576,t0Step:0},
+    {vx:197.82,vy:-64.276,t0Step:0},
+    {vx:-447.932,vy:7.819,t0Step:700},
+    {vx:-201.281,vy:-130.713,t0Step:0},
+    {vx:47.413,vy:-541.93,t0Step:120},
+    {vx:-216.713,vy:-277.38,t0Step:0},
+    {vx:179.841,vy:-67.24,t0Step:450},
+    {vx:-182.44,vy:-596.734,t0Step:0},
+    {vx:415.747,vy:14.518,t0Step:0},
+    {vx:-193.527,vy:-76.232,t0Step:0},
+    {vx:-229.151,vy:-245.735,t0Step:260},
+    {vx:-218.69,vy:48.482,t0Step:0},
+    {vx:366.866,vy:28.873,t0Step:0},
+    {vx:-85.138,vy:-569.673,t0Step:0},
+    {vx:-224.162,vy:-154.062,t0Step:260},
+    {vx:-493.283,vy:-51.846,t0Step:700},
+    {vx:192.757,vy:-386.612,t0Step:450},
+    {vx:207.873,vy:7.259,t0Step:260},
+    {vx:-29.284,vy:-334.721,t0Step:0},
+    {vx:44.472,vy:-461.864,t0Step:0},
+    {vx:-82.39,vy:-586.239,t0Step:0},
+    {vx:-339.148,vy:-542.751,t0Step:0},
+    {vx:108.381,vy:-434.692,t0Step:0},
+    {vx:-185.783,vy:-407.663,t0Step:0},
+    {vx:-126.055,vy:22.227,t0Step:450},
+    {vx:187.449,vy:-41.556,t0Step:0},
+    {vx:-412.875,vy:-378.331,t0Step:0},
+    {vx:348.936,vy:-517.319,t0Step:0},
+    {vx:-166.905,vy:-55.846,t0Step:0},
+    {vx:125.178,vy:-166.116,t0Step:0},
+    {vx:352.419,vy:-435.202,t0Step:0},
+    {vx:-2.792,vy:-319.988,t0Step:0},
+    {vx:225.719,vy:-368.341,t0Step:0},
+    {vx:-255.979,vy:-461.799,t0Step:0},
+    {vx:294.623,vy:-315.945,t0Step:0},
+    {vx:-374.322,vy:-479.111,t0Step:0},
+    {vx:-42.939,vy:-445.937,t0Step:0},
+    {vx:-27.299,vy:-222.33,t0Step:0},
+    {vx:-458.206,vy:-228.453,t0Step:0},
+    {vx:-92.898,vy:-372.594,t0Step:0},
+    {vx:-518.405,vy:-317.679,t0Step:0},
+    {vx:-129.737,vy:-610.364,t0Step:0},
+    {vx:-65.077,vy:-410.878,t0Step:260},
+    {vx:-116.012,vy:-596.829,t0Step:0},
+    {vx:-258.853,vy:-126.251,t0Step:0},
+    {vx:-33.495,vy:-639.123,t0Step:700},
+    {vx:94.43,vy:-185.329,t0Step:120},
+    {vx:233.15,vy:-140.09,t0Step:0}
+  ];/*@ENDCLEAR*/
 
-  return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, VOLUMES: VOLUMES, generate: generate, daily: daily, solve: solve, NAMES: NAMES,
+  // Full-clear course for a baked campaign plate (or null): used by the hint. Generated plates (Daily, Endless) have none.
+  var CLEAR_BY_ID = {}; CAMPAIGN.forEach(function (l, i) { if (CLEAR[i]) CLEAR_BY_ID[l.id] = CLEAR[i]; });
+  function clearFor(level) { return level && level.id && CLEAR_BY_ID[level.id] || null; }
+
+  var VOLUMES = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }, { name: 'Volume III', from: 60, to: 89 }];
+
+  return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, CLEAR: CLEAR, clearFor: clearFor, VOLUMES: VOLUMES, generate: generate, daily: daily, solve: solve, NAMES: NAMES,
     // internal: shared with tools/levels-bake.js so the bake uses exactly the runtime generator
     _gen: { sims: function () { return nSims; }, genStats: genStats, build: build, recipe: recipe, robust: robust, hit: hit, launch: launch, placeFrags: placeFrags,
       pointGap: pointGap, bodyGap: bodyGap, straightHits: straightHits, finish: finish, d3: d3 } };
@@ -1284,13 +1471,218 @@ var Render = (function () {
     g.fillStyle = PAL.paper; g.beginPath(); g.arc(x, y, 0.9, 0, TAU); g.fill();
     g.globalAlpha = 1; g.lineCap = 'butt';
   }
+
+  // ---------------------------------------------------------------- wormhole mouths
+  // An engraved aperture of radius r (the real capture radius): hairline ring with a swelling rim on the lit limb, a dotted
+  // halo, iris arms spiralling inward (counter-clockwise, unlike the black hole's dense clockwise funnel) and a small pupil.
+  // Two knock-out broken rings turn in opposite directions above it (animated sprites). Pairs carry a Greek letter; the
+  // twins also share the number of segments in their outer ring. Everything is paper on ink: no fill beyond hatching.
+  var GREEK = ['α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ'];
+  var mouthPN = [];                 // body index -> pair number (0 = alpha), undefined for other bodies
+  var wm = [];                      // the level's mouths: {i,b,moving,pn,letter,turn,bw,bh,lx,ly,sA,sB,lbl,kx,kd,kt0,kPend}
+  var LIGHT_A = Math.atan2(LY, LX);
+  var LBL_FONT = 'italic 600 17px ' + FONT.serif, NOTE_FONT = '600 8.6px ' + FONT.mono;
+  function pairNumbers(lv) {
+    var bs = lv.bodies, no = [], n = 0, i, j;
+    for (i = 0; i < bs.length; i++) {
+      if (bs[i].kind !== 'wormhole' || no[i] !== undefined) continue;
+      no[i] = n; j = bs[i].pair;
+      if (j >= 0 && j < bs.length && j !== i && bs[j] && bs[j].kind === 'wormhole' && no[j] === undefined) no[j] = n;
+      n++;
+    }
+    return no;
+  }
+  function hasWormhole(lv) { var bs = lv && lv.bodies; if (bs) for (var i = 0; i < bs.length; i++) if (bs[i].kind === 'wormhole') return true; return false; }
+  function drawMouth(g, x, y, R, pn) {
+    var i, j, q, a, n;
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, R * 1.42, 0, TAU); g.fill();
+    g.strokeStyle = PAL.paper; g.lineCap = 'round';
+    // dotted halo
+    n = Math.max(20, Math.round(TAU * R * 1.26 / 3.1));
+    g.fillStyle = PAL.a('paper', 0.36); g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * 1.26 * Math.cos(a) - 0.3, y + R * 1.26 * Math.sin(a) - 0.3, 0.6, 0.6); }
+    g.fill();
+    var nb = (pn % 4) + 1;                                                            // pair signature: one to four beads on the halo
+    g.fillStyle = PAL.ink; g.beginPath();
+    for (i = 0; i < nb; i++) { a = -Math.PI / 2 + i * TAU / nb; g.moveTo(x + Math.cos(a) * R * 1.26 + 2.6, y + Math.sin(a) * R * 1.26); g.arc(x + Math.cos(a) * R * 1.26, y + Math.sin(a) * R * 1.26, 2.6, 0, TAU); }
+    g.fill();
+    g.fillStyle = PAL.paper; g.globalAlpha = 0.98; g.beginPath();
+    for (i = 0; i < nb; i++) { a = -Math.PI / 2 + i * TAU / nb; g.moveTo(x + Math.cos(a) * R * 1.26 + 1.45, y + Math.sin(a) * R * 1.26); g.arc(x + Math.cos(a) * R * 1.26, y + Math.sin(a) * R * 1.26, 1.45, 0, TAU); }
+    g.fill();
+    g.globalAlpha = 0.55; g.lineWidth = 0.5; g.beginPath();                          // four bearing notches on the halo
+    for (i = 0; i < 4; i++) { a = i * Math.PI / 2 + Math.PI / 4; g.moveTo(x + Math.cos(a) * R * 1.16, y + Math.sin(a) * R * 1.16); g.lineTo(x + Math.cos(a) * R * 1.36, y + Math.sin(a) * R * 1.36); }
+    g.stroke();
+    // iris arms: logarithmic spiral from 0.88R to 0.1R, turning counter-clockwise inward; tone by the light from the upper left
+    var N = Math.max(10, Math.min(20, Math.round(R * 0.95))), SEG = 9, k = 1.75, r1 = R * 0.88, r0 = R * 0.1, ratio = r0 / r1;
+    hb[0].length = hb[1].length = hb[2].length = hb[3].length = 0;
+    for (j = 0; j < N; j++) {
+      var th0 = j * TAU / N, px = 0, py = 0;
+      for (q = 0; q <= SEG; q++) {
+        var f = q / SEG, rho = r1 * Math.pow(ratio, f), th = th0 - k * f, cx = x + rho * Math.cos(th), cy = y + rho * Math.sin(th);
+        if (q) {
+          var m = th + k / SEG * 0.5, lit = 0.5 + 0.5 * Math.cos(m - LIGHT_A);             // 1 toward the light
+          var bk = lit > 0.8 ? 0 : lit > 0.55 ? 1 : lit > 0.3 ? 2 : 3;
+          hb[bk].push(px, py, cx, cy);
+        }
+        px = cx; py = cy;
+      }
+    }
+    var HA = [0.85, 0.6, 0.4, 0.26];
+    g.lineWidth = Math.max(0.35, Math.min(0.5, R * 0.03));
+    for (q = 0; q < 4; q++) {
+      var ar = hb[q]; if (!ar.length) continue;
+      g.globalAlpha = HA[q]; g.beginPath();
+      for (i = 0; i < ar.length; i += 4) { g.moveTo(ar[i], ar[i + 1]); g.lineTo(ar[i + 2], ar[i + 3]); }
+      g.stroke();
+    }
+    // pupil
+    g.globalAlpha = 1; g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, R * 0.17, 0, TAU); g.fill();
+    g.globalAlpha = 0.85; g.lineWidth = 0.5; g.beginPath(); g.arc(x, y, R * 0.17, 0, TAU); g.stroke();
+    g.globalAlpha = 1; g.fillStyle = PAL.paper; g.beginPath(); g.arc(x, y, 0.7, 0, TAU); g.fill();
+    // outer hairline ring, with a swelling bright rim on the lit (upper-left) limb
+    g.globalAlpha = 0.95; g.lineWidth = Math.min(0.9, 0.55 + R * 0.02); g.beginPath(); g.arc(x, y, R, 0, TAU); g.stroke();
+    var LA = SHADOW_ANG + Math.PI, spans = [1.35, 0.9, 0.45], wmax = Math.min(1.7, 0.8 + R * 0.04);
+    for (k = 0; k < 3; k++) {
+      g.lineWidth = 0.55 + (wmax - 0.55) * (k + 1) / 3; g.beginPath(); g.arc(x, y, R - g.lineWidth / 2 + 0.3, LA - spans[k], LA + spans[k]); g.stroke();
+    }
+    g.globalAlpha = 1; g.lineCap = 'butt';
+  }
+  // One of the two turning rings as a sprite (sideA = outer ring, else inner). Arcs are knocked out of the iris with ink.
+  function drawMouthRing(g, x, y, R, pn, sideA) {
+    var rad = R * (sideA ? 0.7 : 0.44), n = sideA ? 2 + (pn % 4) : 3, i, a0, len, gap = sideA ? 0.5 : 0.62, seg = TAU / n;
+    g.lineCap = 'round';
+    for (var pass = 0; pass < 2; pass++) {
+      g.strokeStyle = pass ? PAL.paper : PAL.ink; g.lineWidth = pass ? (sideA ? 1 : 0.8) : (sideA ? 3 : 2.4); g.globalAlpha = pass ? (sideA ? 0.92 : 0.78) : 1;
+      g.beginPath();
+      for (i = 0; i < n; i++) {
+        len = sideA ? seg - gap : seg * (i === 0 ? 0.62 : i === 1 ? 0.4 : 0.26);
+        a0 = i * seg + (sideA ? 0 : 0.4);
+        g.moveTo(x + rad * Math.cos(a0), y + rad * Math.sin(a0)); g.arc(x, y, rad, a0, a0 + len);
+      }
+      g.stroke();
+    }
+    g.globalAlpha = 0.85; g.lineWidth = 0.5; g.beginPath();                        // a tick at each arc start so the turning reads
+    for (i = 0; i < n; i++) {
+      a0 = i * seg + (sideA ? 0 : 0.4);
+      g.moveTo(x + (rad - 2.3) * Math.cos(a0), y + (rad - 2.3) * Math.sin(a0)); g.lineTo(x + (rad + 2.3) * Math.cos(a0), y + (rad + 2.3) * Math.sin(a0));
+    }
+    g.stroke(); g.globalAlpha = 1; g.lineCap = 'butt';
+  }
+  // Pair mark: italic Greek letter, and under it the turn note (a drawn circular arrow plus the angle) when the mouth turns you.
+  function labelBox(turn) { var t = Math.abs(turn) > 0.01; return { w: t ? 14 + 5.3 * (String(turnDeg(turn)).length + 1) : 18, h: t ? 29 : 18 }; }
+  function turnDeg(turn) { return Math.round(Math.abs(turn) * 180 / Math.PI); }
+  function drawMouthLabel(g, cx, cy, letter, turn) {
+    var has = Math.abs(turn) > 0.01, ly = has ? cy - 8 : cy;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.font = LBL_FONT; g.strokeStyle = PAL.ink; g.lineWidth = 3.6; g.strokeText(letter, cx, ly);
+    g.fillStyle = PAL.paper; g.fillText(letter, cx, ly);
+    if (has) {
+      var txt = turnDeg(turn) + '°', ny = cy + 8.6;
+      g.font = NOTE_FONT; g.textAlign = 'left';
+      var w = g.measureText(txt).width, tot = 12.6 + w, x0 = cx - tot / 2, ax = x0 + 5, sg = turn > 0 ? 1 : -1, r = 4.2;
+      var st = -Math.PI / 2 + sg * 0.55, en = st + sg * (TAU - 1.45);
+      g.strokeStyle = PAL.ink; g.lineWidth = 3; g.strokeText(txt, x0 + 12.6, ny);
+      g.fillStyle = PAL.a('paper', 0.92); g.fillText(txt, x0 + 12.6, ny);
+      var ex = ax + r * Math.cos(en), ey = ny + r * Math.sin(en), tx = -sg * Math.sin(en), ty = sg * Math.cos(en);
+      g.strokeStyle = PAL.ink; g.lineWidth = 3.4; g.lineCap = 'round'; g.beginPath(); g.arc(ax, ny, r, st, en, sg < 0); g.stroke();
+      g.strokeStyle = PAL.paper; g.lineWidth = 1.35; g.beginPath(); g.arc(ax, ny, r, st, en, sg < 0); g.stroke();
+      g.fillStyle = PAL.paper; g.beginPath();
+      g.moveTo(ex + tx * 4.2, ey + ty * 4.2); g.lineTo(ex - ty * 2.7 - tx * 0.6, ey + tx * 2.7 - ty * 0.6); g.lineTo(ex + ty * 2.7 - tx * 0.6, ey - tx * 2.7 - ty * 0.6); g.closePath(); g.fill();
+      g.lineCap = 'butt';
+    }
+    g.textBaseline = 'alphabetic'; g.lineJoin = 'miter';
+  }
+  // Label placement (CSS px, plate-local): the box closest to the mouth that clears the ring, every other body (over the
+  // whole orbit when the mouth rides rails), the target, the launch station and aim ring, the fragments, earlier labels and
+  // the plate border. Returns the offset of the box centre from the mouth centre.
+  function placeLabel(lv, bi, bw, bh, done, path) {
+    var bs = lv.bodies, b = bs[bi], s = layout.scale, Pl = layout.plate, R = b.r * s, nS = 1, dT = 0, i, k, c;
+    if (b.orbit && b.orbit.omega) { nS = 24; dT = TAU / Math.abs(b.orbit.omega) / nS; }
+    var pos = [];
+    for (k = 0; k < nS; k++) { var row = new Float32Array(bs.length * 2); for (i = 0; i < bs.length; i++) { Physics.bodyPos(bs[i], k * dT, P); row[2 * i] = P.x * s; row[2 * i + 1] = P.y * s; } pos.push(row); }
+    var fr = lv.frags || [], tg = lv.target, pw = Pl.w, ph = Pl.h, mg = 9;
+    var pr = Math.max(K.DRAG_CANCEL * s + 4, 14), tr = tg.r * s + 8, best = 1e18, bdx = R * 2, bdy = 0, hw = bw / 2, hh = bh / 2;
+    function circ(cx, cy, x, y, r, w) {
+      var ex = Math.abs(cx - x) - hw, ey = Math.abs(cy - y) - hh; ex = ex > 0 ? ex : 0; ey = ey > 0 ? ey : 0;
+      var ov = r - Math.sqrt(ex * ex + ey * ey); return ov > 0 ? w * (ov + 2) : 0;
+    }
+    for (c = 0; c < 32; c++) {
+      var th = (c & 15) * Math.PI / 8, dx = Math.cos(th), dy = Math.sin(th), extra = c < 16 ? 0 : 10;
+      var d = R * 1.26 + 4.5 + Math.abs(dx) * hw + Math.abs(dy) * hh + extra;
+      var pen = 0.5 * Math.abs(Math.atan2(Math.sin(th + 0.6), Math.cos(th + 0.6))) + extra * 0.3, worst = 0;
+      for (k = 0; k < nS; k++) {
+        var row2 = pos[k], cx = row2[2 * bi] + dx * d, cy = row2[2 * bi + 1] + dy * d, p = 0, j;
+        var ov = Math.max(0, mg - (cx - hw)) + Math.max(0, cx + hw - (pw - mg)) + Math.max(0, mg - (cy - hh)) + Math.max(0, cy + hh - (ph - mg));
+        p += ov * 60;
+        for (j = 0; j < bs.length; j++) {
+          if (j === bi) continue;
+          var o = bs[j], ox = row2[2 * j], oy = row2[2 * j + 1];
+          if (o.kind === 'blackhole') p += circ(cx, cy, ox, oy, (o.capture || o.r * 3) * s * 1.8, 20);
+          else if (o.kind === 'repulsor') { p += circ(cx, cy, ox, oy, o.r * s * 1.5, 20); p += circ(cx, cy, ox, oy, o.r * s * 3.3, 1.5); }
+          else if (o.kind === 'wormhole') p += circ(cx, cy, ox, oy, o.r * s * 1.5 + 2, 30);
+          else p += circ(cx, cy, ox, oy, o.r * s + 3, 20);
+        }
+        p += circ(cx, cy, tg.x * s, tg.y * s, tr, 30) + circ(cx, cy, lv.probe.x * s, lv.probe.y * s, pr, 15);
+        for (j = 0; j < fr.length; j++) p += circ(cx, cy, fr[j].x * s, fr[j].y * s, 15, 20);
+        if (path && !b.orbit) {                          // the stored winning course: keep the box off it
+          var hx = hw + 4, hy = hh + 4;
+          for (j = 0; j < path.length; j += 2) if (Math.abs(path[j] - cx) < hx && Math.abs(path[j + 1] - cy) < hy) p += 6;
+        }
+        for (j = 0; j < done.length; j++) {
+          var q = done[j], qx = Math.abs(cx - q.x) - bw / 2 - q.w / 2 - 2, qy = Math.abs(cy - q.y) - bh / 2 - q.h / 2 - 2;
+          if (qx < 0 && qy < 0) p += 40 * (1 - Math.max(qx, qy));
+        }
+        if (p > worst) worst = p; pen += p / nS;
+      }
+      pen += worst;
+      if (pen < best - 1e-6) { best = pen; bdx = dx * d; bdy = dy * d; }
+    }
+    return { x: bdx, y: bdy };
+  }
+  // Called at the start of paintLevel: pair numbers, label sizes and placements for this level at this scale.
+  function prepMouths(lv) {
+    var bs = lv.bodies, done = [], i, path = null;
+    mouthPN = pairNumbers(lv); wm.length = 0;
+    if (lv.solution && hasWormhole(lv)) {
+      try {
+        var sol = lv.solution, buf = new Float32Array(K.MAX_STEPS * 2 + 4), sm = Physics.simulate(lv, sol.vx, sol.vy, sol.t0Step || 0, K.MAX_STEPS, buf), sc = layout.scale;
+        path = []; for (i = 0; i < sm.n; i += 2) path.push(buf[2 * i] * sc, buf[2 * i + 1] * sc);
+      } catch (e) { path = null; }
+    }
+    for (i = 0; i < bs.length; i++) {
+      var b = bs[i]; if (b.kind !== 'wormhole') continue;
+      var pn = mouthPN[i] | 0, turn = b.turn || 0, bx = labelBox(turn), off = placeLabel(lv, i, bx.w, bx.h, done, path);
+      var m = { i: i, b: b, moving: !!b.orbit, pn: pn, letter: GREEK[pn % GREEK.length], turn: turn, bw: bx.w, bh: bx.h, lx: off.x, ly: off.y,
+                sA: null, sB: null, lbl: null, kx: 0, kd: 0, kt0: -1e9, kPend: false };
+      if (!m.moving) done.push({ x: b.x * layout.scale + off.x, y: b.y * layout.scale + off.y, w: bx.w, h: bx.h });
+      wm.push(m);
+    }
+  }
+  function buildMouthSprites(lv) {
+    var s = layout.scale, d = layout.dpr;
+    for (var i = 0; i < wm.length; i++) {
+      (function (m) {
+        var R = m.b.r * s;
+        m.sA = makeSprite(R * 0.78 + 2, function (g, c) { drawMouthRing(g, c, c, R, m.pn, true); });
+        m.sB = makeSprite(R * 0.78 + 2, function (g, c) { drawMouthRing(g, c, c, R, m.pn, false); });
+        m.lbl = null;
+        if (m.moving) {
+          var w = Math.ceil(m.bw + 6), h = Math.ceil(m.bh + 6), c = mk(w * d, h * d), g = c.getContext('2d');
+          g.setTransform(d, 0, 0, d, 0, 0); drawMouthLabel(g, w / 2, h / 2, m.letter, m.turn);
+          m.lbl = { c: c, w: w, h: h };
+        }
+      })(wm[i]);
+    }
+  }
+
   function drawBodyArt(g, b, bi, x, y, s, seed) {
     var R = b.r * s;
     if (b.kind === 'blackhole') drawBlackHole(g, x, y, R, (b.capture || b.r * 3) * s);
     else if (b.kind === 'repulsor') drawRepulsor(g, x, y, R);
+    else if (b.kind === 'wormhole') drawMouth(g, x, y, R, mouthPN[bi] | 0);
     else hatchSphere(g, x, y, R, sphereOpts(R, b.kind !== 'moon', (seed | 0) + bi * 31));
   }
-  function bodyExtent(b) { return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.r + 2; }
+  function bodyExtent(b) { return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.kind === 'wormhole' ? b.r * 1.4 : b.r + 2; }
   function makeSprite(radCss, fn) {
     var d = layout.dpr, size = Math.ceil((radCss * 2 + 4) * d), c = mk(size, size), g = c.getContext('2d');
     g.setTransform(d, 0, 0, d, 0, 0);
@@ -1486,6 +1878,7 @@ var Render = (function () {
   // ---------------------------------------------------------------- per-level layer & sprites
   function paintLevel(g, lv) {
     var d = layout.dpr, Pl = layout.plate, s = layout.scale, bs = lv.bodies, i, j;
+    prepMouths(lv);
     paintContours(g, lv);
     g.setTransform(d, 0, 0, d, 0, 0);
     // orbit paths (dotted) and barycentre crosses
@@ -1496,14 +1889,14 @@ var Render = (function () {
       for (j = 0; j < seen.length; j++) if (Math.abs(seen[j].cx - o.cx) < 1 && Math.abs(seen[j].cy - o.cy) < 1 && Math.abs(seen[j].rad - o.rad) < 1) dup = true;
       if (dup) continue; seen.push(o);
       var cx = Pl.x + o.cx * s, cy = Pl.y + o.cy * s, R = o.rad * s, n = Math.max(24, Math.round(TAU * R / 3.4));
-      g.fillStyle = PAL.a('paper', bs[i].pair !== undefined || bs[i].kind === 'planet' ? 0.34 : 0.3);
+      g.fillStyle = PAL.a('paper', (bs[i].pair !== undefined && bs[i].kind !== 'wormhole') || bs[i].kind === 'planet' ? 0.34 : 0.3);
       g.beginPath();
       for (j = 0; j < n; j++) { var a = j * TAU / n; g.moveTo(cx + R * Math.cos(a) + 0.55, cy + R * Math.sin(a)); g.arc(cx + R * Math.cos(a), cy + R * Math.sin(a), 0.55, 0, TAU); }
       g.fill();
     }
     for (i = 0; i < bs.length; i++) {
       var ob = bs[i].orbit;
-      if (!ob || (bs[i].pair === undefined && !isOrbitCentreEmpty(lv, ob))) continue;
+      if (!ob || ((bs[i].pair === undefined || bs[i].kind === 'wormhole') && !isOrbitCentreEmpty(lv, ob))) continue;
       var bx = Pl.x + ob.cx * s, by = Pl.y + ob.cy * s;
       g.strokeStyle = PAL.a('paper', 0.55); g.lineWidth = 0.6; g.beginPath();
       g.moveTo(bx - 3.2, by); g.lineTo(bx + 3.2, by); g.moveTo(bx, by - 3.2); g.lineTo(bx, by + 3.2); g.stroke();
@@ -1511,6 +1904,7 @@ var Render = (function () {
     }
     // fixed bodies (baked)
     for (i = 0; i < bs.length; i++) if (!bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
+    for (i = 0; i < wm.length; i++) if (!wm[i].moving) drawMouthLabel(g, Pl.x + wm[i].b.x * s + wm[i].lx, Pl.y + wm[i].b.y * s + wm[i].ly, wm[i].letter, wm[i].turn);
     // launch station: a small surveyor's benchmark at the probe start
     var px = Pl.x + lv.probe.x * s, py = Pl.y + lv.probe.y * s;
     g.strokeStyle = PAL.a('paper', 0.32); g.lineWidth = 0.5; g.beginPath();
@@ -1540,7 +1934,7 @@ var Render = (function () {
     hudGeo.two = !fit;
     if (fit) hudGeo.yRow = hudGeo.yCap = Pl.y - 29;
     else {
-      hudGeo.yRow = Pl.y - 41; hudGeo.yCap = Pl.y - 20; maxW = hudGeo.xr - hudGeo.xl;
+      hudGeo.yRow = Pl.y - 41; hudGeo.yCap = Pl.y - 20; maxW = (hudGeo.xr - hudGeo.xl) * 0.94;
       for (size = 12; size >= 10; size -= 0.5) { g.font = fnt('600', size, FONT.sc); if (spacedWidth(g, cap, size * 0.12) <= maxW) { fit = true; break; } }
       if (!fit) { size = 10; g.font = fnt('600', size, FONT.sc); sq = maxW / spacedWidth(g, cap, size * 0.12); }
     }
@@ -1586,6 +1980,7 @@ var Render = (function () {
         })(b, i);
       } else if (b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
     }
+    buildMouthSprites(lv);
     // target bezel sprite (rotated each frame)
     var TR = lv.target.r * s;
     tgtSpr = makeSprite(TR + 5, function (sg, c) { drawBezel(sg, c, c, TR); });
@@ -1774,7 +2169,32 @@ var Render = (function () {
   var popT = new Float64Array(8), prevCol = new Uint8Array(8);
   for (var q = 0; q < 8; q++) popT[q] = -1;
 
+  // Wormhole passage flash: two expanding paper rings and a few sparks at each end, ~350 ms; the mouths also spin up.
+  var WARP_MS = 350, WN = 3, warps = [], warpIdx = 0, warpsLive = false, lastT = 0;
+  for (var wi = 0; wi < WN; wi++) warps.push({ on: false, t0: -1, m: [-1, -1], x: [0, 0], y: [0, 0], r: 32, sp: new Float32Array(2 * 6 * 2) });
+  function mouthNear(x, y) {
+    var best = -1, bd = 1e18;
+    for (var i = 0; i < wm.length; i++) {
+      var b = wm[i].b; Physics.bodyPos(b, lastT, P);
+      var dx = P.x - x, dy = P.y - y, dd = dx * dx + dy * dy, lim = b.r * 1.7;
+      if (dd < lim * lim && dd < bd) { bd = dd; best = i; }
+    }
+    return best;
+  }
+  function warp(x0, y0, x1, y1) {
+    if (!level || !(x0 === x0 && y0 === y0 && x1 === x1 && y1 === y1)) return;
+    var w = warps[warpIdx]; warpIdx = (warpIdx + 1) % WN;
+    var r = rng(crashSeed++ * 6271 + 11), i, e;
+    w.on = true; w.t0 = -1; w.x[0] = x0; w.y[0] = y0; w.x[1] = x1; w.y[1] = y1; w.r = 32;
+    w.m[0] = mouthNear(x0, y0); w.m[1] = mouthNear(x1, y1);
+    for (e = 0; e < 2; e++) {
+      if (w.m[e] >= 0) { w.r = wm[w.m[e]].b.r; wm[w.m[e]].kPend = true; }
+      for (i = 0; i < 6; i++) { w.sp[(e * 6 + i) * 2] = (i + 0.15 + r() * 0.7) * TAU / 6 + e * 0.5; w.sp[(e * 6 + i) * 2 + 1] = 5 + r() * 8; }
+    }
+    warpsLive = true;
+  }
   var fx = {
+    warp: warp,
     crash: function (x, y) {
       var c = crashes[crashIdx]; crashIdx = (crashIdx + 1) % CR;
       var r = rng(crashSeed++ * 7717 + 3), i;
@@ -1795,6 +2215,9 @@ var Render = (function () {
     reset: function () {
       for (var i = 0; i < CR; i++) crashes[i].on = false;
       shakePending = false; shakeT0 = -2; succ.on = false; succ.seal = null; succ.n = 0;
+      for (i = 0; i < WN; i++) warps[i].on = false;
+      warpsLive = false;
+      for (i = 0; i < wm.length; i++) wm[i].kPend = false;
       for (i = 0; i < 8; i++) { popT[i] = -1; prevCol[i] = 0; }
     }
   };
@@ -1951,6 +2374,8 @@ var Render = (function () {
       var spr = moving[i].spr;
       ctx.drawImage(spr.c, (ox + P.x * s) * d - spr.h, (oy + P.y * s) * d - spr.h);
     }
+    lastT = t;
+    if (wm.length) drawMouths(now, ox, oy, s, d, t);
     // target bezel, slowly rotating
     var tg = lv.target, rot = now * 0.00011, cr = Math.cos(rot), sr = Math.sin(rot);
     ctx.setTransform(cr, sr, -sr, cr, (ox + tg.x * s) * d, (oy + tg.y * s) * d);
@@ -1984,6 +2409,7 @@ var Render = (function () {
 
     drawFrags(state, now, u);
     if (state.spotlight) drawSpotlight(state.spotlight, now, u);
+    if (warpsLive) drawWarps(now, u, t);
     drawGhosts(state, u);
     var showTrail = state.phase === 'flight' || state.phase === 'result';
     if (showTrail) drawTrail(state.trail, u, succ.on ? 0.45 : 1);
@@ -2054,6 +2480,58 @@ var Render = (function () {
     ctx.globalAlpha = 1;
   }
 
+
+  // Animated parts of the mouths: two knock-out rings turning against each other (sprites, two blits per mouth), a label sprite
+  // for mouths on rails, and a brief spin-up when the probe passes through.
+  function drawMouths(now, ox, oy, s, d, t) {
+    var a0 = now * 0.0005, b0 = -now * 0.00085;
+    for (var i = 0; i < wm.length; i++) {
+      var m = wm[i], b = m.b, x = b.x, y = b.y;
+      if (m.moving) { Physics.bodyPos(b, t, P); x = P.x; y = P.y; }
+      if (m.kPend) { m.kx += m.kd; m.kd = 2.4; m.kt0 = now; m.kPend = false; }
+      var kk = m.kx + m.kd * easeOutCubic((now - m.kt0) / 650), cx = (ox + x * s) * d, cy = (oy + y * s) * d;
+      var ra = a0 + kk, rb = b0 - kk * 1.35, ca = Math.cos(ra), sa = Math.sin(ra), cb = Math.cos(rb), sb = Math.sin(rb);
+      ctx.setTransform(ca, sa, -sa, ca, cx, cy); ctx.drawImage(m.sA.c, -m.sA.h, -m.sA.h);
+      ctx.setTransform(cb, sb, -sb, cb, cx, cy); ctx.drawImage(m.sB.c, -m.sB.h, -m.sB.h);
+      if (m.lbl) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(m.lbl.c, Math.round(cx + m.lx * d - m.lbl.w * d / 2), Math.round(cy + m.ly * d - m.lbl.h * d / 2));
+      }
+    }
+  }
+  function drawWarps(now, u, t) {
+    var live = false, e, i, k, w, p, c;
+    ctx.lineCap = 'round';
+    for (k = 0; k < WN; k++) {
+      w = warps[k]; if (!w.on) continue;
+      if (w.t0 < 0) w.t0 = now;
+      p = (now - w.t0) / WARP_MS; if (p >= 1) { w.on = false; continue; }
+      live = true;
+      for (e = 0; e < 2; e++) {
+        var x = w.x[e], y = w.y[e];
+        if (w.m[e] >= 0) { Physics.bodyPos(wm[w.m[e]].b, t, P); x = P.x; y = P.y; }
+        for (i = 0; i < 2; i++) {                                   // two rings, the second a beat behind
+          var q = (p - i * 0.16) / (1 - i * 0.16); if (q <= 0) continue;
+          ctx.strokeStyle = PAL.paper; ctx.globalAlpha = (i ? 0.45 : 0.85) * (1 - q) * Math.min(1, q * 8);
+          ctx.lineWidth = (1 - 0.45 * q) * u;
+          ctx.beginPath(); ctx.arc(x, y, w.r * (0.85 + (i ? 1.45 : 1.15) * easeOutCubic(q)), 0, TAU); ctx.stroke();
+        }
+        var ease = easeOutCubic(p), a = 1 - p;
+        for (c = 0; c < 2; c++) {                                   // sparks: paper and vermilion, alternating
+          ctx.strokeStyle = c ? PAL.vermilion : PAL.paper; ctx.globalAlpha = a * (c ? 0.9 : 0.75); ctx.lineWidth = (c ? 0.8 : 0.6) * u;
+          ctx.beginPath();
+          for (i = c; i < 6; i += 2) {
+            var an = w.sp[(e * 6 + i) * 2], len = w.sp[(e * 6 + i) * 2 + 1], r0 = w.r * (0.95 + 0.75 * ease), r1 = r0 + len * (1 - 0.6 * ease) * u;
+            var ca = Math.cos(an), sa = Math.sin(an);
+            ctx.moveTo(x + ca * r0, y + sa * r0); ctx.lineTo(x + ca * r1, y + sa * r1);
+          }
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha = 1; warpsLive = live;
+  }
+
   function drawGhosts(state, u) {
     var gs = state.ghosts; if (!gs || !gs.length) return;
     ctx.fillStyle = PAL.paper;
@@ -2072,7 +2550,7 @@ var Render = (function () {
     ctx.globalAlpha = 1;
   }
 
-  var TRAIL_B = 6;
+  var TRAIL_B = 6, JUMP2 = K.WARP_JUMP * K.WARP_JUMP;
   function drawTrail(tr, u, mul) {
     if (!tr || !tr.pts || tr.n < 2) return;
     var cap = tr.pts.length >> 1, n = Math.min(tr.n, cap), start = ((tr.head - n) % cap + cap) % cap, pts = tr.pts;
@@ -2084,13 +2562,18 @@ var Render = (function () {
       ctx.globalAlpha = mul * (0.06 + 0.84 * f * f);
       ctx.lineWidth = (0.55 + 0.6 * f) * u;
       ctx.beginPath();
-      var k = (start + i0) % cap; ctx.moveTo(pts[2 * k], pts[2 * k + 1]);
-      for (var i = i0 + 1; i <= i1; i++) { k = (start + i) % cap; ctx.lineTo(pts[2 * k], pts[2 * k + 1]); }
+      var k = (start + i0) % cap, px = pts[2 * k], py = pts[2 * k + 1]; ctx.moveTo(px, py);
+      for (var i = i0 + 1; i <= i1; i++) {
+        k = (start + i) % cap; var x = pts[2 * k], y = pts[2 * k + 1], dx = x - px, dy = y - py;
+        if (dx * dx + dy * dy > JUMP2) ctx.moveTo(x, y); else ctx.lineTo(x, y);          // a wormhole jump is never connected
+        px = x; py = y;
+      }
       ctx.stroke();
     }
     ctx.globalAlpha = 1; ctx.lineJoin = 'miter';
   }
 
+  var JMAX = 16, JP = new Float32Array(JMAX * 2 + 4);          // ends of wormhole jumps on the replayed path
   function drawSuccessPath(state, now, u) {
     var pts, n;
     if (succ.on) { pts = succ.pts; n = succ.n; if (succ.t0 < 0) succ.t0 = now; }
@@ -2098,48 +2581,86 @@ var Render = (function () {
     if (!pts || n < 2) return;
     var p = succ.on ? (now - succ.t0) / 620 : 1, m = Math.max(1, Math.floor((n - 1) * easeOutCubic(p)));
     ctx.strokeStyle = PAL.brass; ctx.lineWidth = 1.3 * u; ctx.globalAlpha = 0.95; ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(level.probe.x, level.probe.y);
-    for (var i = 0; i <= m; i++) ctx.lineTo(pts[2 * i], pts[2 * i + 1]);
+    var px = level.probe.x, py = level.probe.y, jn = 0, i;
+    ctx.beginPath(); ctx.moveTo(px, py);
+    for (i = 0; i <= m; i++) {
+      var x = pts[2 * i], y = pts[2 * i + 1], dx = x - px, dy = y - py;
+      if (dx * dx + dy * dy > JUMP2) { ctx.moveTo(x, y); if (jn < JMAX) { JP[2 * jn] = px; JP[2 * jn + 1] = py; JP[2 * jn + 2] = x; JP[2 * jn + 3] = y; } jn += 2; }
+      else ctx.lineTo(x, y);
+      px = x; py = y;
+    }
     ctx.stroke();
+    if (jn) {                                               // a small brass ring at each end of a passage: the path re-inked through the gate
+      ctx.lineWidth = 0.8 * u; ctx.beginPath();
+      for (i = 0; i < jn && i < JMAX; i++) { ctx.moveTo(JP[2 * i] + 2.2 * u, JP[2 * i + 1]); ctx.arc(JP[2 * i], JP[2 * i + 1], 2.2 * u, 0, TAU); }
+      ctx.stroke();
+    }
     if (p < 1) { ctx.fillStyle = PAL.brass; ctx.beginPath(); ctx.arc(pts[2 * m], pts[2 * m + 1], 1.8 * u, 0, TAU); ctx.fill(); }
     ctx.globalAlpha = 1; ctx.lineJoin = 'miter';
   }
 
   // ---- aiming stub, astronomer's line, spotlight (all allocation-free; dots collected into one scratch buffer)
   var DOT_MAX = 200, DOTS = new Float32Array(DOT_MAX * 3);          // x, y, key per dot
-  var PRED_SP = 7, PRED_START = 9.5, NB = 10;                        // CSS px between dots, gap left around the probe
+  var DAL = new Float32Array(DOT_MAX), DRD = new Float32Array(DOT_MAX), DSG = new Uint8Array(DOT_MAX), DCL = new Uint8Array(DOT_MAX);
+  // paint the first nd dots (x, y in DOTS; alpha in DAL; radius in CSS px in DRD), batched by quantised alpha
+  function flushDots(nd, u, mul) {
+    var cur = -1, k, b, x, y, r;
+    for (k = 0; k < nd; k++) {
+      b = (DAL[k] * 24 + 0.5) | 0; if (b < 1) continue;
+      if (b !== cur) { if (cur >= 0) ctx.fill(); cur = b; ctx.globalAlpha = b / 24 * mul; ctx.beginPath(); }
+      r = DRD[k] * u; x = DOTS[3 * k]; y = DOTS[3 * k + 1];
+      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+    }
+    if (cur >= 0) ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  var PRED_SP = 7.4, PRED_START = 9.5, PRED_EXIT = 6, NB = 10;                        // CSS px between dots, gap left around the probe
   var BAND_T = []; for (var bq = 0; bq < NB; bq++) BAND_T.push((bq + 0.5) / NB);
   function smooth(a, b, x) { x = (x - a) / (b - a); x = x < 0 ? 0 : x > 1 ? 1 : x; return x * x * (3 - 2 * x); }
-  // The prediction covers only K.PREDICT_STEPS (1.5 s): a short vermilion stub of dots spaced evenly by ARC LENGTH
+  // The prediction covers only K.PREDICT_STEPS (2.25 s): a short vermilion stub of dots spaced evenly by ARC LENGTH
   // (so a slow, tight pull is as legible as a full-power one), tapering in size and dissolving smoothly to nothing.
+  // Dots are spaced by arc length and never connect across a wormhole jump. The fade belongs to the LAST stretch of the whole
+  // path: a stretch that ends in a mouth stays at about half ink right up to it and closes with a clear dot on the aperture;
+  // the stretch after a jump restarts near full ink and dissolves to nothing.
+  var SL_ = new Float32Array(10), SS_ = new Float32Array(10);
   function drawPredict(pr, u) {
-    var n = pr.n, pts = pr.pts, sp = PRED_SP * u, st = PRED_START * u, total = 0, next = st, nd = 0, i, k;
-    var x0 = level.probe.x, y0 = level.probe.y, x, y, dx, dy, seg, f;
+    var n = pr.n, pts = pr.pts, sp = PRED_SP * u, st = PRED_START * u, total = 0, next = st, nd = 0, i, k, lastJ = 0, ns = 0;
+    var x0 = level.probe.x, y0 = level.probe.y, x, y, dx, dy, seg, f, d2, t, a, r;
+    SS_[0] = st;
     for (i = 0; i < n; i++) {
-      x = pts[2 * i]; y = pts[2 * i + 1]; dx = x - x0; dy = y - y0; seg = Math.sqrt(dx * dx + dy * dy);
+      x = pts[2 * i]; y = pts[2 * i + 1]; dx = x - x0; dy = y - y0; d2 = dx * dx + dy * dy;
+      if (d2 > JUMP2) {                                    // wormhole jump: close the stretch on the mouth, restart the spacing at the exit
+        if (nd < DOT_MAX) {
+          var lastKey = nd ? DOTS[3 * (nd - 1) + 2] : -1e9;
+          if (nd ? total - lastKey > sp * 0.45 : total > st + sp * 0.45) { DOTS[3 * nd] = x0; DOTS[3 * nd + 1] = y0; DOTS[3 * nd + 2] = total; DSG[nd] = ns; DCL[nd] = 1; nd++; }
+          else DCL[nd - 1] = 1;                            // the last dot is close enough: it becomes the closing dot
+        }
+        if (ns < 8) { SL_[ns] = Math.max(total - SS_[ns], sp); ns++; SS_[ns] = total; }
+        x0 = x; y0 = y; next = total + PRED_EXIT * u; lastJ = i; continue;
+      }
+      seg = Math.sqrt(d2);
       while (total + seg >= next && nd < DOT_MAX) {
         f = seg > 0 ? (next - total) / seg : 0;
-        DOTS[3 * nd] = x0 + dx * f; DOTS[3 * nd + 1] = y0 + dy * f; DOTS[3 * nd + 2] = next; nd++; next += sp;
+        DOTS[3 * nd] = x0 + dx * f; DOTS[3 * nd + 1] = y0 + dy * f; DOTS[3 * nd + 2] = next; DSG[nd] = ns; DCL[nd] = 0; nd++; next += sp;
       }
       total += seg; x0 = x; y0 = y;
     }
     if (!nd) return;
-    var span = Math.max(total - st, sp), cur = -1, t, b, r;
-    ctx.fillStyle = PAL.vermilion;
+    SL_[ns] = Math.max(total - SS_[ns], sp);
     for (k = 0; k < nd; k++) {
-      t = (DOTS[3 * k + 2] - st) / span; t = t > 1 ? 1 : t;
-      b = Math.min(NB - 1, (t * NB) | 0);
-      if (b !== cur) {
-        if (cur >= 0) ctx.fill();
-        cur = b; ctx.globalAlpha = 0.95 * (1 - smooth(0.05, 1.08, BAND_T[b])); ctx.beginPath();
-      }
-      r = (1.2 - 0.6 * t) * u; x = DOTS[3 * k]; y = DOTS[3 * k + 1];
-      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+      var sg = DSG[k], last = sg === ns;
+      t = (DOTS[3 * k + 2] - SS_[sg]) / SL_[sg]; t = t > 1 ? 1 : t < 0 ? 0 : t;
+      if (DCL[k] && !last) { a = 0.95; r = 1.55; }
+      else if (!last) { a = 0.95 - 0.45 * t; r = 1.2 - 0.2 * t; }
+      else { a = (sg ? 0.88 : 0.95) * Math.pow(1 - smooth(0.02, 1.0, t), 1.45); r = 1.2 - 0.68 * t; }
+      DAL[k] = a; DRD[k] = r;
     }
-    ctx.fill();
-    // engraver's end mark: a hair-thin tick across the path where the stub ends
-    if (n > 5 && total > st + 4 * u) {
-      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], tx = ex - pts[2 * (n - 6)], ty = ey - pts[2 * (n - 6) + 1];
+    ctx.fillStyle = PAL.vermilion;
+    flushDots(nd, u, 1);
+    // engraver's end mark: a hair-thin tick across the path where the stub ends (never reaching back across a jump)
+    var i5 = Math.max(n - 6, lastJ);
+    if (n > 5 && n - 1 - i5 >= 2 && SL_[ns] > 4 * u) {
+      var ex = pts[2 * (n - 1)], ey = pts[2 * (n - 1) + 1], tx = ex - pts[2 * i5], ty = ey - pts[2 * i5 + 1];
       var tl = Math.sqrt(tx * tx + ty * ty) || 1, c = 3.2 * u;
       ctx.strokeStyle = PAL.vermilion; ctx.globalAlpha = 0.34; ctx.lineWidth = 0.6 * u; ctx.beginPath();
       ctx.moveTo(ex - ty / tl * c, ey + tx / tl * c); ctx.lineTo(ex + ty / tl * c, ey - tx / tl * c); ctx.stroke();
@@ -2150,37 +2671,56 @@ var Render = (function () {
   // Consult the Astronomer: the opening of a winning course as brass dots, a dot every 5 steps, larger than the
   // vermilion prediction and fading toward the far end. The italic label is drawn after the plate clip (hintLabel).
   var HINT_SP = 5, HINT_LBL_PX = 58, hintLbl = { on: false, x: 0, y: 0, ang: 0, a: 0 }, hintSpr = null;
+  var SEG_S = new Int32Array(10), SEG_E = new Int32Array(10), SEG_L = new Float32Array(10);
   function drawHint(state, now, u, ox, oy) {
     var h = state.hint; hintLbl.on = false;
     if (!h || !h.on || !h.pts || !(h.n > 4)) return;
     var n = Math.min(h.n | 0, h.pts.length >> 1), pts = h.pts, s = layout.scale;
     var fade = easeOutCubic((now - (+h.t0 || 0)) / 300);
     if (!(fade > 0)) return;
-    var px = level.probe.x, py = level.probe.y, skip2 = (K.DRAG_CANCEL + 7) * (K.DRAG_CANCEL + 7), nd = 0, i, dx, dy;
-    for (i = HINT_SP - 1; i < n && nd < DOT_MAX; i += HINT_SP) {
-      dx = pts[2 * i] - px; dy = pts[2 * i + 1] - py;
-      if (dx * dx + dy * dy < skip2) continue;
-      DOTS[3 * nd] = pts[2 * i]; DOTS[3 * nd + 1] = pts[2 * i + 1]; DOTS[3 * nd + 2] = i; nd++;
-    }
-    if (!nd) return;
-    var cur = -1, k, f, b, r, x, y;
-    ctx.fillStyle = PAL.brass;
-    for (k = 0; k < nd; k++) {
-      f = DOTS[3 * k + 2] / (n - 1);
-      b = Math.min(NB - 1, (f * NB) | 0);
-      if (b !== cur) {
-        if (cur >= 0) ctx.fill();
-        cur = b; ctx.globalAlpha = fade * (0.95 - 0.78 * BAND_T[b]); ctx.beginPath();
+    var px = level.probe.x, py = level.probe.y, skip2 = (K.DRAG_CANCEL + 7) * (K.DRAG_CANCEL + 7), nd = 0, i, dx, dy, d2;
+    // segments between wormhole jumps; dots every HINT_SP steps, the count restarting at each exit and a dot closing each entry
+    var ns = 0, s0 = 0, lastDot = -99, sl = 0;
+    SEG_S[0] = 0;
+    for (i = 0; i < n; i++) {
+      var jump = false;
+      if (i) { dx = pts[2 * i] - pts[2 * i - 2]; dy = pts[2 * i + 1] - pts[2 * i - 1]; d2 = dx * dx + dy * dy; if (d2 > JUMP2) jump = true; else sl += Math.sqrt(d2); }
+      if (jump) {
+        if (ns < 9) { SEG_E[ns] = i - 1; SEG_L[ns] = sl; ns++; SEG_S[ns] = i; }
+        if (lastDot < i - 2 && nd < DOT_MAX) { var cj = i - 1; dx = pts[2 * cj] - px; dy = pts[2 * cj + 1] - py; if (dx * dx + dy * dy >= skip2) { DOTS[3 * nd] = pts[2 * cj]; DOTS[3 * nd + 1] = pts[2 * cj + 1]; DOTS[3 * nd + 2] = cj; DSG[nd] = ns - 1; DCL[nd] = 1; nd++; } }
+        else if (nd) DCL[nd - 1] = 1;
+        s0 = i; sl = 0; lastDot = -99;
       }
-      r = (1.65 - 0.65 * f) * u; x = DOTS[3 * k]; y = DOTS[3 * k + 1];
-      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU);
+      if (nd >= DOT_MAX) continue;
+      if ((i - s0) % HINT_SP === (s0 ? 2 : HINT_SP - 1)) {
+        dx = pts[2 * i] - px; dy = pts[2 * i + 1] - py;
+        if (dx * dx + dy * dy < skip2) continue;
+        DOTS[3 * nd] = pts[2 * i]; DOTS[3 * nd + 1] = pts[2 * i + 1]; DOTS[3 * nd + 2] = i; DSG[nd] = ns; DCL[nd] = 0; nd++; lastDot = i;
+      }
     }
-    ctx.fill();
+    SEG_E[ns] = n - 1; SEG_L[ns] = sl; ns++;
+    if (!nd) return;
+    var k, f, aa, rr;
+    for (k = 0; k < nd; k++) {                      // as the aiming stub: a stretch ending in a mouth holds half ink up to it, the last one fades
+      var sg = DSG[k], last = sg === ns - 1, sa = SEG_S[sg], sz = Math.max(1, SEG_E[sg] - sa);
+      f = (DOTS[3 * k + 2] - sa) / sz; f = f > 1 ? 1 : f < 0 ? 0 : f;
+      if (DCL[k] && !last) { aa = 0.95; rr = 1.9; }
+      else if (!last) { aa = 0.95 - 0.4 * f; rr = 1.65 - 0.2 * f; }
+      else { aa = (sg ? 0.9 : 0.95) - 0.78 * f; rr = 1.65 - 0.65 * f; }
+      DAL[k] = aa; DRD[k] = rr;
+    }
+    ctx.fillStyle = PAL.brass;
+    flushDots(nd, u, fade);
     ctx.globalAlpha = 1;
-    // label anchor: ~58 px along the line (clear of the probe and the pull ring), set beside the dots
+    // label anchor: ~58 px along the first stretch (clear of the probe and the pull ring), set beside the dots. A stretch
+    // too short for the label hands it to the first long one, else the longest (labels never straddle a jump).
     if (!hintSpr) return;
-    var a = 0, lim = HINT_LBL_PX / s, acc = 0;
-    for (i = 1; i < n; i++) {
+    var sg0 = 0, sgE = SEG_E[0], want = (HINT_LBL_PX + hintSpr.w * 0.5) / s, sgi = -1, longest = 0;
+    for (i = 0; i < ns; i++) { if (SEG_L[i] >= want) { sgi = i; break; } if (SEG_L[i] > SEG_L[longest]) longest = i; }
+    if (sgi < 0) sgi = longest;
+    sg0 = SEG_S[sgi]; sgE = SEG_E[sgi];
+    var a = 0, lim = (sgi ? Math.min(HINT_LBL_PX, SEG_L[sgi] * s * 0.3) : HINT_LBL_PX) / s, acc = 0;
+    for (i = sg0 + 1; i <= sgE; i++) {
       dx = pts[2 * i] - pts[2 * i - 2]; dy = pts[2 * i + 1] - pts[2 * i - 1]; acc += Math.sqrt(dx * dx + dy * dy);
       if (acc >= lim) { a = i; break; }
     }
@@ -2188,11 +2728,11 @@ var Render = (function () {
     // the label spans sw px of the line from the anchor: use the chord over that span for its angle, and stand it
     // off by the path's own bulge so a curving line never runs through the letters
     var Pl = layout.plate, sw = hintSpr.w, sh = hintSpr.hh, i1 = a, acc2 = 0;
-    for (i = a + 1; i < n; i++) {
+    for (i = a + 1; i <= sgE; i++) {
       dx = pts[2 * i] - pts[2 * i - 2]; dy = pts[2 * i + 1] - pts[2 * i - 1]; acc2 += Math.sqrt(dx * dx + dy * dy);
       i1 = i; if (acc2 * s >= sw) break;
     }
-    var i0 = Math.max(0, a - 2);
+    var i0 = Math.max(sg0, a - 2);
     var tx = pts[2 * i1] - pts[2 * i0], ty = pts[2 * i1 + 1] - pts[2 * i0 + 1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
     tx /= tl; ty /= tl;
     var ang = Math.atan2(ty, tx); if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
@@ -2223,19 +2763,23 @@ var Render = (function () {
 
   // Popup-card spotlight: an engraved dashed ring (slowly turning) with four fine leader ticks round each point.
   var DASH_S = [0, 0];
+  // Entries are {x, y} or {x, y, r}: r (world units, > 0) sets the ring radius, the default being 2.2 x K.FRAG_R.
   function drawSpotlight(sl, now, u) {
     var n = sl.length | 0; if (n < 1) return;
     if (n > 8) n = 8;
-    var R = K.FRAG_R * 2.2, circ = TAU * R, nd = Math.max(10, Math.round(circ / u / 5.6)), per = circ / nd;
-    var a0 = now * 0.00032, i, k, p, x, y, a, ca, sa;
-    DASH_S[0] = per * 0.56; DASH_S[1] = per * 0.44;
+    var a0 = now * 0.00032, i, k, p, x, y, a, ca, sa, R, circ, nd, per;
     ctx.strokeStyle = PAL.paper; ctx.lineCap = 'butt';
-    ctx.globalAlpha = 0.55; ctx.lineWidth = 0.85 * u; ctx.setLineDash(DASH_S); ctx.beginPath();
-    for (i = 0; i < n; i++) { p = sl[i]; if (!p) continue; ctx.moveTo(p.x + R * Math.cos(a0), p.y + R * Math.sin(a0)); ctx.arc(p.x, p.y, R, a0, a0 + TAU); }
-    ctx.stroke(); ctx.setLineDash(DASH_NONE);
+    ctx.globalAlpha = 0.55; ctx.lineWidth = 0.85 * u;
+    for (i = 0; i < n; i++) {
+      p = sl[i]; if (!p) continue; R = spotR(p);
+      circ = TAU * R; nd = Math.max(10, Math.round(circ / u / 5.6)); per = circ / nd;
+      DASH_S[0] = per * 0.56; DASH_S[1] = per * 0.44; ctx.setLineDash(DASH_S);
+      ctx.beginPath(); ctx.moveTo(p.x + R * Math.cos(a0), p.y + R * Math.sin(a0)); ctx.arc(p.x, p.y, R, a0, a0 + TAU); ctx.stroke();
+    }
+    ctx.setLineDash(DASH_NONE);
     ctx.globalAlpha = 0.5; ctx.lineWidth = 0.6 * u; ctx.beginPath();
     for (i = 0; i < n; i++) {
-      p = sl[i]; if (!p) continue; x = p.x; y = p.y;
+      p = sl[i]; if (!p) continue; x = p.x; y = p.y; R = spotR(p);
       for (k = 0; k < 4; k++) {
         a = -a0 * 0.5 + k * Math.PI / 2 + Math.PI / 4; ca = Math.cos(a); sa = Math.sin(a);
         ctx.moveTo(x + ca * (R + 3.2 * u), y + sa * (R + 3.2 * u)); ctx.lineTo(x + ca * (R + 9.5 * u), y + sa * (R + 9.5 * u));
@@ -2243,10 +2787,11 @@ var Render = (function () {
     }
     ctx.stroke();
     ctx.globalAlpha = 0.2; ctx.lineWidth = 0.5 * u; ctx.beginPath();          // faint inner hairline
-    for (i = 0; i < n; i++) { p = sl[i]; if (!p) continue; ctx.moveTo(p.x + R * 0.88, p.y); ctx.arc(p.x, p.y, R * 0.88, 0, TAU); }
+    for (i = 0; i < n; i++) { p = sl[i]; if (!p) continue; R = spotR(p); ctx.moveTo(p.x + R * 0.88, p.y); ctx.arc(p.x, p.y, R * 0.88, 0, TAU); }
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
+  function spotR(p) { var r = +p.r; return r > 0 && r < 600 ? r : K.FRAG_R * 2.2; }
 
   var aimLbl = { on: false, x: 0, y: 0, i: 0 };
   // Power label placement (screen px). Preferred: just beyond the ruler's end. If that would touch the plate
@@ -2332,7 +2877,11 @@ var Render = (function () {
       if (vl > 1e-6) { ax = sim.vx / vl; ay = sim.vy / vl; }
     } else if (state.phase === 'result' && state.result && state.result.success) {
       var r = succ.on ? succ : state.result, n = r.n | 0;
-      if (r.pts && n > 1) { x = r.pts[2 * (n - 1)]; y = r.pts[2 * (n - 1) + 1]; ax = x - r.pts[2 * (n - 2)]; ay = y - r.pts[2 * (n - 2) + 1]; var l = Math.sqrt(ax * ax + ay * ay) || 1; ax /= l; ay /= l; }
+      if (r.pts && n > 1) {
+        x = r.pts[2 * (n - 1)]; y = r.pts[2 * (n - 1) + 1]; ax = x - r.pts[2 * (n - 2)]; ay = y - r.pts[2 * (n - 2) + 1];
+        if (ax * ax + ay * ay > JUMP2) { ax = 0; ay = -1; }       // the last step was a wormhole jump: no heading to show
+        var l = Math.sqrt(ax * ax + ay * ay) || 1; ax /= l; ay /= l;
+      }
     } else if (state.phase === 'aim' && state.aim && state.aim.active && !state.aim.cancel) {
       var al = Math.sqrt(state.aim.dx * state.aim.dx + state.aim.dy * state.aim.dy) || 1; ax = -state.aim.dx / al; ay = -state.aim.dy / al;
     }
@@ -2480,6 +3029,36 @@ var Render = (function () {
   }
 
   // ---------------------------------------------------------------- thumbnails (level select)
+  // A mouth in miniature: ring, a broken inner ring and a pupil; the pair letters are added once all bodies are down.
+  function thumbMouth(c, x, y, R) {
+    c.fillStyle = PAL.ink; c.beginPath(); c.arc(x, y, R * 1.3, 0, TAU); c.fill();
+    c.strokeStyle = PAL.paper; c.lineCap = 'round';
+    c.globalAlpha = 0.95; c.lineWidth = 0.7; c.beginPath(); c.arc(x, y, R, 0, TAU); c.stroke();
+    c.globalAlpha = 0.65; c.lineWidth = 0.5; c.beginPath();
+    for (var k = 0; k < 3; k++) { var a = k * TAU / 3 + 0.3; c.moveTo(x + R * 0.58 * Math.cos(a), y + R * 0.58 * Math.sin(a)); c.arc(x, y, R * 0.58, a, a + 1.35); }
+    c.stroke();
+    c.globalAlpha = 1; c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, Math.min(0.9, R * 0.22), 0, TAU); c.fill();
+    c.lineCap = 'butt';
+  }
+  var TH_DIRS = [0, Math.PI, -Math.PI / 2, Math.PI / 2, -Math.PI / 4, -3 * Math.PI / 4, Math.PI / 4, 3 * Math.PI / 4];
+  function thumbLetters(c, lv, ox, oy, s, pw, ph) {
+    var bs = lv.bodies, no = pairNumbers(lv), tg = lv.target, i, k;
+    c.font = 'italic 500 8px ' + FONT.serif; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = PAL.a('paper', 0.92);
+    for (i = 0; i < bs.length; i++) {
+      var b = bs[i]; if (b.kind !== 'wormhole') continue;
+      Physics.bodyPos(b, 0, P);
+      var x = ox + P.x * s, y = oy + P.y * s, R = Math.max(2.6, b.r * s), tx = x + R + 5, ty = y;
+      for (k = 0; k < TH_DIRS.length; k++) {
+        var qx = x + Math.cos(TH_DIRS[k]) * (R + 5), qy = y + Math.sin(TH_DIRS[k]) * (R + 5);
+        var ex = qx - (ox + tg.x * s), ey = qy - (oy + tg.y * s), tr = Math.max(2.5, tg.r * s) + 4;
+        if (qx < ox + 6 || qx > ox + pw - 6 || qy < oy + 6 || qy > oy + ph - 6 || ex * ex + ey * ey < tr * tr) continue;
+        tx = qx; ty = qy; break;
+      }
+      c.fillText(GREEK[(no[i] | 0) % GREEK.length], tx, ty);
+    }
+    c.textAlign = 'start'; c.textBaseline = 'alphabetic';
+  }
+
   function drawThumbnail(c, lv, w, h) {
     if (!c || !lv) return;
     c.save();
@@ -2507,10 +3086,13 @@ var Render = (function () {
     c.strokeStyle = PAL.a('paper', 0.3); c.lineWidth = 0.4; c.setLineDash([0.6, 1.6]); c.beginPath();
     for (i = 0; i < bs.length; i++) { o = bs[i].orbit; if (!o) continue; c.moveTo(ox + (o.cx + o.rad) * s, oy + o.cy * s); c.arc(ox + o.cx * s, oy + o.cy * s, o.rad * s, 0, TAU); }
     c.stroke(); c.setLineDash(DASH_NONE);
+    var nw = 0;
     for (i = 0; i < bs.length; i++) {
       Physics.bodyPos(bs[i], 0, P);
+      if (bs[i].kind === 'wormhole') { thumbMouth(c, ox + P.x * s, oy + P.y * s, Math.max(2.6, bs[i].r * s), i); nw++; continue; }
       drawBodyArt(c, bs[i], i, ox + P.x * s, oy + P.y * s, s, lv.seed);
     }
+    if (nw) thumbLetters(c, lv, ox, oy, s, pw, ph);
     // fragments, target, probe
     var fr = lv.frags || [];
     c.fillStyle = PAL.brass; c.beginPath();
@@ -2527,7 +3109,7 @@ var Render = (function () {
     c.restore();
   }
 
-  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx,
+  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx, warp: warp,
            worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; }, get caption() { return capInfo; } };
 })();
 
@@ -2566,31 +3148,6 @@ var Sound = (function () {
     return ctx;
   }
 
-  // iOS routes Web Audio through the "ambient" session, which the ringer/silent switch mutes. Playing a silent
-  // HTML <audio> element (and asking for a 'playback' session where supported) makes Web Audio audible even
-  // with the switch on silent. The element is paused whenever the app is suspended.
-  var keepEl = null;
-  function silentWavUri() {
-    var n = 8000, s = '', i;   // 1 s, 8-bit mono, 8 kHz, value 128 = silence
-    function u32(v) { return String.fromCharCode(v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >> 24) & 255); }
-    function u16(v) { return String.fromCharCode(v & 255, (v >> 8) & 255); }
-    s += 'RIFF' + u32(36 + n) + 'WAVEfmt ' + u32(16) + u16(1) + u16(1) + u32(8000) + u32(8000) + u16(1) + u16(8) + 'data' + u32(n);
-    for (i = 0; i < n; i++) s += '\x80';
-    return 'data:audio/wav;base64,' + btoa(s);
-  }
-  function primeSession() {
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
-    try {
-      if (!keepEl) {
-        keepEl = new Audio();
-        keepEl.src = silentWavUri();
-        keepEl.loop = true; keepEl.preload = 'auto';
-        keepEl.setAttribute('playsinline', ''); keepEl.setAttribute('webkit-playsinline', '');
-      }
-      if (keepEl.paused && !suspendedByApp) { var p = keepEl.play(); if (p && p.catch) p.catch(function () {}); }
-    } catch (e) { keepEl = null; }
-  }
-
   function silentBlip(c) {   // a silent buffer started inside the gesture fully unlocks output on older iOS
     try { var b = c.createBuffer(1, 1, 22050), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } catch (e) {}
   }
@@ -2600,7 +3157,6 @@ var Sound = (function () {
   function unlock(cb) {
     var c = ensure();
     if (!c) return;
-    primeSession();
     if (c.state !== 'running' && !suspendedByApp) {
       silentBlip(c);
       try {
@@ -2635,12 +3191,10 @@ var Sound = (function () {
   function suspend() {
     suspendedByApp = true;
     droneStop();
-    if (keepEl) { try { keepEl.pause(); } catch (e) {} }
     if (ctx && ctx.state === 'running') { try { var p = ctx.suspend(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
   }
   function resume() {
     suspendedByApp = false;
-    if (keepEl && keepEl.paused) { try { var k = keepEl.play(); if (k && k.catch) k.catch(function () {}); } catch (e) {} }
     if (ctx && ctx.state !== 'running') { try { var p = ctx.resume(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
   }
 
@@ -2784,6 +3338,37 @@ var Sound = (function () {
     } catch (e) {}
   }
 
+  // ---- warp: soft wormhole passage (~0.35 s). A sine glides down then up, with a faint filtered breath of noise.
+  //      Quieter than bell; smooth sine-shaped envelope with a 25 ms fade in/out so there are no clicks. ----
+  function warp() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.01, D = 0.35;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(520, t);
+      o.frequency.exponentialRampToValueAtTime(190, t + D * 0.5);
+      o.frequency.exponentialRampToValueAtTime(430, t + D);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.11, t + 0.04);
+      g.gain.setValueAtTime(0.11, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t + D + 0.03);
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
+      bp.frequency.setValueAtTime(900, t);
+      bp.frequency.exponentialRampToValueAtTime(380, t + D * 0.5);
+      bp.frequency.exponentialRampToValueAtTime(800, t + D);
+      var gn = ctx.createGain();
+      gn.gain.setValueAtTime(0.0001, t);
+      gn.gain.exponentialRampToValueAtTime(0.035, t + 0.08);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      src.connect(bp); bp.connect(gn); gn.connect(master);
+      src.start(t, Math.random() * 1.0); src.stop(t + D + 0.03);
+    } catch (e) {}
+  }
+
   // ---- launch: soft whoosh, bandpassed noise sweep ----
   function launch(power) {
     if (!ready()) return;
@@ -2804,18 +3389,18 @@ var Sound = (function () {
   return {
     unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
     droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
-    chime: chime, ach: ach, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    chime: chime, ach: ach, warp: warp, thump: thump, pluck: pluck, tick: tick, launch: launch,
     get state() { return ctx ? ctx.state : 'none'; }
   };
 })();
 
 // ===================== MODULE: 50-save.js =====================
 /* PERIHELION — save.
-   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: 60 plates, `seen` flags for the
+   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: plates (60 at first, 90 with Volume III; shorter saved arrays are padded with zeros), `seen` flags for the
    popup cards, the Daily Plate record, lifetime `stats` and unlocked achievements. Every storage access is wrapped in
    try/catch; if storage is unavailable (private mode, sandboxed iframe, quota) the game keeps working from memory. */
 var Save = (function () {
-  var KEY = 'perihelion.v1', N = 60, VERSION = 2;
+  var KEY = 'perihelion.v1', N = 90, VERSION = 2;
   var persistent = false;
   var DAY = 86400000;
 
@@ -2977,7 +3562,11 @@ var Save = (function () {
    - "clean sweep" compares fragsThisAttempt with the number of fragments on the plate (level.frags.length; falls back to
      data.fragsTotal when no level is given).
    - Campaign-only counts (cartographer, volumes, perfectionist, self_reliant) use plateIndex >= 0 and treat the plate being
-     sealed as sealed even if Save.recordPlate has not run yet. */
+     sealed as sealed even if Save.recordPlate has not run yet.
+   - Volume ranges come from Levels.VOLUMES (Volumes I and II fall back to 0-29 / 30-59 if Levels is missing); a volume that
+     does not exist never unlocks its honour. Plate counts come from Save.N. Honours are only ever added, never revoked.
+   - Wormholes: flightEnd counts sim.warps (stat 'warps') and remembers whether the winning flight warped; plateSealed uses
+     that for the gate honours (stat 'gateSeals' counts sealed flights that warped). */
 var Log = (function () {
   var ROM_VOL = [{ from: 0, to: 29 }, { from: 30, to: 59 }];
 
@@ -2996,9 +3585,11 @@ var Log = (function () {
   function hasPair(level) {
     var b = level && level.bodies;
     if (!b) return false;
-    for (var i = 0; i < b.length; i++) if (b[i] && b[i].pair !== undefined && b[i].pair !== null) return true;
+    for (var i = 0; i < b.length; i++) if (b[i] && b[i].kind !== 'wormhole' && b[i].pair !== undefined && b[i].pair !== null) return true;
     return false;
   }
+  function vol(i) { var v; try { v = Levels.VOLUMES[i]; } catch (e) {} return v || ROM_VOL[i] || null; }
+  function volDone(c, i, min) { var v = vol(i); return !!v && v.to >= v.from && sealedAll(c, v.from, v.to, min); }
   function sealedNow(c) { return c.ev === 'plateSealed'; }
   function oneShot(c) { return sealedNow(c) && c.data.launches === 1; }
 
@@ -3022,20 +3613,30 @@ var Log = (function () {
       test: function (c) { return c.totals.sealed >= 10; } },
     { id: 'cartographer_30', name: 'Journeyman Cartographer', blurb: 'Seal thirty plates of the Atlas.',
       test: function (c) { return c.totals.sealed >= 30; } },
-    { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal all sixty plates of the Atlas.',
+    { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal sixty plates of the Atlas.',
       test: function (c) { return c.totals.sealed >= 60; } },
+    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal all ninety plates of the Atlas.',
+      test: function (c) { return c.totals.sealed >= 90; } },
     { id: 'volume_one', name: 'Volume I, Complete', blurb: 'Seal every plate of Volume I.',
-      test: function (c) { return sealedAll(c, ROM_VOL[0].from, ROM_VOL[0].to, 1); } },
+      test: function (c) { return volDone(c, 0, 1); } },
     { id: 'volume_two', name: 'Volume II, Complete', blurb: 'Seal every plate of Volume II.',
-      test: function (c) { return sealedAll(c, ROM_VOL[1].from, ROM_VOL[1].to, 1); } },
+      test: function (c) { return volDone(c, 1, 1); } },
+    { id: 'volume_three', name: 'Volume III, Complete', blurb: 'Seal every plate of Volume III.',
+      test: function (c) { return volDone(c, 2, 1); } },
     { id: 'perfectionist', name: 'The Perfectionist', blurb: 'Three stars on every plate of Volume I.',
-      test: function (c) { return sealedAll(c, ROM_VOL[0].from, ROM_VOL[0].to, 3); } },
+      test: function (c) { return volDone(c, 0, 3); } },
     { id: 'event_horizon', name: 'Event Horizon', blurb: 'Seal a plate holding a black hole with a single launch.',
       test: function (c) { return oneShot(c) && hasKind(c.level, 'blackhole'); } },
     { id: 'contrary_star', name: 'Contrary Star', blurb: 'Seal a plate holding a repulsor with a single launch.',
       test: function (c) { return oneShot(c) && hasKind(c.level, 'repulsor'); } },
     { id: 'binary_star', name: 'Binary Star', blurb: 'Seal a plate holding a binary pair with a single launch.',
       test: function (c) { return oneShot(c) && hasPair(c.level); } },
+    { id: 'first_gate', name: 'Through the Gate', blurb: 'Seal a plate with a flight that passed a wormhole.',
+      test: function (c) { return sealedNow(c) && c.warps >= 1; } },
+    { id: 'double_gate', name: 'Twice Through', blurb: 'Seal a plate with one flight that passed two wormholes.',
+      test: function (c) { return sealedNow(c) && c.warps >= 2; } },
+    { id: 'gate_keeper', name: 'Keeper of the Gates', blurb: 'Seal ten flights that passed a wormhole.',
+      test: function (c) { return c.stat('gateSeals') >= 10; } },
     { id: 'persistence', name: 'Persistence of Vision', blurb: 'Seal a plate on your third and final launch.',
       test: function (c) { return sealedNow(c) && c.data.launches === 3; } },
     { id: 'long_way_round', name: 'The Long Way Round', blurb: 'Win with a flight of 960 steps or more.',
@@ -3064,7 +3665,7 @@ var Log = (function () {
 
   // ---- helpers -------------------------------------------------------------------------------------------------------
   var STAT_NAMES = ['launches', 'wins', 'losses', 'crashes', 'lost', 'distance', 'frags', 'hints', 'nearMiss', 'threads',
-    'platesNoHint', 'dailyWins', 'endlessRounds'];
+    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps'];
 
   function num(x, dflt) { x = Number(x); return isFinite(x) ? x : dflt; }
   function stat(n) { try { return Save.stat(n) || 0; } catch (e) { return 0; } }
@@ -3100,7 +3701,7 @@ var Log = (function () {
   function starsNow(pending) {
     var a = [], i, src = null;
     try { src = Save.data.stars; } catch (e) {}
-    var n = 60; try { n = Save.N || 60; } catch (e) {}
+    var n = 90; try { n = Save.N || 90; } catch (e) {}
     for (i = 0; i < n; i++) a.push(src && src[i] ? src[i] : 0);
     if (pending && pending.idx >= 0 && pending.idx < n) a[pending.idx] = Math.max(a[pending.idx], pending.stars > 0 ? pending.stars : 1);
     return a;
@@ -3128,7 +3729,7 @@ var Log = (function () {
     var full = {
       ev: c.ev, data: c.data || {}, level: c.level || null, win: !!c.win,
       minGap: c.minGap === undefined ? Infinity : c.minGap, minDist: c.minDist === undefined ? Infinity : c.minDist,
-      steps: c.steps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
+      steps: c.steps || 0, warps: c.warps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
       endlessRound: c.endlessRound || 0,
       stars: stars, totals: c.totals || totalsOf(stars), stat: stat, dailyBest: 0
     };
@@ -3157,6 +3758,7 @@ var Log = (function () {
   // ---- events --------------------------------------------------------------------------------------------------------
   function isWin(status) { return status === 'hit'; }
 
+  var last = { lv: null, w: 0 };      // the latest flightEnd: its plate and (if it hit) how many times it warped
   var handlers = {
     launch: function (d) {
       bump('launches');
@@ -3176,6 +3778,9 @@ var Log = (function () {
       if (win && gap <= 12) bump('threads');
       var fd = fragDelta(d.level, d.fragsThisAttempt);
       if (fd > 0) bump('frags', fd);
+      var wp = Math.max(0, Math.floor(num(sim.warps, 0)));
+      if (wp > 0) bump('warps', wp);
+      last = { lv: d.level, w: win ? wp : 0 };
       return { ev: 'flightEnd', data: d, level: d.level, win: win, minGap: gap, minDist: num(sim.minDist, Infinity),
         steps: num(sim.step, 0), aimOff: win ? aimOffset(sim, d.level) : Infinity };
     },
@@ -3186,10 +3791,13 @@ var Log = (function () {
       if (fd > 0) bump('frags', fd);
       var idx = num(d.plateIndex, -1);
       if (idx >= 0 && !d.hintUsed) bump('platesNoHint');
+      var wp = (last.lv || null) === level ? last.w : 0;
+      last = { lv: null, w: 0 };
+      if (wp > 0) bump('gateSeals');
       var stars = starsNow({ idx: idx, stars: num(d.stars, 1) });
       var plateFrags = level && level.frags ? level.frags.length : num(d.fragsTotal, 0);
       return { ev: 'plateSealed', data: d, level: level, stars: stars, totals: totalsOf(stars),
-        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)) };
+        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp };
     },
 
     hint: function (d) {
@@ -3452,7 +4060,7 @@ var LogUI = (function () {
 
   function render(snap) {
     var t = snap.totals || {}, st = snap.stats || {}, dl = snap.daily || {}, ach = snap.achievements || [];
-    var N = 60; try { N = Save.N || 60; } catch (e) {}
+    var N = 90; try { N = Save.N || 90; } catch (e) {}
     var got = 0, i;
     for (i = 0; i < ach.length; i++) if (ach[i].unlocked) got++;
     var hit = st.launches > 0 ? Math.round(100 * (st.hitRate || 0)) + '<i>%</i>' : '&mdash;';
@@ -3469,7 +4077,8 @@ var LogUI = (function () {
       row('Hit rate', hit) +
       row('Distance flown', fmt(st.distance || 0), 'u') +
       row('Near misses', fmt(st.nearMiss || 0)) +
-      row('Needles threaded', fmt(st.threads || 0)) + '</ul>';
+      row('Needles threaded', fmt(st.threads || 0)) +
+      row('Gates passed', fmt(st.warps || 0)) + '</ul>';
     if (!(st.launches > 0)) h += '<p class="lg-note">Nothing observed as yet. The log fills as you fly.</p>';
     h += '</section>';
 
@@ -3628,8 +4237,11 @@ var LogUI = (function () {
   var elZoneL = $('zone-l'), elZoneR = $('zone-r'), elProbe = $('safe-probe');
 
   var CAMP = Levels.CAMPAIGN || [];
-  var NPL = Math.min(Save.N, CAMP.length);
-  var VOLS = (Levels.VOLUMES && Levels.VOLUMES.length) ? Levels.VOLUMES : [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }];
+  var VOLS = (Levels.VOLUMES && Levels.VOLUMES.length) ? Levels.VOLUMES : (function () {   // fallback: thirty plates a volume, sized from the campaign
+    var v = [], n = Math.max(1, Math.ceil(CAMP.length / 30)), names = ['Volume I', 'Volume II', 'Volume III', 'Volume IV', 'Volume V'];
+    for (var i = 0; i < n; i++) v.push({ name: names[i] || 'Volume ' + toRoman(i + 1), from: i * 30, to: i * 30 + 29 });
+    return v;
+  })();
   var MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   var STEP_HZ = Math.round(1 / K.DT);
   var FAIL_TEXT = {
@@ -3643,13 +4255,14 @@ var LogUI = (function () {
     screen: 'title',
     paused: false,
     mode: 'campaign',                 // 'campaign' | 'endless' | 'daily'
+    custom: false,                    // a test plate from __peri.loadCustom: campaign-like play, levelIndex -1, nothing saved or logged
     daily: null,                      // { key, label } while mode === 'daily'
     level: CAMP[0] || null, levelIndex: 0,
     step: 0,
     frozen: false,                    // the astronomer holds the heavens: step does not advance while aiming
     hint: { on: false, used: false, pts: new Float32Array(K.HINT_MAX * 2), n: 0, t0: 0 },
-    spotlight: null,                  // [{x, y}] world points ringed while the fragment card is open
-    card: null,                       // null | 'intro' | 'fragments': a popup card is open (aim blocked, clock held)
+    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole card is open
+    card: null,                       // null | 'intro' | 'fragments' | 'wormholes': a popup card is open (aim blocked, clock held)
     phase: 'aim',
     aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
     predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
@@ -3677,10 +4290,22 @@ var LogUI = (function () {
 
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function hasWormhole(lv) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].kind === 'wormhole') return true; return false; }
+  // every wormhole mouth names a twin that is a different mouth naming it back (Physics.stepSim would throw otherwise)
+  function wormholesMutual(lv) {
+    var bs = lv.bodies;
+    if (!Array.isArray(bs)) return false;
+    for (var i = 0; i < bs.length; i++) {
+      if (!bs[i] || bs[i].kind !== 'wormhole') continue;
+      var j = bs[i].pair;
+      if (typeof j !== 'number' || j !== (j | 0) || j < 0 || j >= bs.length || j === i || !bs[j] || bs[j].kind !== 'wormhole' || bs[j].pair !== i) return false;
+    }
+    return true;
+  }
   function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
 
   // ------------------------------------------------------------------ timers (in physics steps)
-  function logEvent(name, data) { try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
+  function logEvent(name, data) { if (state.custom) return; try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
   function after(steps, fn) { timers.push({ at: tick + Math.max(1, Math.round(steps)), fn: fn }); }
   function afterMs(ms, fn) { after(ms / 1000 * STEP_HZ, fn); }
   function runTimers() {
@@ -3774,6 +4399,21 @@ var LogUI = (function () {
     vibrate(10);
   }
 
+  // A wormhole passage: flash at both mouths, a soft sweep, a short buzz. Every call is guarded (RENDER / AUDIO own those functions).
+  var _wa = { x: 0, y: 0 }, _wb = { x: 0, y: 0 };
+  function onWarp(ev, s) {
+    var bs = state.level && state.level.bodies, a = bs && bs[ev.from], b = bs && bs[ev.to];
+    try {
+      if (a && b && typeof Render !== 'undefined' && typeof Render.warp === 'function') {
+        var t = s.abs * K.DT;
+        Physics.bodyPos(a, t, _wa); Physics.bodyPos(b, t, _wb);
+        Render.warp(_wa.x, _wa.y, _wb.x, _wb.y);
+      }
+    } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.warp === 'function') Sound.warp(); } catch (e) {}
+    vibrate(14);
+  }
+
   function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
 
   function endFlight(status) {
@@ -3789,7 +4429,9 @@ var LogUI = (function () {
       Sound.chime();
       vibrate([12, 60, 24]);
       var rec = null, plateIndex = -1;
-      if (mode === 'campaign') {
+      if (state.custom) {
+        rec = { improved: false, first: true };                      // a test plate: never written to Save
+      } else if (mode === 'campaign') {
         plateIndex = state.levelIndex;
         rec = Save.recordPlate(plateIndex, stars, countFrags());
       } else if (mode === 'daily') {
@@ -3842,7 +4484,11 @@ var LogUI = (function () {
       var st = Physics.stepSim(s, state.level);
       pushTrail(s.x, s.y); pushPath(s.x, s.y);
       if (s.events.length) {
-        for (var i = 0; i < s.events.length; i++) if (s.events[i].type === 'frag') onFrag(s.events[i].i);
+        for (var i = 0; i < s.events.length; i++) {
+          var ev = s.events[i];
+          if (ev.type === 'frag') onFrag(ev.i);
+          else if (ev.type === 'warp') onWarp(ev, s);
+        }
         s.events.length = 0;
       }
       state.hud.speed = Physics.speed(s);
@@ -3865,6 +4511,7 @@ var LogUI = (function () {
   function loadCampaign(i) {
     i = Math.max(0, Math.min(CAMP.length - 1, i | 0));
     state.mode = 'campaign';
+    state.custom = false;
     state.daily = null;
     state.levelIndex = i;
     state.level = CAMP[i];
@@ -3873,6 +4520,22 @@ var LogUI = (function () {
     setScreen('play');
     autoCards();
     return state.level;
+  }
+
+  // Test hook: any Level object as a plate in campaign-like play. levelIndex is -1; no stars, stats, honours or log events are written.
+  function loadCustom(lv) {
+    if (!lv || !lv.bodies || !lv.probe || !lv.target || !wormholesMutual(lv)) return false;
+    if (!lv.frags) lv.frags = [];
+    state.mode = 'campaign';
+    state.custom = true;
+    state.daily = null;
+    state.levelIndex = -1;
+    state.level = lv;
+    Render.setLevel(lv);
+    resetAttempt();
+    setScreen('play');
+    autoCards();
+    return lv;
   }
 
   // ---- Daily Plate
@@ -3911,6 +4574,7 @@ var LogUI = (function () {
     k = (typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k)) ? k : Save.dateKey();
     var lv = makeDaily(k), m = /^DAILY\s*[·:|\-–—]\s*(.+)$/.exec(lv.caption || '');
     state.mode = 'daily';
+    state.custom = false;
     state.daily = { key: k, label: m ? m[1] : dayLabel(k) };
     state.levelIndex = -1;
     state.level = lv;
@@ -3946,6 +4610,7 @@ var LogUI = (function () {
     lv.plate = toRoman(r);
     lv.caption = 'ENDLESS · PLATE ' + lv.plate;
     state.mode = 'endless';
+    state.custom = false;
     state.daily = null;
     state.levelIndex = r - 1;
     state.level = lv;
@@ -4041,7 +4706,7 @@ var LogUI = (function () {
   function plateHtml(i) {
     var lv = CAMP[i];
     return '<button class="plate" data-i="' + i + '" aria-label="Plate ' + toRoman(i + 1) + '">' +
-      '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Sealed</span></span></span>' +
+      '<span class="thumb-wrap"><canvas class="thumb"></canvas><span class="sealed" hidden><span>Locked</span></span></span>' +
       '<span class="pl-num">' + toRoman(i + 1) + '</span>' +
       '<span class="pl-name">' + escapeHtml(lv.name || '') + '</span>' +
       '<span class="pl-meta"></span></button>';
@@ -4124,7 +4789,7 @@ var LogUI = (function () {
     elTally.innerHTML = 'Stars <b>' + tot.stars + '</b>/<b>' + (cards.length * 3) + '</b><span class="sep">&middot;</span>' +
       'Sealed <b>' + tot.sealed + '</b>/<b>' + cards.length + '</b>';
     if (entering) {
-      var sc = $('s-scroll'), idx = state.mode === 'campaign' ? state.levelIndex : Math.max(0, d.unlocked - 1);
+      var sc = $('s-scroll'), idx = state.mode === 'campaign' && state.levelIndex >= 0 ? state.levelIndex : Math.max(0, d.unlocked - 1);
       idx = Math.max(0, Math.min(cards.length - 1, idx));
       if (sc && cards[idx]) {
         requestAnimationFrame(function () {
@@ -4152,12 +4817,13 @@ var LogUI = (function () {
     else elNote.classList.remove('on');
   }
 
-  // ---- popup cards (To Observe / Comet Fragments): atlas plates that hold the clock while open
+  // ---- popup cards (To Observe / Comet Fragments / Wormholes): atlas plates that hold the clock while open
   function levelFrags() { return (state.level && state.level.frags && state.level.frags.length) || 0; }
   function popupSafe() { return state.screen === 'play' && state.phase !== 'flight' && !cardVisible(); }
   function autoNext() {
     if (!Save.seen('intro')) return 'intro';
     if (levelFrags() && !Save.seen('fragments')) return 'fragments';
+    if (hasWormhole(state.level) && !Save.seen('wormholes')) return 'wormholes';
     return null;
   }
   function autoCards() { var n = autoNext(); if (n) requestPopup(n); }
@@ -4167,7 +4833,7 @@ var LogUI = (function () {
     if (n) showPopup(n, false);
   }
   function requestPopup(name) {
-    if (name !== 'intro' && name !== 'fragments') return null;
+    if (name !== 'intro' && name !== 'fragments' && name !== 'wormholes') return null;
     if (state.card || !popupSafe()) {
       if (state.card !== name && popQueue.indexOf(name) < 0) popQueue.push(name);
       return 'queued';
@@ -4185,23 +4851,84 @@ var LogUI = (function () {
         '<li>Reach the brass ring. Fewer launches earn more stars: one launch, three stars.</li></ol>' +
         '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Begin</button></div>';
     }
+    if (name === 'wormholes') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Wormholes</h3><div class="rule"></div>' +
+        '<p class="pop-text">Wormholes come in pairs, marked with the same Greek letter. Fly into one and you leave by its twin at the same speed. A mark such as <span class="m">\u21bb 90\u00b0</span> means your heading turns that far as you pass through. They pull on nothing and do no harm.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
     return '<p class="kicker">Notice</p><h3 class="c-title">Comet Fragments</h3><div class="rule"></div>' +
       '<p class="pop-text">Small brass comets drift on this plate. Fly through one to collect it. They are optional, but a course that gathers them is a harder one. Fragments you collect stay collected across your launches on this plate.</p>' +
       '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
   }
+  // world points a card rings while it is open; wormhole mouths carry their ring radius (mouth.r + 14) and follow their rails
+  var _mp = { x: 0, y: 0 };
+  function spotlightFor(name) {
+    var lv = state.level, out = [], i;
+    if (name === 'fragments') {
+      var f = lv && lv.frags;
+      if (f && f.length) for (i = 0; i < f.length; i++) out.push({ x: f[i].x, y: f[i].y });
+    } else if (name === 'wormholes' && lv) {
+      for (i = 0; i < lv.bodies.length; i++) {
+        var b = lv.bodies[i];
+        if (b.kind !== 'wormhole') continue;
+        Physics.bodyPos(b, state.step * K.DT, _mp);
+        out.push({ x: _mp.x, y: _mp.y, r: b.r + 14, body: i });
+      }
+    }
+    return out.length ? out : null;
+  }
+  // mouths on rails move with state.step (held while a card is open, but keep the rings honest anyway)
+  function refreshSpotlight() {
+    var sp = state.spotlight, lv = state.level;
+    if (state.card !== 'wormholes' || !sp || !lv) return;
+    for (var i = 0; i < sp.length; i++) {
+      var b = lv.bodies[sp[i].body];
+      if (!b || !b.orbit) continue;
+      Physics.bodyPos(b, state.step * K.DT, _mp);
+      sp[i].x = _mp.x; sp[i].y = _mp.y;
+    }
+  }
   function fragCentroid() {
-    var f = state.level && state.level.frags;
+    var f = state.spotlight;
     if (!f || !f.length) return null;
     var sx = 0, sy = 0;
     for (var i = 0; i < f.length; i++) { var p = Render.worldToScreen(f[i].x, f[i].y); sx += p.x; sy += p.y; }
     return { x: sx / f.length, y: sy / f.length };
   }
+  // Card top (CSS px) that hides the least of the ringed points. Each mouth claims a band around it: its ring plus ~34 px, which takes in
+  // the pair label beside it (the card is full width, so only the vertical extent matters). Covering a mouth's centre costs most; among
+  // equal positions the one farthest from the points' centre wins, which is the "half away from them" rule when a clear half exists.
+  // Returns { top, cov }: cov = px of claimed bands the card covers (0 = clear).
+  function quietTop(ch, minTop, maxBottom, cy) {
+    var sp = state.spotlight, sc = (Render.layout && Render.layout.scale) || 1, best = minTop, bs = Infinity, bc = 0, rings = [], i, t;
+    for (i = 0; sp && i < sp.length; i++) { var q = Render.worldToScreen(sp[i].x, sp[i].y), r = (sp[i].r || 0) * sc + 34; rings.push([q.y - r, q.y + r, q.y]); }
+    for (t = minTop; t <= maxBottom - ch + 0.5; t += 2) {
+      var cov = 0, hid = 0;
+      for (i = 0; i < rings.length; i++) {
+        cov += Math.max(0, Math.min(t + ch, rings[i][1]) - Math.max(t, rings[i][0]));
+        if (rings[i][2] >= t - 4 && rings[i][2] <= t + ch + 4) hid++;
+      }
+      var sc2 = (cov + hid * 400) * 1000 - Math.abs(t + ch / 2 - cy);
+      if (sc2 < bs) { bs = sc2; best = t; bc = cov + hid * 400; }
+    }
+    return { top: best, cov: bc };
+  }
+  // Two wormhole cards of the same text: the full one, and a compact one (no kicker or rule, smaller type) for plates where no band clears the mouths.
+  function placeWormCard(ch, minTop, maxBottom, cy) {
+    var full = quietTop(ch, minTop, maxBottom, cy);
+    if (full.cov === 0) return full.top;
+    elPop.classList.add('compact');
+    var ch2 = Math.min(maxBottom - minTop, elPop.offsetHeight || ch), cmp = quietTop(ch2, minTop, maxBottom, cy);
+    if (cmp.cov < full.cov) return cmp.top;
+    elPop.classList.remove('compact');
+    return full.top;
+  }
+
   function showPopup(name, fromSheet) {
     state.card = name;
     popFromSheet = !!fromSheet;
     clearAim();
-    var f = state.level && state.level.frags;
-    state.spotlight = (name === 'fragments' && f && f.length) ? f.map(function (q) { return { x: q.x, y: q.y }; }) : null;
+    state.spotlight = spotlightFor(name);
     elPop.innerHTML = popHtml(name);
     ui.classList.add('card-open');
     if (fromSheet) { elSheet.classList.add('sub'); elCard.classList.add('held'); }
@@ -4251,6 +4978,7 @@ var LogUI = (function () {
   function kicker() {
     if (state.mode === 'endless') return 'Endless &middot; Plate ' + toRoman(state.endless.round);
     if (state.mode === 'daily') return 'Daily Plate' + (state.daily ? ' &middot; ' + escapeHtml(state.daily.label) : '');
+    if (state.custom) return 'Plate &middot; ' + escapeHtml((state.level && (state.level.plate || state.level.name)) || 'Test');
     return 'Plate ' + toRoman(state.levelIndex + 1);
   }
   function statsLine() {
@@ -4264,9 +4992,9 @@ var LogUI = (function () {
     if (state.screen !== 'play' || !state.result || !state.result.success) return;
     var r = state.result, h;
     if (state.mode === 'campaign') {
-      var last = state.levelIndex >= CAMP.length - 1;
+      var last = state.custom || state.levelIndex >= CAMP.length - 1;
       var rec = r.record || {};
-      var note = last ? 'The atlas is complete.' : (r.stars === 3 ? 'A clean passage, in a single launch.' : (rec.improved && !rec.first ? 'A finer record than before.' : escapeHtml(state.level.name || '')));
+      var note = state.custom ? escapeHtml(state.level.name || '') : last ? 'The atlas is complete.' : (r.stars === 3 ? 'A clean passage, in a single launch.' : (rec.improved && !rec.first ? 'A finer record than before.' : escapeHtml(state.level.name || '')));
       h = '<p class="kicker">' + kicker() + '</p><h3 class="c-title win">Sealed</h3>' +
         '<p class="note">' + note + '</p>' +
         '<div class="c-stars">' + starsRow(r.stars, 20) + '</div>' +
@@ -4322,22 +5050,37 @@ var LogUI = (function () {
   }
 
   // ---- Consult the Astronomer
+  // The astronomer draws the plate's full-clear course (every fragment, then the target) when one is engraved, else the plain winning one.
+  function hintSol(lv) { var c = lv && typeof Levels !== 'undefined' && Levels.clearFor ? Levels.clearFor(lv) : null; return c || (lv && lv.solution) || null; }
   function canHint() {
     var lv = state.level;
-    return state.screen === 'play' && state.phase === 'aim' && !!(lv && lv.solution) && !state.hint.used && !state.card &&
+    return state.screen === 'play' && state.phase === 'aim' && !!hintSol(lv) && !state.hint.used && !state.card &&
       state.launches < K.MAX_LAUNCHES && !cardVisible();
   }
   function hintWhy() {
     if (state.hint.used) return 'Already consulted on this attempt.';
-    if (!state.level || !state.level.solution) return 'No course is engraved for this plate.';
+    if (!hintSol(state.level)) return 'No course is engraved for this plate.';
     if (state.phase !== 'aim' || cardVisible()) return 'Only while a launch is being aimed.';
     return '';
   }
   function useHint() {
     if (!canHint()) return false;
-    var lv = state.level, sol = lv.solution, t0 = sol.t0Step | 0;
-    var sim = Physics.simulate(lv, sol.vx, sol.vy, t0, K.MAX_STEPS, hintBuf);
-    var n = Math.min(K.HINT_MAX, Math.floor(0.55 * sim.n)), h = state.hint;
+    var lv = state.level, sol = hintSol(lv), t0 = sol.t0Step | 0, h = state.hint;
+    // Fly the course once, noting the step at which the last fragment is gathered.
+    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, i;
+    while (sim.status === 'flying' && sim.step < K.MAX_STEPS) {
+      Physics.stepSim(sim, lv);
+      hintBuf[2 * total] = sim.x; hintBuf[2 * total + 1] = sim.y; total++;      // a wormhole passage is one long jump between two consecutive points
+      var c = 0; for (i = 0; i < sim.collected.length; i++) c += sim.collected[i];
+      if (c > got) { got = c; lastFrag = total; }
+      if (sim.warps > warps) { warps = sim.warps; lastWarp = total; }
+    }
+    // The line is the first 55% of the course; on a full-clear course it runs on to just past the last fragment, and on a course through
+    // wormholes to just past the last passage, so the exit's heading is shown (never the final approach: at most 92%).
+    var n = Math.floor(0.55 * total);
+    if (got) n = Math.max(n, Math.min(lastFrag + 24, Math.floor(0.92 * total)));
+    if (warps) n = Math.max(n, Math.min(lastWarp + 24, Math.floor(0.92 * total)));
+    n = Math.min(K.HINT_MAX, n);
     h.pts.set(hintBuf.subarray(0, 2 * n));
     h.n = n; h.on = true; h.used = true; h.t0 = nowMs();
     state.step = t0; state.frozen = true;
@@ -4352,6 +5095,7 @@ var LogUI = (function () {
     $('sheet-kicker').innerHTML = kicker();
     $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : (state.mode === 'daily' ? 'Return to the Title' : 'Return to the Atlas');
     var ok = canHint(), hb = $('sheet-hint'), why = $('sheet-hint-why'), wt = ok ? '' : hintWhy();
+    var wb = $('sheet-worm'); if (wb) wb.hidden = !hasWormhole(state.level);       // "About wormholes" only on plates that have one
     hb.setAttribute('aria-disabled', String(!ok));
     why.textContent = wt; why.hidden = !wt;
     refreshSoundButtons();
@@ -4405,11 +5149,12 @@ var LogUI = (function () {
         break;
       case 'howto': if (state.paused) showPopup('intro', true); break;
       case 'fragments': if (state.paused) showPopup('fragments', true); break;
+      case 'wormholes': if (state.paused) showPopup('wormholes', true); break;
       case 'pop-ok': closePopup(); break;
       case 'atlas': setScreen(state.mode === 'campaign' ? 'select' : 'title'); break;
       case 'next':
         if (state.mode === 'endless') nextEndless();
-        else if (state.levelIndex + 1 < CAMP.length) loadCampaign(state.levelIndex + 1);
+        else if (!state.custom && state.levelIndex + 1 < CAMP.length) loadCampaign(state.levelIndex + 1);
         else setScreen('select');
         break;
       case 'replay': case 'retry': resetAttempt(); break;
@@ -4653,6 +5398,7 @@ var LogUI = (function () {
     var side = !wide && W > H && Math.max(spR, spL) >= 230;
     var cw = wide ? Math.min(600, W - 24 - safe.left - safe.right) : side ? Math.min(360, Math.max(spR, spL)) : Math.min(360, W - 24 - safe.left - safe.right);
     elPop.classList.toggle('wide', wide);
+    elPop.classList.remove('compact');
     elPop.style.width = px(cw);
     elPop.style.maxHeight = px(availH);
     elPop.style.bottom = 'auto';
@@ -4663,13 +5409,15 @@ var LogUI = (function () {
     } else {
       left = safe.left + (W - safe.left - safe.right - cw) / 2;
       top = (minTop + maxBottom - ch) / 2;
-      var c = state.card === 'fragments' ? fragCentroid() : null;
+      var c = (state.card === 'fragments' || state.card === 'wormholes') ? fragCentroid() : null;
       if (c) {
         var mid = (minTop + maxBottom) / 2;
-        if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);          // comets above: card in the lower half
+        if (state.card === 'wormholes') top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths can sit anywhere: the clearest band, away from them
+        else if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);     // comets above: card in the lower half
         else top = Math.min(mid - ch, minTop + (mid - minTop - ch) / 2);               // comets below: card in the upper half
       }
     }
+    if (elPop.classList.contains('compact')) ch = Math.min(availH, elPop.offsetHeight || ch);
     top = Math.max(minTop, Math.min(top, maxBottom - ch));
     elPop.style.left = px(left);
     elPop.style.top = px(top);
@@ -4699,6 +5447,7 @@ var LogUI = (function () {
         else { nudgeIdle = 0; setNudge(false); }
       }
     } else acc = 0;
+    if (state.card === 'wormholes') refreshSpotlight();
     try { Render.frame(state, t); }
     catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
   }
@@ -4749,6 +5498,7 @@ var LogUI = (function () {
     loadLevel: function (i) { return loadCampaign(i); },
     loadEndless: function (seed) { return startEndless(seed); },
     loadDaily: function (k) { return loadDaily(k); },
+    loadCustom: function (lv) { return loadCustom(lv); },
     dailyPlate: function () { return dailyCache && dailyCache.key === Save.dateKey() ? dailyCache.lv : null; },
     openCard: function (name) { return requestPopup(name); },
     closeCard: function () { return closePopup(); },
@@ -4784,7 +5534,7 @@ var LogUI = (function () {
     screen: function (name) {
       if (name == null) return state.screen;
       if (name === 'play' && state.screen !== 'play') {
-        if ((state.mode === 'endless' && state.endless.round > 0) || (state.mode === 'daily' && state.level)) setScreen('play');
+        if ((state.mode === 'endless' && state.endless.round > 0) || (state.mode === 'daily' && state.level) || (state.custom && state.level)) setScreen('play');
         else loadCampaign(Math.max(0, state.levelIndex));
       }
       else setScreen(name);

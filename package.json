@@ -5,11 +5,13 @@
   "private": true,
   "scripts": {
     "build": "node tools/build.js",
-    "test": "node tools/physics-test.js && node tools/levels-bake.js --verify",
+    "test": "node tools/physics-test.js && node tools/levels-bake.js --verify && node tools/levels-clear.js --verify",
     "test:flow": "node tools/feel-test.js",
     "qa": "node tools/qa-run.js",
     "perf": "node tools/perf.js",
+    "clear": "node tools/levels-clear.js",
     "bake": "node tools/levels-bake.js",
+    "bake3": "node tools/levels-bake3.js",
     "icons": "node tools/make-icons.js",
     "serve": "python3 -m http.server 8080",
     "test:log": "node tools/log-test.js"

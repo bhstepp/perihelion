@@ -5,7 +5,8 @@
    body collisions (per body: blackhole capture, then crash) -> target -> bounds -> timeout (K.MAX_STEPS).
    Gravity is softened Newtonian: a = mu*d / (|d|^2 + EPS2)^1.5 (mu < 0 = repulsor).
    DETERMINISM RULE: numeric behaviour is FROZEN (baked levels + solutions depend on it; see
-   tools/physics-golden.json). Time is ALWAYS abs*DT from an integer step counter, never accumulated.
+   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3) are a pure addition: a separate branch that never runs for
+   the older kinds, so every older flight is bit-identical. Time is ALWAYS abs*DT from an integer step counter, never accumulated.
    predict/simulate and the live flight run the very same createSim + stepSim, so a predicted point is
    bit-identical (===) to the live probe at that step. Never reorder float ops here; `node tools/physics-test.js`
    must stay green. Guards for bad input (NaN/Infinity) only change results for non-finite values. */
@@ -61,8 +62,9 @@ var Physics = (function () {
       collected: new Uint8Array(level.frags ? level.frags.length : 0),
       minDist: Infinity,                // closest approach to target centre
       dist: 0,                          // path length travelled so far, in units
+      warps: 0,                         // wormhole passages so far
       minGap: Infinity,                 // closest approach to any non-repulsor body SURFACE (within 60 u), for 'near miss' stats
-      events: []                        // {type:'frag', i} pushed as they happen; consumer may clear
+      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} pushed as they happen; consumer may clear
     };
   }
 
@@ -90,6 +92,19 @@ var Physics = (function () {
       bodyPos(b, t, _q);
       dx = _q.x - x; dy = _q.y - y;
       var d2 = dx * dx + dy * dy;
+      if (b.kind === 'wormhole') {
+        // Mouth: inert to gravity (mu 0) and harmless. Entering it (centre within r) leaves by the twin b.pair, speed kept, velocity
+        // turned by b.turn (radians), placed just outside the twin's mouth along the new heading so it cannot re-enter at once.
+        if (d2 < b.r * b.r) {
+          var tw = bs[b.pair], th = b.turn || 0, wc = cos(th), ws = sin(th), wvx = sim.vx * wc - sim.vy * ws, wvy = sim.vx * ws + sim.vy * wc;
+          var wl = sqrt(wvx * wvx + wvy * wvy), ux = wl > 1e-9 ? wvx / wl : 0, uy = wl > 1e-9 ? wvy / wl : -1, wo = tw.r + C.WARP_GAP;
+          bodyPos(tw, t, _q);
+          sim.vx = wvx; sim.vy = wvy;
+          sim.x = x = _q.x + ux * wo; sim.y = y = _q.y + uy * wo;
+          sim.warps++; sim.events.push({ type: 'warp', from: i, to: b.pair, step: sim.step });
+        }
+        continue;
+      }
       if (b.kind !== 'repulsor') { var gl = b.r + 60; if (d2 < gl * gl) { var gp = sqrt(d2) - b.r; if (gp < sim.minGap) sim.minGap = gp; } }
       if (b.kind === 'blackhole' && b.capture && d2 < b.capture * b.capture) { sim.status = 'captured'; sim.hitBody = i; return sim.status; }
       var rr = b.r + pr;
@@ -197,6 +212,30 @@ var Physics = (function () {
         if (m.vx !== vx + a.x * DT || m.x !== x + m.vx * DT) return 'int@' + m.abs;
       }
       return m.step > 99 || 'short';
+    });
+    function W(x, y, r, pair, turn, orb) { return { kind: 'wormhole', x: x, y: y, r: r, mu: 0, orbit: orb || null, pair: pair, turn: turn || 0 }; }
+    chk('wormhole: twin exit, speed kept, turn applied, events, no re-entry, predict === simulate', function () {
+      var l = L(1400, [W(450, 1100, 30, 1), W(650, 500, 30, 0)]), s = createSim(l, 0, -300, 0), sp = 300, n = 0, prev = null, ev = null;
+      while (stepSim(s, l) === 'flying' && n++ < 400) { if (s.events.length && !ev) ev = s.events[0]; if (s.warps > 1) return 'reentered'; }
+      if (s.warps !== 1 || !ev || ev.type !== 'warp' || ev.from !== 0 || ev.to !== 1) return 'event ' + JSON.stringify(ev);
+      var q = createSim(l, 0, -300, 0); while (q.warps === 0) stepSim(q, l);
+      if (Math.abs(speed(q) - sp) > 1e-9 || q.vx !== 0 && Math.abs(q.vx) > 1e-9) return 'speed/dir ' + q.vx + ',' + q.vy;
+      if (Math.abs(q.x - 650) > 1e-9 || Math.abs(q.y - (500 - 30 - C.WARP_GAP)) > 1e-9) return 'exit ' + q.x + ',' + q.y;
+      var lt = L(1400, [W(450, 1100, 30, 1, Math.PI / 2), W(650, 500, 30, 0, -Math.PI / 2)]), t = createSim(lt, 0, -300, 0); while (t.warps === 0) stepSim(t, lt);
+      if (Math.abs(speed(t) - sp) > 1e-9 || Math.abs(t.vx - 300) > 1e-9 && Math.abs(t.vx + 300) > 1e-9) return 'turn ' + t.vx + ',' + t.vy;
+      var pp = new Float64Array(2 * N), f2 = new Float32Array(2 * Q), a2 = S(lt, 0, -300, 0, N, pp), b2 = predict(lt, 0, -300, 0, f2);
+      for (var i = 0; i < b2.n; i++) if (f2[2 * i] !== Math.fround(pp[2 * i]) || f2[2 * i + 1] !== Math.fround(pp[2 * i + 1])) return 'pred@' + i;
+      return a2.warps >= 1 || 'no warp in simulate';
+    });
+    chk('wormhole: harmless and not a near-miss; moving mouth; older kinds unaffected', function () {
+      var l = L(1400, [W(450, 1100, 30, 1), W(650, 500, 30, 0)]), s = S(l, 0, -300, 0, N);
+      if (s.status === 'crash' || s.hitBody !== -1 || s.minGap !== Infinity) return 'wormhole treated as a hazard ' + s.status + ' ' + s.minGap;
+      var lm = L(1400, [W(450, 1100, 30, 1), W(650, 500, 30, 0, 0, { cx: 650, cy: 600, rad: 100, omega: 1.1, phase: 0.3 })]), q = createSim(lm, 0, -300, 0);
+      while (q.warps === 0 && q.step < 400) stepSim(q, lm);
+      var g = { x: 0, y: 0 }; bodyPos(lm.bodies[1], q.abs * DT, g);
+      if (q.warps !== 1 || Math.abs(Math.hypot(q.x - g.x, q.y - g.y) - (30 + C.WARP_GAP)) > 1e-9) return 'moving mouth exit';
+      var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withW = L(1420, [B(330, 780, 70, 2.4e7), W(100, 100, 30, 2), W(800, 100, 30, 1)]);
+      return same(S(plain, 90, -400), S(withW, 90, -400)) || 'an unrelated wormhole pair changed a flight';
     });
     for (var i = 0, ok = true; i < cks.length; i++) ok = ok && cks[i].ok;
     return { ok: ok, checks: cks };

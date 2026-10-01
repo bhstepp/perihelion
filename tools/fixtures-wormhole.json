@@ -1,0 +1,197 @@
+[
+ {
+  "id": "fw1",
+  "index": 0,
+  "seed": 1,
+  "difficulty": 1.7,
+  "name": "Fixture: One Gate",
+  "plate": "FW1",
+  "probe": {
+   "x": 450,
+   "y": 1450
+  },
+  "target": {
+   "x": 450,
+   "y": 220,
+   "r": 38
+  },
+  "bodies": [
+   {
+    "kind": "planet",
+    "r": 80,
+    "mu": 30000000,
+    "x": 450,
+    "y": 800,
+    "orbit": null
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 230,
+    "y": 1120,
+    "orbit": null,
+    "pair": 2,
+    "turn": 0
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 690,
+    "y": 430,
+    "orbit": null,
+    "pair": 1,
+    "turn": 0
+   }
+  ],
+  "frags": [],
+  "solution": {
+   "vx": 258.76858341749323,
+   "vy": -567.8158330269633,
+   "t0Step": 0
+  }
+ },
+ {
+  "id": "fw2",
+  "index": 0,
+  "seed": 1,
+  "difficulty": 1.7,
+  "name": "Fixture: Two Gates, Turned",
+  "plate": "FW2",
+  "probe": {
+   "x": 450,
+   "y": 1450
+  },
+  "target": {
+   "x": 450,
+   "y": 220,
+   "r": 60
+  },
+  "bodies": [
+   {
+    "kind": "planet",
+    "r": 70,
+    "mu": 24000000,
+    "x": 300,
+    "y": 650,
+    "orbit": null
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 640,
+    "y": 1150,
+    "orbit": null,
+    "pair": 2,
+    "turn": 1.5707963267948966
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 200,
+    "y": 1000,
+    "orbit": null,
+    "pair": 1,
+    "turn": -1.5707963267948966
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 700,
+    "y": 700,
+    "orbit": null,
+    "pair": 4,
+    "turn": 0
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 180,
+    "y": 350,
+    "orbit": null,
+    "pair": 3,
+    "turn": 0
+   }
+  ],
+  "frags": [],
+  "solution": {
+   "vx": 123.63388470990101,
+   "vy": -186.7904241430457,
+   "t0Step": 0
+  }
+ },
+ {
+  "id": "fw3",
+  "index": 0,
+  "seed": 1,
+  "difficulty": 1.7,
+  "name": "Fixture: Orbiting Mouth",
+  "plate": "FW3",
+  "probe": {
+   "x": 450,
+   "y": 1450
+  },
+  "target": {
+   "x": 450,
+   "y": 220,
+   "r": 38
+  },
+  "bodies": [
+   {
+    "kind": "blackhole",
+    "r": 14,
+    "capture": 46,
+    "mu": 36000000,
+    "x": 450,
+    "y": 760,
+    "orbit": null
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 200,
+    "y": 1150,
+    "orbit": null,
+    "pair": 2,
+    "turn": 0
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 0,
+    "y": 0,
+    "orbit": {
+     "cx": 660,
+     "cy": 520,
+     "rad": 90,
+     "omega": 0.9,
+     "phase": 0.4
+    },
+    "pair": 1,
+    "turn": 0
+   }
+  ],
+  "frags": [
+   {
+    "x": 560,
+    "y": 1000
+   },
+   {
+    "x": 260,
+    "y": 520
+   }
+  ],
+  "solution": {
+   "vx": -235.53397343831813,
+   "vy": -261.5869785680429,
+   "t0Step": 60
+  }
+ }
+]

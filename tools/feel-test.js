@@ -36,7 +36,8 @@ const cardOn = page => page.waitForFunction(() => document.getElementById('card'
 const rectOf = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; }, sel);
 const inside = (r, W, H, m = 0) => r && r.l >= m && r.t >= m && r.r <= W - m && r.b <= H - m;
 const text = (page, sel) => page.evaluate(s => document.querySelector(s).innerText.replace(/\s+/g, ' ').trim(), sel);
-const SEEN_ALL = () => { try { Save.markSeen('intro'); Save.markSeen('fragments'); } catch (e) {} };
+const SEEN_ALL = () => { try { Save.markSeen('intro'); Save.markSeen('fragments'); Save.markSeen('wormholes'); } catch (e) {} };
+const FX = require('./fixtures-wormhole.json');          // three complete wormhole plates with verified solutions (fw1, fw2, fw3)
 // Date stub: window.__dayOffset shifts "now" by whole days
 const DATE_STUB = () => {
   const R = Date; window.__dayOffset = 0;
@@ -53,6 +54,22 @@ const DATE_STUB = () => {
     const r = await page.evaluate(() => { const C = __peri.Levels.CAMPAIGN; return { n: C.length, frag: C.findIndex(l => l.frags && l.frags.length), moving: C.findIndex(l => l.bodies.some(b => b.orbit)), vols: (__peri.Levels.VOLUMES || []).length, hasDaily: typeof __peri.Levels.daily === 'function' }; });
     await ctx.close(); return r; })();
   console.log('level info', JSON.stringify(info));
+  // While the baked Volume III is missing (CAMPAIGN < 90), a copy of the page gets 30 stand-in plates (the fixtures, cycled) so the
+  // 90-plate behaviour can be tested now. With the real plates in place the stand-in is not used.
+  const STUB = levels < 90;
+  let url3 = url;
+  if (STUB) {
+    const fs = require('fs'), html = fs.readFileSync(file, 'utf8'), mark = '// ===================== MODULE: 30-render.js';
+    if (html.indexOf(mark) < 0) throw new Error('module marker not found');
+    const snip = '(function () { var C = Levels.CAMPAIGN, FX = ' + JSON.stringify(FX) + ';\n' +
+      'for (var i = C.length; i < 90; i++) { var f = JSON.parse(JSON.stringify(FX[i % 3])); f.id = "c" + (i + 1); f.index = i; f.plate = toRoman(i + 1); f.name = "Stand-in Gate " + toRoman(i + 1); f.difficulty = 1.7 + i * 0.01; C.push(f); }\n' +
+      'var V = Levels.VOLUMES; if (V.length < 3) V.push({ name: "Volume III", from: 60, to: 89 }); })();\n';
+    const out = path.join(QA, 'feel-vol3.html');
+    fs.writeFileSync(out, html.replace(mark, snip + mark));
+    url3 = 'file://' + out;
+    console.log('stand-in Volume III page', out);
+  }
+  const atlasTargets = [{ url, stub: false }].concat(STUB ? [{ url: url3, stub: true }] : []);
 
   // ---------------------------------------------------------------- main iPhone run
   {
@@ -115,7 +132,8 @@ const DATE_STUB = () => {
     await page.waitForTimeout(60);
     const aim = await page.evaluate(() => ({ ...__peri.state.aim, n: __peri.state.predict.n }));
     check('aiming via touch drag', aim.active && !aim.cancel && aim.n > 10 && aim.dy > 0, JSON.stringify(aim));
-    check('prediction is the short stub (<= K.PREDICT_STEPS)', aim.n <= 180, 'n=' + aim.n);
+    const PS = await page.evaluate(() => ({ k: K.PREDICT_STEPS, buf: __peri.state.predict.pts.length }));
+    check('prediction is the short stub (<= K.PREDICT_STEPS = 270), buffer sized from K', PS.k === 270 && aim.n <= PS.k && PS.buf === PS.k * 2, 'n=' + aim.n + ' K=' + PS.k + ' buf=' + PS.buf);
     await shot(page, 'feel-aim.png');
     await d.end();
     await page.waitForTimeout(80);
@@ -157,10 +175,10 @@ const DATE_STUB = () => {
 
     // ---- Menu sheet & reopening cards
     await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
-    const order = await page.evaluate(() => [...document.querySelectorAll('#sheet .c-btns .btn, #sheet [data-sound]')].map(b => b.innerText.replace(/\s+/g, ' ').trim()));
+    const order = await page.evaluate(() => [...document.querySelectorAll('#sheet .c-btns .btn, #sheet [data-sound]')].filter(b => b.offsetParent !== null).map(b => b.innerText.replace(/\s+/g, ' ').trim()));
     check('menu sheet order', JSON.stringify(order) === JSON.stringify(['Resume', 'Consult the Astronomer', 'How to play', 'About comet fragments', 'Restart plate', 'Return to the Atlas', 'Sound: On']), JSON.stringify(order));
-    check('astronomer note text', /Costs one star\. Holds the heavens and shows the first part of a winning course\./.test(await text(page, '#sheet-hint-note')));
-    const sh = await page.evaluate(() => [...document.querySelectorAll('#sheet button')].map(b => { const r = b.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(r.height)]; }));
+    check('astronomer note text', /Costs one star\. Holds the heavens and shows the course that gathers the comets and reaches the ring/.test(await text(page, '#sheet-hint-note')));
+    const sh = await page.evaluate(() => [...document.querySelectorAll('#sheet button')].filter(b => b.offsetParent !== null).map(b => { const r = b.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(r.height)]; }));
     const pr = await rectOf(page, '#sheet-panel');
     check('menu sheet inside viewport, targets >=44px', inside(pr, 390, 844, 4) && sh.every(r => r[2] >= 44), JSON.stringify(pr));
     await shot(page, 'feel-menu.png');
@@ -214,7 +232,7 @@ const DATE_STUB = () => {
       }
     }
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('perihelion.v1')));
-    check('progress saved', saved && saved.stars[0] === 3 && saved.unlocked >= Math.min(60, levels + 1), JSON.stringify(saved && { s: saved.stars.slice(0, 4), u: saved.unlocked }));
+    check('progress saved', saved && saved.stars[0] === 3 && saved.unlocked >= Math.min(levels + 1, 90), JSON.stringify(saved && { s: saved.stars.slice(0, 4), u: saved.unlocked }));
 
     await page.evaluate(() => { __peri.loadLevel(0); __peri.solveCurrent(); });
     await cardOn(page);
@@ -304,10 +322,10 @@ const DATE_STUB = () => {
     await page.tap('#zone-r .btn'); await page.waitForTimeout(350);
     check('hint item enabled during aim', await page.evaluate(() => document.getElementById('sheet-hint').getAttribute('aria-disabled') === 'false'));
     await page.tap('#sheet-hint'); await page.waitForTimeout(400);
-    const h1 = await page.evaluate(() => { const s = __peri.state, sol = s.level.solution; return { paused: s.paused, on: s.hint.on, used: s.hint.used, frozen: s.frozen, n: s.hint.n, step: s.step, t0: sol.t0Step || 0, ptsLen: s.hint.pts.length, first: [s.hint.pts[0], s.hint.pts[1]], sheet: document.getElementById('sheet').classList.contains('on') }; });
-    check('hint used: sheet closed, frozen at t0, line stored', !h1.paused && !h1.sheet && h1.on && h1.used && h1.frozen && h1.step === h1.t0 && h1.n > 20 && h1.n <= 700 && h1.ptsLen === 1400, JSON.stringify(h1));
-    const expectN = await page.evaluate(() => { const s = __peri.state, sol = s.level.solution, sim = __peri.Physics.simulate(s.level, sol.vx, sol.vy, sol.t0Step | 0, 1200, new Float32Array(2600)); return Math.min(700, Math.floor(0.55 * sim.n)); });
-    check('hint length = floor(0.55 * winning flight), <= HINT_MAX', h1.n === expectN, h1.n + ' vs ' + expectN);
+    const h1 = await page.evaluate(() => { const s = __peri.state, sol = __peri.Levels.clearFor(s.level) || s.level.solution; return { paused: s.paused, on: s.hint.on, used: s.hint.used, frozen: s.frozen, n: s.hint.n, step: s.step, t0: sol.t0Step || 0, ptsLen: s.hint.pts.length, first: [s.hint.pts[0], s.hint.pts[1]], sheet: document.getElementById('sheet').classList.contains('on') }; });
+    check('hint used: sheet closed, frozen at t0, line stored', !h1.paused && !h1.sheet && h1.on && h1.used && h1.frozen && h1.step === h1.t0 && h1.n > 20 && h1.n <= 1100 && h1.ptsLen === 2200, JSON.stringify(h1));
+    const expectN = await page.evaluate(() => { const s = __peri.state, sol = __peri.Levels.clearFor(s.level) || s.level.solution, P = __peri.Physics, sim = P.createSim(s.level, sol.vx, sol.vy, sol.t0Step | 0); let tot = 0, got = 0, last = 0, w = 0, lw = 0; while (sim.status === 'flying' && sim.step < 1200) { P.stepSim(sim, s.level); tot++; const c = sim.collected.reduce((a, b) => a + b, 0); if (c > got) { got = c; last = tot; } if (sim.warps > w) { w = sim.warps; lw = tot; } } let n = Math.floor(0.55 * tot); if (got) n = Math.max(n, Math.min(last + 24, Math.floor(0.92 * tot))); if (w) n = Math.max(n, Math.min(lw + 24, Math.floor(0.92 * tot))); return Math.min(1100, n); });
+    check('hint length = 55% of the course, or on to the last fragment, <= HINT_MAX', h1.n === expectN, h1.n + ' vs ' + expectN);
     await page.waitForTimeout(400);
     check('hint: heavens held while aiming', await page.evaluate(t0 => __peri.state.step === t0, h1.t0));
     const d = await touchDrag(page, 200, 420, 190, 470); await page.waitForTimeout(80);
@@ -318,6 +336,25 @@ const DATE_STUB = () => {
     await page.evaluate(() => __peri.loadLevel(__peri.state.levelIndex));
     check('Reset/reload clears hint.used, frozen, on', await page.evaluate(() => { const h = __peri.state.hint; return !h.used && !h.on && !__peri.state.frozen; }));
 
+    // full-clear courses: on every plate with fragments, the astronomer's course, flown in the real game loop, gathers every comet and seals the plate
+    {
+      const res = await page.evaluate(() => {
+        const out = [], C = __peri.Levels.CAMPAIGN;
+        for (let i = 0; i < C.length; i++) {
+          const nf = C[i].frags ? C[i].frags.length : 0; if (!nf) continue;
+          __peri.Save.reset(); __peri.loadLevel(i); __peri.useHint();
+          const c = __peri.Levels.clearFor(__peri.state.level);
+          if (!c) { if (i >= 60) { out.push(['skip', i + 1]); continue; } out.push([i + 1, 'no course']); continue; }   // Volume III courses are baked by the lead's levels-clear run
+          __peri.launch(c.vx, c.vy); __peri.fastForward(1500);
+          const d = __peri.Save.data; if (d.frags[i] !== nf || d.stars[i] !== 2) out.push([i + 1, 'frags ' + d.frags[i] + '/' + nf + ' stars ' + d.stars[i]]);
+        }
+        return out;
+      });
+      const miss = res.filter(r => r[0] === 'skip').map(r => r[1]), bad = res.filter(r => r[0] !== 'skip');
+      if (miss.length) console.log('  note: no full-clear course baked yet for ' + miss.length + ' Volume III plates (not checked)');
+      check('full-clear course in the live game: every fragment + seal at 2 stars (hint used), every fragment plate that has a baked course', bad.length === 0, JSON.stringify(bad));
+      await page.evaluate(i => { __peri.Save.reset(); __peri.loadLevel(i); }, M); await page.waitForTimeout(300);
+    }
     // disable rules
     await page.evaluate(() => __peri.useHint());
     await page.tap('#zone-r .btn'); await page.waitForTimeout(350);
@@ -429,13 +466,13 @@ const DATE_STUB = () => {
     await ctx.close();
   }
 
-  // ---------------------------------------------------------------- atlas: volumes, lazy thumbnails
-  {
-    const seed = () => { const st = [], fr = []; for (let i = 0; i < 60; i++) { st.push(i < 44 ? (i % 3) + 1 : 0); fr.push(0); }
-      try { localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars: st, frags: fr, unlocked: 45, endlessBest: 0, muted: false, seen: { intro: true, fragments: true } })); } catch (e) {} };
+  // ---------------------------------------------------------------- atlas: volumes, lazy thumbnails (real build; and, while Volume III is not baked yet, a variant with 90 stand-in plates)
+  for (const T of atlasTargets) {
+    const tag = T.stub ? ' [stand-in Vol III]' : '';
+    const seed = () => { const st = [], fr = []; for (let i = 0; i < 90; i++) { st.push(i < 44 ? (i % 3) + 1 : 0); fr.push(0); }
+      try { localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars: st, frags: fr, unlocked: 45, endlessBest: 0, muted: false, seen: { intro: true, fragments: true, wormholes: true } })); } catch (e) {} };
     const { ctx, page, errors } = await newPage(browser, IPHONE, seed);
-    await page.goto(url); await page.waitForTimeout(500);
-    const t0 = Date.now();
+    await page.goto(T.url); await page.waitForTimeout(500);
     await page.evaluate(() => __peri.screen('select'));
     await page.waitForTimeout(500);
     const at = await page.evaluate(() => {
@@ -443,26 +480,31 @@ const DATE_STUB = () => {
       const cards = [...document.querySelectorAll('.plate')];
       const drawn = cards.filter(c => c.querySelector('canvas').width !== 300).length;
       const cols = getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length;
-      return { heads, n: cards.length, drawn, cols, tally: document.getElementById('tally').innerText.replace(/\s+/g, ' '), grids: document.querySelectorAll('.grid').length };
+      return { heads, n: cards.length, drawn, cols, tally: document.getElementById('tally').innerText.replace(/\s+/g, ' '), grids: document.querySelectorAll('.grid').length, vols: __peri.Levels.VOLUMES.length, N: __peri.Levels.CAMPAIGN.length };
     });
-    const N = info.n, V = Math.min(info.vols || 2, Math.ceil(N / 30));
-    check('atlas: one heading per volume present, each plate once', at.n === N && at.heads.length === (info.vols ? V : Math.min(2, Math.ceil(N / 30))), JSON.stringify(at.heads));
-    check('atlas: heading style "Volume I · Plates I–XXX"', /^Volume I\s*·\s*Plates I–XXX$/i.test(at.heads[0]), at.heads[0]);
-    check('atlas: 3 columns portrait', at.cols === 3, 'cols ' + at.cols);
-    check('atlas: tally shows stars x/' + (N * 3) + ' and sealed plates', new RegExp('Stars \\d+/' + N * 3 + '.*Sealed \\d+/' + N, 'i').test(at.tally), at.tally);
-    check('atlas: thumbnails lazy (only rows near the viewport drawn)', N <= 30 ? at.drawn > 0 : at.drawn > 6 && at.drawn < N, at.drawn + '/' + at.n + ' drawn');
-    await shot(page, 'feel-atlas-vol1.png');
+    const N = at.N, V = Math.ceil(N / 30);
+    check('atlas' + tag + ': one heading per volume present (' + V + '), each plate once', at.n === N && at.heads.length === V && at.vols === V, JSON.stringify(at.heads));
+    check('atlas' + tag + ': heading style "Volume I · Plates I–XXX"', /^Volume I\s*·\s*Plates I–XXX$/i.test(at.heads[0]), at.heads[0]);
+    if (N >= 90) check('atlas' + tag + ': Volume III section "Plates LXI–XC", 90 plates in all', /^Volume III\s*·\s*Plates LXI–XC$/i.test(at.heads[2]) && at.n === 90, at.heads[2] + ' / ' + at.n);
+    check('atlas' + tag + ': 3 columns portrait', at.cols === 3, 'cols ' + at.cols);
+    check('atlas' + tag + ': tally shows stars x/' + (N * 3) + ' and sealed plates x/' + N, new RegExp('Stars \\d+/' + N * 3 + '.*Sealed \\d+/' + N, 'i').test(at.tally), at.tally);
+    const stamps = await page.evaluate(() => { const cs = [...document.querySelectorAll('.plate')], vis = c => !c.querySelector('.sealed').hidden, txt = c => c.querySelector('.sealed').innerText.replace(/\s+/g, ' ').trim();
+      const lk = cs.filter(c => c.classList.contains('locked')), dn = cs.filter(c => c.classList.contains('done'));
+      return { lk: lk.length, lkOk: lk.every(c => vis(c) && /^Locked$/i.test(txt(c))), dn: dn.length, dnOk: dn.every(c => !vis(c)), open: cs.filter(c => !c.classList.contains('locked')).every(c => !vis(c)), nSealedWord: cs.filter(c => /sealed/i.test(c.querySelector('.sealed').textContent)).length }; });
+    check('atlas' + tag + ': locked plates are stamped "Locked", beaten and open plates carry no stamp (stars instead), the word Sealed is not on a stamp', stamps.lk > 0 && stamps.lk === N - 45 && stamps.lkOk && stamps.dnOk && stamps.open && stamps.nSealedWord === 0, JSON.stringify(stamps));
+    check('atlas' + tag + ': thumbnails lazy (only rows near the viewport drawn)', N <= 30 ? at.drawn > 0 : at.drawn > 6 && at.drawn < N, at.drawn + '/' + at.n + ' drawn');
+    await shot(page, T.stub ? 'feel-atlas-stub-vol1.png' : 'feel-atlas-vol1.png');
     // scroll to the last volume
     await page.evaluate(() => { const hs = document.querySelectorAll('.vol-head'); const sc = document.getElementById('s-scroll'); const h = hs[hs.length - 1]; sc.scrollTop = h.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 12; });
     await page.waitForTimeout(500);
-    await shot(page, 'feel-atlas-vol2.png');
+    await shot(page, T.stub ? 'feel-atlas-stub-vol3.png' : 'feel-atlas-vol2.png');
     await page.evaluate(() => { document.getElementById('s-scroll').scrollTop = 1e6; }); await page.waitForTimeout(500);
-    check('atlas: thumbnails drawn on scroll (last plate)', await page.evaluate(() => { const cs = [...document.querySelectorAll('.plate')]; return cs[cs.length - 1].querySelector('canvas').width !== 300; }));
+    check('atlas' + tag + ': thumbnails drawn on scroll (last plate)', await page.evaluate(() => { const cs = [...document.querySelectorAll('.plate')]; return cs[cs.length - 1].querySelector('canvas').width !== 300; }));
     if (N > 46) {
-      await page.evaluate(() => { document.querySelector('.plate[data-i="50"]').click(); });
-      check('atlas: tapping a locked plate does nothing (unlock stays sequential)', await page.evaluate(() => __peri.state.screen === 'select'));
+      await page.evaluate(() => { document.querySelector('.plate[data-i="' + (__peri.Levels.CAMPAIGN.length - 1) + '"]').click(); });
+      check('atlas' + tag + ': tapping a locked plate does nothing (unlock stays sequential)', await page.evaluate(() => __peri.state.screen === 'select'));
     }
-    check('no console errors (atlas run)', errors.length === 0, errors.join(' | '));
+    check('no console errors (atlas run' + tag + ')', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 
@@ -540,7 +582,7 @@ const DATE_STUB = () => {
     await page.evaluate(() => __peri.closeCard()); await page.waitForTimeout(300);
     await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
     const sp = await rectOf(page, '#sheet-panel');
-    const sb = await page.evaluate(() => { const p = document.getElementById('sheet-panel'); return { sh: p.scrollHeight, ch: p.clientHeight, btns: [...document.querySelectorAll('#sheet button')].map(b => { const r = b.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(r.height), Math.round(r.left), Math.round(r.right)]; }) }; });
+    const sb = await page.evaluate(() => { const p = document.getElementById('sheet-panel'); return { sh: p.scrollHeight, ch: p.clientHeight, btns: [...document.querySelectorAll('#sheet button')].filter(b => b.offsetParent !== null).map(b => { const r = b.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(r.height), Math.round(r.left), Math.round(r.right)]; }) }; });
     check('landscape menu sheet inside viewport, targets >=44px, buttons visible or scrollable', inside(sp, 844, 390, 2) && sb.btns.every(r => r[2] >= 44) && (sb.sh <= sb.ch + 1 || sb.sh > sb.ch), JSON.stringify({ sp, sh: sb.sh, ch: sb.ch }));
     check('landscape menu sheet fits without scrolling', sb.sh <= sb.ch + 1, sb.sh + ' vs ' + sb.ch);
     await shot(page, 'feel-landscape-menu.png');
@@ -557,6 +599,328 @@ const DATE_STUB = () => {
     check('landscape atlas: 6 columns', await page.evaluate(() => getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length === 6));
     await shot(page, 'feel-landscape-select.png');
     check('no console errors (landscape)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
+  // ---------------------------------------------------------------- wormholes: card, menu item, live flight, hint, loadCustom (fixtures; real plates too once baked)
+  const WTEXT = 'Wormholes come in pairs, marked with the same Greek letter. Fly into one and you leave by its twin at the same speed. A mark such as ↻ 90° means your heading turns that far as you pass through. They pull on nothing and do no harm.';
+  const SEEN_IF = () => { try { Save.markSeen('intro'); Save.markSeen('fragments'); } catch (e) {} };      // intro + fragments seen, wormholes still due
+  const loadFx = (page, i) => page.evaluate(lv => { __peri.loadCustom(JSON.parse(JSON.stringify(lv))); return __peri.state.card; }, FX[i]);
+  // does the card rect touch any spotlight ring (screen px)?
+  // how many mouth centres the card covers vs the fewest any position in the plate's clear band could cover (0 when a clear band exists)
+  const coverVsBest = page => page.evaluate(() => { const L = __peri.Render.layout, e = document.getElementById('pcard'), r = e.getBoundingClientRect(), ys = (__peri.state.spotlight || []).map(p => __peri.Render.worldToScreen(p.x, p.y).y);
+    const minTop = L.top.y + L.top.h + 2, maxBottom = Math.min(L.h - 10, L.bottom.y - 2), h = r.height, cnt = t => ys.filter(y => y >= t - 4 && y <= t + h + 4).length;
+    let best = Infinity; for (let t = minTop; t <= maxBottom - h + 0.5; t += 1) best = Math.min(best, cnt(t));
+    return { covered: cnt(r.top), best, n: ys.length }; });
+  const ringsHit = page => page.evaluate(() => { const r = document.getElementById('pcard').getBoundingClientRect(), sc = __peri.Render.layout.scale, out = [];
+    for (const p of (__peri.state.spotlight || [])) { const q = __peri.Render.worldToScreen(p.x, p.y), rad = (p.r || 0) * sc;
+      const cx = Math.max(r.left, Math.min(q.x, r.right)), cy = Math.max(r.top, Math.min(q.y, r.bottom)); out.push(Math.hypot(q.x - cx, q.y - cy) < rad); }
+    return out; });
+  {
+    // ---- (a) order on a fresh profile: intro, fragments, wormholes, each once
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    check('hook loadCustom present', await page.evaluate(() => typeof __peri.loadCustom === 'function'));
+    await loadFx(page, 2); await page.waitForTimeout(450);
+    const seq = [];
+    for (let k = 0; k < 5; k++) {
+      const c = await page.evaluate(() => __peri.state.card); if (!c) break;
+      seq.push(c); await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(420);
+    }
+    check('wormhole card queues after intro and fragments on a fresh profile (fw3: intro, fragments, wormholes)', JSON.stringify(seq) === JSON.stringify(['intro', 'fragments', 'wormholes']), JSON.stringify(seq));
+    const sv = await page.evaluate(() => ({ seen: JSON.parse(localStorage.getItem('perihelion.v1')).seen, card: __peri.state.card }));
+    check('all three seen flags saved, no card left', sv.seen.intro && sv.seen.fragments && sv.seen.wormholes && sv.card === null, JSON.stringify(sv));
+    await loadFx(page, 0); await page.waitForTimeout(300);
+    check('wormhole card is once-only (does not repeat on the next wormhole plate)', await page.evaluate(() => __peri.state.card === null));
+    await page.reload(); await page.waitForTimeout(700);
+    await loadFx(page, 1); await page.waitForTimeout(300);
+    check('seen flag survives a reload', await page.evaluate(() => __peri.state.card === null && __peri.Save.seen('wormholes')));
+    check('no console errors (wormhole card order)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (b) the card itself, portrait
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(SEEN_IF);
+    await loadFx(page, 0); await page.waitForTimeout(500);
+    const wc = await page.evaluate(() => { const s = __peri.state, e = document.getElementById('pcard');
+      return { card: s.card, on: e.classList.contains('on'), kick: e.querySelector('.kicker').innerText.trim(), title: e.querySelector('.c-title').innerText.trim(), body: e.querySelector('.pop-text').innerText.replace(/\s+/g, ' ').trim(),
+        btns: [...e.querySelectorAll('.btn')].map(b => b.innerText.trim()), seen: __peri.Save.seen('wormholes'), sp: s.spotlight && s.spotlight.map(p => ({ x: p.x, y: p.y, r: p.r })),
+        bodies: s.level.bodies.filter(b => b.kind === 'wormhole').map(b => ({ x: b.x, y: b.y, r: b.r })) }; });
+    check('wormholes card opens on first load of a wormhole plate; title "Wormholes", button "Understood"', wc.card === 'wormholes' && wc.on && /^Wormholes$/i.test(wc.title) && JSON.stringify(wc.btns) === '["Understood"]' && !wc.seen, JSON.stringify({ card: wc.card, title: wc.title, btns: wc.btns }));
+    check('wormholes card text is the contract text verbatim', wc.body === WTEXT, wc.body);
+    check('spotlight holds every mouth as {x, y, r: mouth.r + 14}', wc.sp && wc.sp.length === wc.bodies.length && wc.sp.length === 2 && wc.sp.every((p, i) => p.x === wc.bodies[i].x && p.y === wc.bodies[i].y && p.r === wc.bodies[i].r + 14), JSON.stringify(wc.sp));
+    const wr = await rectOf(page, '#pcard'), hit = await ringsHit(page);
+    const cb0 = await coverVsBest(page);
+    check('wormholes card inside 390x844 and covers as few mouths as any position could (fw1: its mouths sit in both halves, one cannot be spared)', inside(wr, 390, 844, 6) && cb0.covered <= cb0.best, JSON.stringify({ wr, cb0, rings: hit }));
+    await shot(page, 'feel-card-wormholes.png');
+    const d = await touchDrag(page, 200, 90, 150, 200);
+    const ab = await page.evaluate(() => ({ active: __peri.state.aim.active, n: __peri.state.predict.n }));
+    await d.end(); await page.waitForTimeout(60);
+    check('wormholes card blocks aiming', !ab.active && ab.n === 0 && await page.evaluate(() => __peri.state.launches === 0));
+    const s1 = await page.evaluate(() => __peri.state.step); await page.waitForTimeout(400);
+    check('clock held while the wormholes card is open', await page.evaluate(s => __peri.state.step === s, s1));
+    for (const i of [1, 2]) {      // other layouts: the card never hides a mouth
+      await page.evaluate(() => __peri.closeCard()); await page.evaluate(() => { __peri.Save.data.seen.wormholes = false; });
+      await page.evaluate(lv => { lv = JSON.parse(JSON.stringify(lv)); __peri.loadCustom(lv); }, FX[i]); await page.waitForTimeout(450);
+      const cc = await coverVsBest(page), rc2 = await rectOf(page, '#pcard');
+      check('wormholes card on fw' + (i + 1) + ' (' + cc.n + ' mouths): inside the viewport, covers as few mouths as any position could', await page.evaluate(() => __peri.state.card === 'wormholes') && inside(rc2, 390, 844, 6) && cc.covered <= cc.best, JSON.stringify({ rc2, cc }));
+      await shot(page, 'feel-card-wormholes-fw' + (i + 1) + '.png');
+    }
+    await page.evaluate(() => __peri.closeCard()); await page.evaluate(lv => { __peri.Save.data.seen.wormholes = false; __peri.loadCustom(JSON.parse(JSON.stringify(lv))); }, FX[0]); await page.waitForTimeout(450);
+    await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(400);
+    const dz = await page.evaluate(() => ({ card: __peri.state.card, sp: __peri.state.spotlight, on: document.getElementById('pcard').classList.contains('on'), saved: JSON.parse(localStorage.getItem('perihelion.v1')).seen.wormholes }));
+    check('Understood dismisses, clears the spotlight, persists', dz.card === null && dz.sp === null && !dz.on && dz.saved === true, JSON.stringify(dz));
+
+    // ---- (c) menu item: only on wormhole plates, reopens the card from the sheet
+    await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
+    const mo = await page.evaluate(() => ({ order: [...document.querySelectorAll('#sheet .c-btns .btn, #sheet [data-sound]')].filter(b => b.offsetParent !== null).map(b => b.innerText.replace(/\s+/g, ' ').trim()),
+      h: Math.round(document.getElementById('sheet-worm').getBoundingClientRect().height) }));
+    check('menu on a wormhole plate: "About wormholes" after "About comet fragments"', JSON.stringify(mo.order) === JSON.stringify(['Resume', 'Consult the Astronomer', 'How to play', 'About comet fragments', 'About wormholes', 'Restart plate', 'Return to the Atlas', 'Sound: On']) && mo.h >= 44, JSON.stringify(mo));
+    const mp = await rectOf(page, '#sheet-panel');
+    check('menu sheet with the extra item still inside 390x844', inside(mp, 390, 844, 4), JSON.stringify(mp));
+    await shot(page, 'feel-menu-wormholes.png');
+    await page.tap('#sheet [data-act="wormholes"]'); await page.waitForTimeout(450);
+    const ra = await page.evaluate(() => ({ card: __peri.state.card, paused: __peri.state.paused, sp: __peri.state.spotlight && __peri.state.spotlight.length, t: document.querySelector('#pcard .pop-text').innerText.replace(/\s+/g, ' ') }));
+    check('"About wormholes" reopens the card from the sheet (spotlight set)', ra.card === 'wormholes' && ra.paused && ra.sp === 2 && ra.t === WTEXT, JSON.stringify({ card: ra.card, sp: ra.sp }));
+    await shot(page, 'feel-card-wormholes-menu.png');
+    await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(350);
+    check('dismiss returns to the paused sheet', await page.evaluate(() => __peri.state.card === null && __peri.state.paused && document.getElementById('sheet').classList.contains('on') && !document.getElementById('sheet').classList.contains('sub')));
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    await page.evaluate(() => __peri.loadLevel(0)); await page.waitForTimeout(300);
+    await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
+    check('menu on a plate without wormholes: no "About wormholes"', await page.evaluate(() => { const b = document.getElementById('sheet-worm'); return b.hidden && b.offsetParent === null && ![...document.querySelectorAll('#sheet .btn')].some(x => x.offsetParent !== null && /wormhole/i.test(x.innerText)); }));
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    await page.evaluate(() => __peri.loadDaily()); await page.waitForTimeout(300);
+    await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
+    check('menu on the Daily Plate: no "About wormholes"', await page.evaluate(() => document.getElementById('sheet-worm').offsetParent === null));
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    check('no console errors (wormhole card run)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (d) a mouth on rails: the ring follows it
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(SEEN_IF);
+    await page.evaluate(lv => { lv = JSON.parse(JSON.stringify(lv)); lv.solution.t0Step = 0; __peri.loadCustom(lv); }, FX[2]); await page.waitForTimeout(450);
+    const rr = await page.evaluate(() => { const s = __peri.state, P = __peri.Physics, b = s.level.bodies.findIndex(q => q.kind === 'wormhole' && q.orbit), o = {}; P.bodyPos(s.level.bodies[b], s.step * 1 / 120, o);
+      return { card: s.card, sp: s.spotlight.map(p => [p.x, p.y, p.r]), want: [o.x, o.y], b, step: s.step }; });
+    const orb = rr.sp.find(p => Math.abs(p[0] - rr.want[0]) < 1e-6 && Math.abs(p[1] - rr.want[1]) < 1e-6);
+    check('orbiting mouth: spotlight follows its current position, r = r + 14', rr.card === 'wormholes' && orb && orb[2] === 46, JSON.stringify(rr));
+    await page.evaluate(() => { __peri.state.step += 37; }); await page.waitForTimeout(120);
+    const r2 = await page.evaluate(() => { const s = __peri.state, o = {}; __peri.Physics.bodyPos(s.level.bodies.find(q => q.kind === 'wormhole' && q.orbit), s.step / 120, o); const p = s.spotlight.find(q => q.body === s.level.bodies.findIndex(q2 => q2.orbit)); return { p: [p.x, p.y], want: [o.x, o.y] }; });
+    check('spotlight ring refreshes each frame when the mouth moves', Math.abs(r2.p[0] - r2.want[0]) < 1e-6 && Math.abs(r2.p[1] - r2.want[1]) < 1e-6 && Math.hypot(r2.p[0] - rr.want[0], r2.p[1] - rr.want[1]) > 5, JSON.stringify(r2));
+    await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(300);
+    check('no console errors (orbiting mouth card)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (e) live flights through wormholes in the real game loop, the hint, result and star rule
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(SEEN_ALL);
+    await page.evaluate(() => {
+      window.__w = { render: [], sound: 0, vib: [] };
+      const R = __peri.Render, S = __peri.Sound, or = R.warp, os = S.warp;
+      window.__w.realRender = typeof or === 'function'; window.__w.realSound = typeof os === 'function';
+      R.warp = function (a, b, c, d) { __w.render.push([a, b, c, d]); if (or) return or.apply(this, arguments); };
+      S.warp = function () { __w.sound++; if (os) return os.apply(this, arguments); };
+      Object.defineProperty(navigator, 'vibrate', { configurable: true, value: v => { __w.vib.push(v); return true; } });
+      window.__ev = []; const o = __peri.Log.event; __peri.Log.event = function (n, d) { window.__ev.push(n); return o.apply(this, arguments); };
+    });
+    console.log('  Render.warp present: ' + await page.evaluate(() => __w.realRender) + ', Sound.warp present: ' + await page.evaluate(() => __w.realSound));
+    // aim preview on a wormhole plate: K.PREDICT_STEPS buffer, path with a jump
+    await loadFx(page, 0); await page.waitForTimeout(300);
+    const sol = FX[0].solution, sc = await page.evaluate(() => __peri.Render.layout.scale);
+    const pp = await page.evaluate(() => { const p = __peri.Render.worldToScreen(__peri.state.level.probe.x, __peri.state.level.probe.y); return p; });
+    const k = 300 / 640;                                     // world pull per unit of launch speed (DRAG_MAX / VMAX)
+    const d = await touchDrag(page, 195, 560, 195 - sol.vx * k * sc, 560 - sol.vy * k * sc, 10); await page.waitForTimeout(80);
+    const pr = await page.evaluate(() => { const s = __peri.state, n = s.predict.n, pts = s.predict.pts, J = K.WARP_JUMP; let jumps = 0, at = -1;
+      for (let i = 1; i < n; i++) if (Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]) > J) { jumps++; at = i; }
+      return { n, jumps, at, len: pts.length, cancel: s.aim.cancel, vx: s.aim.vx, vy: s.aim.vy }; });
+    await shot(page, 'feel-aim-wormhole.png');
+    await d.end(); await page.waitForTimeout(60);
+    check('aim preview on a wormhole plate: <= K.PREDICT_STEPS points, crosses the mouth as one jump', pr.n === 270 && pr.len === 540 && pr.jumps === 1, JSON.stringify(pr));
+    await page.evaluate(() => { __w.render.length = 0; __w.sound = 0; __w.vib.length = 0; __ev.length = 0; });
+    await page.evaluate(() => __peri.loadCustom ? 0 : 0);
+    // real-time flight with the real solution
+    await loadFx(page, 0); await page.waitForTimeout(200);
+    await page.evaluate(lv => { __w.render.length = 0; __w.sound = 0; __w.vib.length = 0; __ev.length = 0; __peri.launch(lv.solution.vx, lv.solution.vy); }, FX[0]);
+    await page.waitForFunction(() => __peri.state.phase === 'result', null, { timeout: 15000 }).catch(() => {});
+    await shot(page, 'feel-wormhole-flight-result.png');
+    const fl = await page.evaluate(() => { const s = __peri.state, r = s.result, pts = r && r.pts, n = r ? r.n : 0, J = K.WARP_JUMP, js = [];
+      for (let i = 1; i < n; i++) if (Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]) > J) js.push(i);
+      const b = s.level.bodies; return { res: r && { ok: r.success, st: r.stars }, warps: s.sim.warps, ev: s.sim.events.length, w: window.__w, js, m1: [b[1].x, b[1].y], m2: [b[2].x, b[2].y], logs: window.__ev, sealedCard: document.getElementById('card').innerText.replace(/\s+/g, ' ') }; });
+    check('live flight through a wormhole (real loop): hit, 3 stars, one passage', fl.res && fl.res.ok && fl.res.st === 3 && fl.warps === 1, JSON.stringify({ res: fl.res, warps: fl.warps }));
+    check('warp event fires once: Render.warp x1 (entry mouth centre, twin centre), Sound.warp x1, one vibrate(14), events cleared', fl.w.render.length === 1 && Math.hypot(fl.w.render[0][0] - fl.m2[0], fl.w.render[0][1] - fl.m2[1]) < 1e-6 && Math.hypot(fl.w.render[0][2] - fl.m1[0], fl.w.render[0][3] - fl.m1[1]) < 1e-6 && fl.w.sound === 1 && fl.w.vib.filter(v => v === 14).length === 1 && fl.ev === 0, JSON.stringify({ r: fl.w.render, s: fl.w.sound, v: fl.w.vib, ev: fl.ev }));
+    check('result path holds the jump as one long step (RENDER must not connect it)', fl.js.length === 1, JSON.stringify(fl.js));
+    await cardOn(page).catch(() => {});
+    const rc = await page.evaluate(() => ({ t: document.getElementById('card').innerText.replace(/\s+/g, ' '), btns: [...document.querySelectorAll('#card .btn')].map(b => b.innerText.trim()), saved: JSON.parse(localStorage.getItem('perihelion.v1')).stars.slice(0, 3), logs: window.__ev }));
+    check('result card on a custom plate: Sealed, Replay/Atlas only, no Next plate', /Sealed/.test(rc.t) && JSON.stringify(rc.btns) === '["Replay","Atlas"]', JSON.stringify(rc.btns));
+    check('custom plate: no plateSealed / no Log events, nothing saved', !rc.logs.length && rc.saved.every(x => x === 0), JSON.stringify({ logs: rc.logs, saved: rc.saved }));
+    // guards: the flight must work when Render.warp / Sound.warp / navigator.vibrate do not exist
+    await page.evaluate(() => { __peri.Render.warp = undefined; __peri.Sound.warp = undefined; Object.defineProperty(navigator, 'vibrate', { configurable: true, value: undefined }); });
+    await loadFx(page, 1); await page.waitForTimeout(150);
+    const nog = await page.evaluate(() => { __peri.solveCurrent(); __peri.fastForward(1500); const s = __peri.state; return { ok: s.result && s.result.success, w: s.sim.warps }; });
+    check('guards: flight through a wormhole works without Render.warp / Sound.warp / vibrate', nog.ok && nog.w >= 1 && errors.length === 0, JSON.stringify(nog) + errors.join('|'));
+    // each fixture through the game loop: warps counted, spies agree
+    await page.evaluate(() => {
+      const R = __peri.Render, S = __peri.Sound;
+      R.warp = function (a, b, c, d) { __w.render.push([a, b, c, d]); }; S.warp = function () { __w.sound++; };
+      Object.defineProperty(navigator, 'vibrate', { configurable: true, value: v => { __w.vib.push(v); return true; } });
+    });
+    for (let i = 0; i < 3; i++) {
+      await loadFx(page, i); await page.waitForTimeout(100);
+      const r = await page.evaluate(() => { __w.render.length = 0; __w.sound = 0; const s0 = __peri.solveCurrent(); __peri.fastForward(1500); const s = __peri.state, sim = s.sim;
+        return { t0: s0 && s0.t0Step, ok: s.result && s.result.success, st: s.result && s.result.stars, warps: sim.warps, calls: __w.render.length, snd: __w.sound, ev: sim.events.length, frag: s.collected.reduce((a, b) => a + b, 0) }; });
+      check('fixture fw' + (i + 1) + ' in the live loop: hit in one launch (3 stars), ' + [1, 1, 2][i] + ' passage(s), one Render.warp + Sound.warp per passage', r.ok && r.st === 3 && r.warps === [1, 1, 2][i] && r.calls === r.warps && r.snd === r.warps && r.ev === 0, JSON.stringify(r));
+    }
+    // hint on fixtures
+    for (let i = 0; i < 3; i++) {
+      await loadFx(page, i); await page.waitForTimeout(100);
+      const h = await page.evaluate(() => { const ok = __peri.useHint(), s = __peri.state, h = s.hint, sol = s.level.solution, P = __peri.Physics, J = K.WARP_JUMP, sim = P.createSim(s.level, sol.vx, sol.vy, sol.t0Step | 0);
+        let tot = 0, w = 0, lw = 0, got = 0, lf = 0; while (sim.status === 'flying' && sim.step < 1200) { P.stepSim(sim, s.level); tot++; if (sim.warps > w) { w = sim.warps; lw = tot; } const c = sim.collected.reduce((a, b) => a + b, 0); if (c > got) { got = c; lf = tot; } }
+        let n = Math.floor(0.55 * tot); if (got) n = Math.max(n, Math.min(lf + 24, Math.floor(0.92 * tot))); if (w) n = Math.max(n, Math.min(lw + 24, Math.floor(0.92 * tot))); n = Math.min(1100, n);
+        const js = []; for (let k = 1; k < h.n; k++) if (Math.hypot(h.pts[2 * k] - h.pts[2 * k - 2], h.pts[2 * k + 1] - h.pts[2 * k - 1]) > J) js.push(k);
+        return { ok, n: h.n, expect: n, tot, lw, js, used: h.used, on: h.on, frozen: s.frozen, step: s.step, t0: sol.t0Step | 0 }; });
+      check('hint (Consult the Astronomer) on wormhole fixture fw' + (i + 1) + ': line runs through the passage and >= 24 steps beyond it, stays under 92% of the course', h.ok && h.on && h.used && h.frozen && h.step === h.t0 && h.n === h.expect && h.js.length >= 1 && h.n >= Math.min(h.lw + 24, Math.floor(.92 * h.tot)) && h.n <= Math.floor(.92 * h.tot) + 1, JSON.stringify(h));
+      if (i === 0) await shot(page, 'feel-hint-wormhole.png');
+    }
+    await loadFx(page, 0); await page.waitForTimeout(100);
+    const hs = await page.evaluate(() => { __peri.useHint(); __peri.solveCurrent(); __peri.fastForward(1500); const s = __peri.state; return { ok: s.result && s.result.success, st: s.result && s.result.stars, used: s.result && s.result.hintUsed }; });
+    check('star rule on a wormhole plate: one launch + hint = 2 stars', hs.ok && hs.st === 2 && hs.used, JSON.stringify(hs));
+    await loadFx(page, 0); await page.waitForTimeout(100);
+    const f3 = await page.evaluate(() => { const s = __peri.state; for (let k = 0; k < 3; k++) { __peri.launch(0, 640); while (s.sim && s.sim.status === 'flying') __peri.fastForward(1); __peri.fastForward(100); } return { ph: s.phase, r: s.result && s.result.success, l: s.launches }; });
+    check('three misses on a wormhole plate: fail result, Retry works', f3.ph === 'result' && f3.r === false && f3.l === 3);
+    check('no console errors (wormhole flight run)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (f) loadCustom writes nothing to Save and emits nothing to Log; real plates afterwards behave normally
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(() => { SEEN_ALL_PAGE(); function SEEN_ALL_PAGE() { for (const n of ['intro', 'fragments', 'wormholes']) __peri.Save.markSeen(n); } __peri.Save.recordPlate(0, 2, 0); __peri.Save.bump('launches', 3); });
+    const before = await page.evaluate(() => ({ raw: localStorage.getItem('perihelion.v1'), mem: JSON.stringify(__peri.Save.data) }));
+    await page.evaluate(() => { window.__ev = []; const o = __peri.Log.event; __peri.Log.event = function (n) { window.__ev.push(n); return o.apply(this, arguments); }; });
+    for (let i = 0; i < 3; i++) {
+      await loadFx(page, i); await page.waitForTimeout(100);
+      await page.evaluate(() => { __peri.useHint(); __peri.solveCurrent(); __peri.fastForward(1500); });
+      await page.evaluate(() => { __peri.loadCustom(__peri.state.level); for (let k = 0; k < 3; k++) { __peri.launch(0, 640); const s = __peri.state; while (s.sim && s.sim.status === 'flying') __peri.fastForward(1); __peri.fastForward(100); } __peri.openCard('wormholes'); __peri.closeCard(); });
+      await page.tap('#zone-r .btn').catch(() => {}); await page.waitForTimeout(150);
+      await page.evaluate(() => __peri.resume());
+    }
+    const after = await page.evaluate(() => ({ raw: localStorage.getItem('perihelion.v1'), mem: JSON.stringify(__peri.Save.data), ev: window.__ev, idx: __peri.state.levelIndex, mode: __peri.state.mode, custom: __peri.state.custom }));
+    check('loadCustom: localStorage string and Save.data unchanged after full plays, hints, fails, cards', before.raw === after.raw && before.mem === after.mem);
+    check('loadCustom: levelIndex -1, no Log events (so no plateSealed)', after.idx === -1 && after.ev.length === 0 && after.custom === true, JSON.stringify({ idx: after.idx, ev: after.ev }));
+    await page.evaluate(() => { __peri.loadLevel(1); __peri.solveCurrent(); __peri.fastForward(1500); });
+    const real = await page.evaluate(() => ({ s: __peri.Save.data.stars[1], ev: window.__ev, custom: __peri.state.custom, idx: __peri.state.levelIndex }));
+    check('a baked plate after loadCustom saves and logs as usual', real.s === 3 && real.ev.includes('plateSealed') && !real.custom && real.idx === 1, JSON.stringify(real));
+    check('no console errors (loadCustom run)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (g) 90 plates: a save that finished 60 plates finds plate 61 unlocked; unlock stays in order; the card shows once on first load
+    const T = atlasTargets[atlasTargets.length - 1], tag = T.stub ? ' [stand-in Vol III]' : '';
+    const seed = () => { const st = [], fr = []; for (let i = 0; i < 60; i++) { st.push(i % 3 + 1); fr.push(0); }
+      try { if (!localStorage.getItem('perihelion.v1')) localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars: st, frags: fr, unlocked: 60, endlessBest: 0, muted: false, seen: { intro: true, fragments: true } })); } catch (e) {} };
+    const { ctx, page, errors } = await newPage(browser, IPHONE, seed);
+    await page.goto(T.url); await page.waitForTimeout(600);
+    const mg = await page.evaluate(() => ({ u: __peri.Save.data.unlocked, n: __peri.Levels.CAMPAIGN.length, N: __peri.Save.N, sealed: __peri.Save.totals().sealed, vols: __peri.Levels.VOLUMES.map(v => v.from + '-' + v.to).join(),
+      ed: document.getElementById('t-ed').innerText.replace(/\s+/g, ' ') }));
+    check('90-plate build: Save.N is 90 and the last volume ends at the last plate', mg.N === 90 && mg.n <= 90 && +mg.vols.split(',').pop().split('-')[1] === mg.n - 1, JSON.stringify(mg));
+    check('title edition line follows the campaign length', mg.ed.indexOf('Plates I–' + (await page.evaluate(n => toRoman(n), mg.n))) === 0, mg.ed);
+    if (mg.n > 60) {
+      check('existing save with 60 plates finished: plate 61 unlocked (unlocked = 61)', mg.u === 61 && mg.sealed === 60, JSON.stringify({ u: mg.u, sealed: mg.sealed }));
+      await page.tap('[data-act="begin"]'); await page.waitForTimeout(500);
+      const lk = await page.evaluate(() => ({ p60: document.querySelector('.plate[data-i="60"]').classList.contains('locked'), p61: document.querySelector('.plate[data-i="61"]').classList.contains('locked'), p59: document.querySelector('.plate[data-i="59"]').classList.contains('locked') }));
+      check('atlas: plates 1-61 open, plate 62 locked', !lk.p59 && !lk.p60 && lk.p61, JSON.stringify(lk));
+      await page.evaluate(() => { document.querySelector('.plate[data-i="61"]').click(); });
+      check('atlas: a locked Volume III plate cannot be opened', await page.evaluate(() => __peri.state.screen === 'select'));
+      await page.evaluate(() => { const sc = document.getElementById('s-scroll'), e = document.querySelector('.plate[data-i="60"]'); sc.scrollTop = e.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 120; });
+      await page.waitForTimeout(450);
+      await shot(page, T.stub ? 'feel-atlas-stub-seam.png' : 'feel-atlas-seam.png');
+      await page.evaluate(() => { const e = document.querySelector('.plate[data-i="60"]'); e.scrollIntoView({ block: 'center' }); }); await page.waitForTimeout(300);
+      await page.tap('.plate[data-i="60"]'); await page.waitForTimeout(550);
+      const p61 = await page.evaluate(() => ({ s: __peri.state.screen, i: __peri.state.levelIndex, card: __peri.state.card, w: __peri.state.level.bodies.some(b => b.kind === 'wormhole'), cap: __peri.state.level.plate, sp: __peri.state.spotlight && __peri.state.spotlight.length }));
+      check('tapping plate LXI opens it; its wormhole card shows on first load' + tag, p61.s === 'play' && p61.i === 60 && p61.w && p61.card === 'wormholes' && p61.sp >= 2, JSON.stringify(p61));
+      await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(400);
+      await page.evaluate(() => { __peri.solveCurrent(); __peri.fastForward(1500); }); await cardOn(page);
+      const sl = await page.evaluate(() => ({ u: __peri.Save.data.unlocked, st: __peri.Save.data.stars[60], btns: [...document.querySelectorAll('#card .btn')].map(b => b.innerText.trim()) }));
+      check('sealing plate LXI unlocks LXII, result card offers Next plate', sl.u === 62 && sl.st >= 1 && sl.btns.indexOf('Next plate') >= 0, JSON.stringify(sl));
+      await page.tap('#card [data-act="next"]'); await page.waitForTimeout(450);
+      const nx = await page.evaluate(() => ({ i: __peri.state.levelIndex, card: __peri.state.card }));
+      check('Next plate from LXI goes to LXII; the wormhole card does not repeat', nx.i === 61 && nx.card === null, JSON.stringify(nx));
+    } else {
+      console.log('  note: CAMPAIGN has only ' + mg.n + ' plates; Volume III plate flow not tested');
+    }
+    // last plate of the atlas: "The atlas is complete."
+    await page.evaluate(() => { const n = __peri.Levels.CAMPAIGN.length; const d = __peri.Save.data; for (let i = 0; i < n; i++) d.stars[i] = Math.max(d.stars[i], 1); d.unlocked = n; __peri.loadLevel(n - 1); __peri.solveCurrent(); __peri.fastForward(1500); });
+    await cardOn(page).catch(() => {});
+    const lastc = await page.evaluate(() => ({ t: document.getElementById('card').innerText.replace(/\s+/g, ' '), u: __peri.Save.data.unlocked, n: __peri.Levels.CAMPAIGN.length }));
+    check('last plate of the atlas: "The atlas is complete.", Replay/Atlas, unlocked stays <= Save.N', /The atlas is complete\./.test(lastc.t) && !/Next plate/.test(lastc.t) && lastc.u <= 90, lastc.t);
+    check('no console errors (90-plate run' + tag + ')', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (i) the wormholes card clears the mouths and their pair labels on every wormhole plate; loadCustom refuses broken pairs
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url3); await page.waitForTimeout(600);
+    await page.evaluate(SEEN_IF);
+    const plates = await page.evaluate(() => __peri.Levels.CAMPAIGN.map((l, i) => l.bodies.some(b => b.kind === 'wormhole') ? i : -1).filter(i => i >= 0));
+    const rep = [];
+    for (const src of [...plates.map(i => ({ i })), ...FX.map((f, k) => ({ fx: k }))]) {
+      const r = await page.evaluate(src => { __peri.Save.data.seen.wormholes = false; if (src.fx === undefined) __peri.loadLevel(src.i); return true; }, src);
+      if (src.fx !== undefined) await page.evaluate(lv => { __peri.Save.data.seen.wormholes = false; __peri.loadCustom(JSON.parse(JSON.stringify(lv))); }, FX[src.fx]);
+      await page.waitForTimeout(60);
+      const m = await page.evaluate(() => { const L = __peri.Render.layout, sc = L.scale, e = document.getElementById('pcard'), r = { top: e.offsetTop, left: e.offsetLeft, right: e.offsetLeft + e.offsetWidth, bottom: e.offsetTop + e.offsetHeight, height: e.offsetHeight }, sp = __peri.state.spotlight || [];   // layout box: the card is still scaling in (transform) 60 ms after it opens
+        const bands = sp.map(p => { const q = __peri.Render.worldToScreen(p.x, p.y), rr = p.r * sc + 34; return [q.y - rr, q.y + rr, q.y]; });
+        const ov = (t, h) => bands.reduce((a, b) => a + Math.max(0, Math.min(t + h, b[1]) - Math.max(t, b[0])), 0), hid = (t, h) => bands.filter(b => b[2] >= t - 4 && b[2] <= t + h + 4).length;
+        const minTop = L.top.y + L.top.h + 2, maxBottom = Math.min(L.h - 10, L.bottom.y - 2), h = r.height; let bestOv = Infinity, bestHid = Infinity, bestSc = Infinity;
+        for (let t = minTop; t <= maxBottom - h + 0.5; t += 1) { bestOv = Math.min(bestOv, ov(t, h)); bestHid = Math.min(bestHid, hid(t, h)); bestSc = Math.min(bestSc, ov(t, h) + 400 * hid(t, h)); }
+        return { card: __peri.state.card, n: sp.length, compact: e.classList.contains('compact'), top: r.top, bottom: r.bottom, h, left: r.left, right: r.right, ov: ov(r.top, h), hid: hid(r.top, h), sc: ov(r.top, h) + 400 * hid(r.top, h), bestSc, bestOv, bestHid, minTop, maxBottom, id: __peri.state.level.id }; });
+      rep.push(m);
+    }
+    const bad = rep.filter(m => m.card !== 'wormholes' || m.top < m.minTop - 1 || m.bottom > m.maxBottom + 1 || m.left < 0 || m.right > 390 || m.sc > m.bestSc + 4);
+    const clear = rep.filter(m => m.ov === 0).length, comp = rep.filter(m => m.compact).length, hidden = rep.filter(m => m.hid > 0).map(m => m.id);
+    console.log('  wormholes card on ' + rep.length + ' plates: clear of mouths+labels on ' + clear + ', compact on ' + comp + ', still covering a mouth centre on ' + JSON.stringify(hidden));
+    check('wormholes card on every wormhole plate (' + rep.length + '): inside the plate band, as clear of mouths + labels (ring + 34 px) as any position of its size allows (mouth centres first)', bad.length === 0, JSON.stringify(bad.slice(0, 3)));
+    check('wormholes card: never hides a mouth centre where any position of its size would spare them', rep.every(m => m.hid <= m.bestHid), JSON.stringify(rep.filter(m => m.hid > m.bestHid).map(m => m.id)));
+    check('wormholes card: the compact form is used where the full card would cover more, and a good share of plates are fully clear', comp > 0 && clear >= rep.length / 4, clear + '/' + rep.length + ' clear; still overlapping: ' + JSON.stringify(rep.filter(m => m.ov > 0).map(m => m.id + ':' + Math.round(m.ov) + (m.compact ? 'c' : ''))));
+    // loadCustom refuses broken wormhole pairs
+    const before = await page.evaluate(() => ({ id: __peri.state.level.id, idx: __peri.state.levelIndex, custom: __peri.state.custom }));
+    const res = await page.evaluate(lv => { const out = {}, W = () => JSON.parse(JSON.stringify(lv)), t = (name, f) => { const l = W(); f(l); try { out[name] = __peri.loadCustom(l); } catch (e) { out[name] = 'threw ' + e.message; } };
+      t('missing', l => { delete l.bodies[1].pair; }); t('notMutual', l => { l.bodies[1].pair = 2; l.bodies[2].pair = 0; }); t('self', l => { l.bodies[1].pair = 1; });
+      t('range', l => { l.bodies[2].pair = 9; }); t('toPlanet', l => { l.bodies[1].pair = 0; }); t('string', l => { l.bodies[1].pair = '2'; });
+      out.nobodies = (() => { try { return __peri.loadCustom({ probe: {}, target: {} }); } catch (e) { return 'threw'; } })();
+      out.same = { id: __peri.state.level.id, idx: __peri.state.levelIndex, custom: __peri.state.custom };
+      out.good = (() => { try { const r = __peri.loadCustom(W()); return r && r.id; } catch (e) { return 'threw'; } })();
+      return out; }, FX[0]);
+    check('loadCustom rejects a level whose wormhole pairs are not mutual (returns false, no throw, game state untouched)', ['missing', 'notMutual', 'self', 'range', 'toPlanet', 'string'].every(k => res[k] === false) && res.nobodies === false && res.same.id === before.id && res.same.idx === before.idx && res.same.custom === before.custom, JSON.stringify(res));
+    check('loadCustom still accepts a valid pair afterwards', res.good === 'fw1');
+    check('no console errors (card clearance + bad pairs)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (h) landscape 844x390: card and menu
+    const { ctx, page, errors } = await newPage(browser, LAND);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(SEEN_IF);
+    await loadFx(page, 0); await page.waitForTimeout(500);
+    const lf = await rectOf(page, '#pcard'), pl = await page.evaluate(() => { const p = __peri.Render.layout.plate; return { l: p.x, r: p.x + p.w }; });
+    const lhit = await ringsHit(page);
+    check('landscape wormholes card inside 844x390, beside the plate, clear of the rings, no inner scroll', await page.evaluate(() => __peri.state.card === 'wormholes') && inside(lf, 844, 390, 4) && (lf.l >= pl.r - 1 || lf.r <= pl.l + 1) && lhit.every(h => !h) && await page.evaluate(() => { const e = document.getElementById('pcard'); return e.scrollHeight <= e.clientHeight + 1; }), JSON.stringify({ lf, pl, lhit }));
+    await shot(page, 'feel-landscape-wormholes.png');
+    await page.evaluate(() => __peri.closeCard()); await page.waitForTimeout(300);
+    await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
+    const sb = await page.evaluate(() => { const p = document.getElementById('sheet-panel'); const w = document.getElementById('sheet-worm'); w.scrollIntoView({ block: 'nearest' }); const r = w.getBoundingClientRect(), q = p.getBoundingClientRect();
+      return { h: r.height, vis: r.top >= q.top - 1 && r.bottom <= q.bottom + 1, sh: p.scrollHeight, ch: p.clientHeight }; });
+    check('landscape menu with "About wormholes": >= 44px and reachable (panel scrolls if needed)', sb.h >= 44 && sb.vis, JSON.stringify(sb));
+    await shot(page, 'feel-landscape-menu-wormholes.png');
+    await page.tap('#sheet [data-act="wormholes"]'); await page.waitForTimeout(400);
+    check('landscape: card reopened from the sheet inside viewport', inside(await rectOf(page, '#pcard'), 844, 390, 4));
+    check('no console errors (landscape wormholes)', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
 

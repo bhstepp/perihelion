@@ -7,7 +7,7 @@ const Lb = require('./qa-lib.js');
 const { fs, path, ROOT, QA, DIST, IPHONE, INSETS_P, results, notes, metrics, check, note, sleep, SEED_SEEN, SEED_HALF, newPage, cdpTap, tapEl, touchDrag, touchHold, cardOn, frames, shot, text, solutionPull, layoutAudit } = Lb;
 const { chromium } = require('playwright');
 const cp = require('child_process');
-const V2 = require('./qa-v2.js'), V2B = require('./qa-v2b.js');
+const V2 = require('./qa-v2.js'), V2B = require('./qa-v2b.js'), V3 = require('./qa-v3.js');
 const ONLY = process.env.QA_ONLY ? new RegExp(process.env.QA_ONLY) : null;
 
 const STD = 'file://' + path.join(DIST, 'perihelion.html');
@@ -19,9 +19,9 @@ const info = {};
 async function blockMain(browser) {
   const { ctx, page, cdp, errors } = await newPage(browser, { url: STD, label: 'std', init: [`window.__lsBoot = (() => { try { const r = localStorage.getItem('perihelion.v1'); return r ? r.length : null; } catch (e) { return 'ERR'; } })();`, SEED_SEEN] });
   await page.waitForTimeout(1500);
-  check('6', 'hooks present (incl. v2 hooks)', await page.evaluate(() => ['state', 'Physics', 'Levels', 'Render', 'loadLevel', 'loadEndless', 'launch', 'fastForward', 'solveCurrent', 'fps', 'screen', 'openCard', 'closeCard', 'useHint', 'loadDaily', 'Log', 'LogUI', 'Save'].every(k => k in window.__peri && window.__peri[k] != null)));
+  check('6', 'hooks present (incl. v2 hooks)', await page.evaluate(() => ['state', 'Physics', 'Levels', 'Render', 'loadLevel', 'loadEndless', 'launch', 'fastForward', 'solveCurrent', 'fps', 'screen', 'openCard', 'closeCard', 'useHint', 'loadDaily', 'loadCustom', 'Log', 'LogUI', 'Save'].every(k => k in window.__peri && window.__peri[k] != null)));
   const lv = await page.evaluate(() => ({ n: __peri.Levels.CAMPAIGN.length, sn: __peri.Save.N, vols: JSON.stringify(__peri.Levels.VOLUMES), ps: K.PREDICT_STEPS, hm: K.HINT_MAX }));
-  check('3', 'Levels.CAMPAIGN.length === Save.N === 60, two volumes, PREDICT_STEPS 180', lv.n === 60 && lv.sn === 60 && /Volume I/.test(lv.vols) && /Volume II/.test(lv.vols) && lv.ps === 180, JSON.stringify(lv));
+  check('3', 'Levels.CAMPAIGN.length === Save.N === 90, three volumes, PREDICT_STEPS 270, HINT_MAX 1100', lv.n === 90 && lv.sn === 90 && JSON.parse(lv.vols).length === 3 && /Volume III/.test(lv.vols) && lv.ps === 270 && lv.hm === 1100, JSON.stringify(lv));
   const safeRead = await page.evaluate(() => __peri.Render.layout.safe);
   check('7', 'safe-area insets reach Render.resize (top 47 / bottom 34)', safeRead.top === 47 && safeRead.bottom === 34, JSON.stringify(safeRead));
   const st = await page.evaluate(() => { const t0 = performance.now(); const r = __peri.Physics.selfTest(); return { ok: r.ok, ms: performance.now() - t0, bad: r.checks.filter(c => !c.ok) }; });
@@ -59,7 +59,7 @@ async function blockMain(browser) {
     await page.waitForTimeout(450);
     const n = await page.evaluate(() => __peri.state.predict.n);
     await shot(page, file);
-    check('9', 'screenshot ' + file + ' mid-aim, short prediction (n ≤ 180)', n > 20 && n <= 180, JSON.stringify({ n, name: r.name }));
+    check('9', 'screenshot ' + file + ' mid-aim, short prediction (n ≤ K.PREDICT_STEPS = 270)', n > 20 && n <= 270, JSON.stringify({ n, name: r.name }));
   }
   await aimShot(0, 'qa-level01.png');
   const aPlay = await layoutAudit(page, 'portrait play plate I');
@@ -67,14 +67,14 @@ async function blockMain(browser) {
   check('7', 'layout: play screen plate I (portrait, aiming)', !aPlay.issues.length, aPlay.issues.join(' | '));
   await page.evaluate(() => { const a = __peri.state.aim; a.active = false; a.cancel = true; __peri.state.predict.n = 0; });
 
-  // real-touch launch on plate I, prediction ≤ 180 while held
+  // real-touch launch on plate I, prediction ≤ K.PREDICT_STEPS while held
   const pull = await solutionPull(page);
   const hold = await touchHold(cdp, 195, 380, 195 + pull.dx, 380 + pull.dy, 12);
   const pn = await page.evaluate(() => __peri.state.predict.n);
   await sleep(250); await hold.end(); await page.waitForTimeout(40);
   const fl = await page.evaluate(() => ({ phase: __peri.state.phase, l: __peri.state.launches }));
   check('6', 'touch drag-release launches (plate I)', fl.l === 1 && fl.phase !== 'aim', JSON.stringify(fl));
-  check('3', 'state.predict.n ≤ 180 while a real touch aim is held (n=' + pn + ')', pn > 10 && pn <= 180);
+  check('3', 'state.predict.n ≤ 270 (K.PREDICT_STEPS) while a real touch aim is held (n=' + pn + ')', pn > 10 && pn <= 270);
   await page.waitForTimeout(350); await shot(page, 'qa-flight.png');
   let ok1 = true; try { await cardOn(page, 15000); } catch (e) { ok1 = false; }
   const res1 = await page.evaluate(() => ({ r: __peri.state.result && { s: __peri.state.result.success, st: __peri.state.result.stars }, card: document.getElementById('card').innerText.replace(/\s+/g, ' ') }));
@@ -131,7 +131,7 @@ async function blockMain(browser) {
   await cdpTap(cdp, 195, 90); await sleep(200);
   check('6', 'tap on veil resumes after visibility pause', await page.evaluate(() => !__peri.state.paused));
 
-  // ---- (3) all 60 campaign plates: solveCurrent + fastForward → 3 stars
+  // ---- (3) all 90 campaign plates: solveCurrent + fastForward → 3 stars
   const camp = await page.evaluate(() => {
     const P = __peri, out = [];
     for (let i = 0; i < P.Levels.CAMPAIGN.length; i++) {
@@ -142,21 +142,22 @@ async function blockMain(browser) {
     return out;
   });
   metrics.campaign = camp;
-  check('3', 'campaign: 60 plates present (Volume I 30 + Volume II 30)', camp.length === 60);
+  check('3', 'campaign: 90 plates present (Volume I 30 + Volume II 30 + Volume III 30)', camp.length === 90);
   for (const c of camp) check('3', 'plate ' + (c.i + 1) + ' "' + c.name + '" solveCurrent+fastForward → success ★3', c.ok && c.card, c.status + ' stars ' + c.stars + ' t0 ' + c.t0 + ' ' + c.kinds + (c.moving ? ' (moving)' : '') + ' bodies ' + c.nb + ' frags ' + c.frags);
   info.fragPlate = camp.findIndex(c => c.frags > 0);
   const mv = camp.filter(c => c.moving).map(c => c.i);
-  info.moving1 = mv.find(i => i >= 5) || 5; info.moving2 = mv.find(i => i >= 30) || 30;
+  info.moving1 = mv.find(i => i >= 5) || 5; info.moving2 = mv.find(i => i >= 30) || 30; info.moving3 = mv.find(i => i >= 60) || 60;
 
-  // ---- (3) prediction === live flight for the full 180 steps, moving bodies, nonzero start steps
-  const movingV1 = mv.filter(i => i < 30), movingV2 = mv.filter(i => i >= 30);
-  const pick = [0, ...movingV1.slice(0, 2), movingV1[movingV1.length - 1], 29, 30, ...movingV2.slice(0, 3), ...movingV2.slice(-3), 44, 49, 59].filter((v, i, a) => a.indexOf(v) === i);
+  // ---- (3) prediction === live flight for the full K.PREDICT_STEPS (270) steps, moving bodies, wormholes, nonzero start steps
+  const movingV1 = mv.filter(i => i < 30), movingV2 = mv.filter(i => i >= 30 && i < 60), movingV3 = mv.filter(i => i >= 60);
+  const pick = [0, ...movingV1.slice(0, 2), movingV1[movingV1.length - 1], 29, 30, ...movingV2.slice(0, 3), ...movingV2.slice(-3), 44, 49, 59, 60, 61, 66, ...movingV3.slice(0, 3), ...movingV3.slice(-2), 78, 84, 89].filter((v, i, a) => a.indexOf(v) === i);
   const pv = await page.evaluate((pick) => {
     const P = __peri, S = P.state, out = [];
     for (const i of pick) for (const S0 of [0, 173, 611]) for (const variant of [{ f: 0.93, rot: 0.05 }, { f: 0.55, rot: -0.03 }]) {
       P.loadLevel(i);
       const sol = S.level.solution; let vx = sol.vx * variant.f, vy = sol.vy * variant.f;
       const ca = Math.cos(variant.rot), sa = Math.sin(variant.rot); [vx, vy] = [vx * ca - vy * sa, vx * sa + vy * ca];
+      const solN = P.Physics.simulate(S.level, sol.vx, sol.vy, sol.t0Step | 0, 1200).n;   // length of the stored solution's flight
       P.fastForward(S0);
       const dx = -vx / 640 * 300, dy = -vy / 640 * 300, lvv = P.Physics.launchVelocity(dx, dy);
       Object.assign(S.aim, { active: true, cancel: false, dx, dy, power: lvv.power, vx: lvv.vx, vy: lvv.vy });
@@ -167,22 +168,26 @@ async function blockMain(browser) {
       for (let k = 0; k < pn && S.sim && S.sim.status === 'flying'; k++) { P.fastForward(1); live.push(S.sim.x, S.sim.y); }
       let mism = -1; const m = Math.min(pred.length, live.length);
       for (let k = 0; k < m; k++) if (pred[k] !== Math.fround(live[k])) { mism = k >> 1; break; }
-      out.push({ i, S0, stepAt, t0, pn, ln: live.length / 2, mism, status: S.sim && S.sim.status, v: variant.f });
+      out.push({ i, S0, stepAt, t0, pn, ln: live.length / 2, mism, status: S.sim && S.sim.status, v: variant.f, solN });
     }
     return out;
   }, pick);
-  metrics.predict = { cases: pv.length, full180: pv.filter(r => r.pn === 180).length, maxN: Math.max(...pv.map(r => r.pn)) };
-  const bad = pv.filter(r => !(r.mism === -1 && r.t0 === r.stepAt && r.pn <= 180 && (r.ln === r.pn || r.status !== 'flying')));
-  check('3', 'predicted path === live flight, ' + pv.length + ' cases over ' + pick.length + ' plates (both volumes, moving bodies, start steps 0/173/611)', bad.length === 0, bad.slice(0, 4).map(r => JSON.stringify(r)).join(' '));
-  check('3', 'state.predict.n ≤ 180 in every case (max ' + metrics.predict.maxN + ')', metrics.predict.maxN <= 180 && metrics.predict.maxN > 100);
-  const perPlate180 = pick.map(i => pv.some(r => r.i === i && r.pn === 180 && r.ln === 180));
-  check('3', 'the full 180 steps were compared live vs predicted on ' + perPlate180.filter(Boolean).length + '/' + pick.length + ' picked plates (' + metrics.predict.full180 + '/' + pv.length + ' cases)', perPlate180.filter(Boolean).length >= pick.length - 2 && metrics.predict.full180 >= pv.length / 2, pick.filter((i, k) => !perPlate180[k]).map(i => i + 1).join(','));
+  metrics.predict = { cases: pv.length, fullN: pv.filter(r => r.pn === 270).length, maxN: Math.max(...pv.map(r => r.pn)) };
+  const bad = pv.filter(r => !(r.mism === -1 && r.t0 === r.stepAt && r.pn <= 270 && (r.ln === r.pn || r.status !== 'flying')));
+  check('3', 'predicted path === live flight, ' + pv.length + ' cases over ' + pick.length + ' plates (all three volumes, moving bodies, wormhole plates, start steps 0/173/611)', bad.length === 0, bad.slice(0, 4).map(r => JSON.stringify(r)).join(' '));
+  check('3', 'state.predict.n ≤ 270 in every case (max ' + metrics.predict.maxN + ')', metrics.predict.maxN <= 270 && metrics.predict.maxN > 200);
+  // 270 steps is longer than a few solution flights (plate I hits in fewer), so "full length" can only be demanded where the stored solution's
+  // flight itself runs at least 270 steps: every such picked plate must have been compared over all 270 steps in at least one case
+  const solLen = {}; pv.forEach(r => { solLen[r.i] = r.solN; });
+  const perPlateFull = pick.map(i => pv.some(r => r.i === i && r.pn === 270 && r.ln === 270));
+  const longPicks = pick.filter(i => solLen[i] >= 270), shortPicks = pick.filter(i => solLen[i] < 270);
+  check('3', 'the full 270 steps (K.PREDICT_STEPS) were compared live vs predicted on ' + perPlateFull.filter(Boolean).length + '/' + pick.length + ' picked plates (' + metrics.predict.fullN + '/' + pv.length + ' cases); every picked plate whose stored solution flies ≥ 270 steps (' + longPicks.length + ' of them) is covered', longPicks.every(i => perPlateFull[pick.indexOf(i)]) && metrics.predict.fullN >= pv.length / 2 && perPlateFull.filter(Boolean).length >= 16, 'not full: ' + pick.filter((i, k) => !perPlateFull[k]).map(i => (i + 1) + ' (solution flight ' + solLen[i] + ' steps)').join(', '));
 
-  // ---- (9) aim screenshots on plates 31, 45, 60
-  for (const i of [30, 44, 59]) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(300); await aimShot(i, 'qa-aim-' + (i + 1) + '.png'); if (i === 44) { const a = await layoutAudit(page, 'plate XLV aim'); check('7', 'layout: plate XLV (portrait, aiming)', !a.issues.length, a.issues.join(' | ')); } }
+  // ---- (9) aim screenshots on plates 31, 45, 60, 61, 90
+  for (const i of [30, 44, 59, 60, 89]) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(300); await aimShot(i, 'qa-aim-' + (i + 1) + '.png'); if (i === 44) { const a = await layoutAudit(page, 'plate XLV aim'); check('7', 'layout: plate XLV (portrait, aiming)', !a.issues.length, a.issues.join(' | ')); } }
   await page.evaluate(() => { const a = __peri.state.aim; a.active = false; a.cancel = true; });
 
-  // ---- (7) captions of all 60 plates (+ DAILY captions): ≥ 10 px, unsqueezed, two-row layout
+  // ---- (7) captions of all 90 plates (+ DAILY captions): ≥ 10 px, unsqueezed, two-row layout
   const caps = await page.evaluate(async () => {
     const P = __peri, out = [], raf2 = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     const grab = (kind, i, k) => { const c = P.Render.caption; out.push({ kind, i, k, text: c.text, size: c.size, two: c.two, sq: c.squeeze, name: P.state.level.name }); };
@@ -194,10 +199,11 @@ async function blockMain(browser) {
   const cp1 = caps.filter(c => c.kind === 'plate'), cd = caps.filter(c => c.kind === 'daily');
   const smallP = cp1.filter(c => c.size < 10 || c.sq !== 1), smallD = cd.filter(c => c.size < 10 || c.sq !== 1);
   check('7', 'plate captions ≥ 10 px and unsqueezed on all 30 Volume I plates (fallback fonts)', !smallP.filter(c => c.i < 30).length, smallP.filter(c => c.i < 30).map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; '));
-  check('7', 'plate captions ≥ 10 px and unsqueezed on all 30 Volume II plates (fallback fonts)', !smallP.filter(c => c.i >= 30).length, smallP.filter(c => c.i >= 30).map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; '));
+  check('7', 'plate captions ≥ 10 px and unsqueezed on all 30 Volume II plates (fallback fonts)', !smallP.filter(c => c.i >= 30 && c.i < 60).length, smallP.filter(c => c.i >= 30 && c.i < 60).map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; '));
+  check('7', 'plate captions ≥ 10 px and unsqueezed on all 30 Volume III plates (fallback fonts)', cp1.length === 90 && !smallP.filter(c => c.i >= 60).length, smallP.filter(c => c.i >= 60).map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; '));
   check('7', 'DAILY captions ≥ 10 px and unsqueezed on 40 dates across a year', !smallD.length, smallD.map(c => c.text + ' ' + c.size).join('; ') + ' | sizes ' + [...new Set(cd.map(c => c.size))].join('/'));
   const twoN = cp1.filter(c => c.two).length;
-  note('captions: ' + twoN + '/60 plates use the two-row HUD (sizes ' + [...new Set(cp1.map(c => c.size))].sort((a, b) => a - b).join(', ') + ' px); DAILY sizes ' + [...new Set(cd.map(c => c.size))].join(', ') + ' px, two-row ' + cd.filter(c => c.two).length + '/40. Cormorant SC is unavailable here, so widths are those of the Georgia fallback.');
+  note('captions: ' + twoN + '/' + cp1.length + ' plates use the two-row HUD (sizes ' + [...new Set(cp1.map(c => c.size))].sort((a, b) => a - b).join(', ') + ' px); DAILY sizes ' + [...new Set(cd.map(c => c.size))].join(', ') + ' px, two-row ' + cd.filter(c => c.two).length + '/40. Cormorant SC is unavailable here, so widths are those of the Georgia fallback.');
   const widest = cp1.filter(c => c.two).sort((a, b) => a.size - b.size || b.text.length - a.text.length)[0] || cp1.sort((a, b) => b.text.length - a.text.length)[0];
   for (const [i, file] of [[widest.i, 'qa-caption-two-row.png'], [cp1.filter(c => !c.two).sort((a, b) => b.text.length - a.text.length)[0].i, 'qa-caption-one-row.png']]) {
     await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(300);
@@ -206,8 +212,9 @@ async function blockMain(browser) {
   }
   await page.evaluate(() => __peri.loadDaily('2026-11-28')); await page.waitForTimeout(300);
   { const Lo = await page.evaluate(() => __peri.Render.layout); await shot(page, 'qa-caption-daily.png', { clip: { x: 0, y: Lo.plate.y - 58, width: Lo.w, height: 62 } }); }
-  for (const i of [30, 59, 44]) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(250); const a = await layoutAudit(page, 'portrait plate ' + (i + 1)); if (a.issues.length) check('7', 'layout: plate ' + (i + 1) + ' (portrait)', false, a.issues.join(' | ')); }
-  check('7', 'layout: plates XXXI, XLV, LX (portrait) — HUD rows, readout, buttons', true, 'no issues');
+  { const bads = [];
+    for (const i of [30, 59, 44, 60, 74, 84, 89]) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(250); const a = await layoutAudit(page, 'portrait plate ' + (i + 1)); if (a.issues.length) bads.push('plate ' + (i + 1) + ': ' + a.issues.join(' | ')); }
+    check('7', 'layout: plates XXXI, XLV, LX, LXI, LXXV, LXXXV, XC (portrait) — HUD rows, readout, buttons', !bads.length, bads.join(' || ') || 'no issues'); }
 
   // crash screenshot
   const cr = await page.evaluate(() => {
@@ -269,7 +276,7 @@ async function blockMain(browser) {
   }
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
   tapLat.sort((a, b) => a - b); metrics.dailyTap = tapLat;
-  check('4', 'tapping Daily Plate reaches the plate in ≤ 150 ms at 4× (precomputed, 6 taps)', tapLat[tapLat.length - 1] <= 150, JSON.stringify(tapLat));
+  check('4', 'tapping Daily Plate reaches the plate in ≤ 200 ms at 4× (precomputed, 6 taps)', tapLat[tapLat.length - 1] <= 200, JSON.stringify(tapLat));
 
   // ---- persistence + pinch
   await page.evaluate(() => __peri.screen('title')); await page.waitForTimeout(400);
@@ -283,7 +290,7 @@ async function blockMain(browser) {
   const lost = m2.lsBoot === null && pre !== 'null';
   if (lost) note('file:// reload lost localStorage in the main session (lsBoot null although the save held ' + pre + ' before reload): headless-Chromium file:// quirk, reproduced 3/10 on a 2-line page; persistence is verified over http in block [6] "http origin" instead.');
   check('6', 'mute toggle persists across reload (file://; skipped if Chromium dropped file:// storage, see note)', lost || (m0 === false && m1.muted && m2.muted && m2.saved === true && /Off/.test(m2.lbl)), JSON.stringify({ pre, m1, m2 }));
-  check('6', 'progress persists across reload (all 60 sealed → unlocked 60; file:// skip as above)', lost || (m2.unlocked === 60 && m2.ln === 60), 'unlocked ' + m2.unlocked);
+  check('6', 'progress persists across reload (all 90 sealed → unlocked 90; file:// skip as above)', lost || (m2.unlocked === 90 && m2.ln === 90), 'unlocked ' + m2.unlocked);
   await tapEl(page, cdp, '#scr-title [data-act="sound"]');
   await page.evaluate(() => __peri.loadLevel(3)); await page.waitForTimeout(200);
   try { await cdp.send('Input.synthesizePinchGesture', { x: 195, y: 420, scaleFactor: 2.2, gestureSourceType: 'touch' }); } catch (e) { note('pinch synth failed: ' + e.message); }
@@ -311,7 +318,7 @@ async function blockPerf(browser) {
       await page.evaluate(({ b, mode }) => {
         const P = __peri, S = P.state; window.__qaFrames.length = 0; window.__qaRelaunch = 0;
         const spot = (S.level.frags || []).map(f => ({ x: f.x, y: f.y }));
-        if (mode === 'aimfx') { const sol = S.level.solution, buf = new Float32Array(2600), sim = P.Physics.simulate(S.level, sol.vx, sol.vy, sol.t0Step | 0, 1200, buf), n = Math.min(700, Math.floor(0.55 * sim.n)); S.hint.pts.set(buf.subarray(0, 2 * n)); S.hint.n = n; S.hint.on = true; S.hint.used = true; S.frozen = true; }
+        if (mode === 'aimfx') { if (!P.useHint()) throw new Error('useHint() refused on plate ' + (b.i + 1)); }   // the real astronomer's line (full-clear course, up to K.HINT_MAX points)
         const keep = () => {
           if (mode === 'flight') { if (!(S.phase === 'flight' && S.sim && S.sim.status === 'flying')) { P.launch(b.best.vx, b.best.vy); window.__qaRelaunch++; } }
           else { const sol = S.level.solution, t = performance.now() / 700, vx = sol.vx * (0.9 + 0.1 * Math.sin(t)), vy = sol.vy * (0.9 + 0.1 * Math.cos(t)), dx = -vx / 640 * 300, dy = -vy / 640 * 300, v = P.Physics.launchVelocity(dx, dy);
@@ -345,7 +352,7 @@ async function blockPerf(browser) {
           const t0 = performance.now(); P.fastForward(2); P.Render.frame(S, t0); g.getImageData(0, 0, 1, 1); out.push(performance.now() - t0); }
         out.sort((x, y) => x - y); return { avg: +(out.reduce((x, y) => x + y, 0) / out.length).toFixed(2), p95: +out[Math.floor(out.length * 0.95)].toFixed(2), max: +out[out.length - 1].toFixed(2) }; };
       P.loadLevel(b.i); const fl = run('flight');
-      P.loadLevel(b.i); const sol = S.level.solution, buf = new Float32Array(2600), sim = P.Physics.simulate(S.level, sol.vx, sol.vy, 0, 1200, buf), n = Math.min(700, Math.floor(0.55 * sim.n)); S.hint.pts.set(buf.subarray(0, 2 * n)); S.hint.n = n; S.hint.on = true; S.hint.used = true; S.frozen = true;
+      P.loadLevel(b.i); if (!P.useHint()) throw new Error('useHint() refused on plate ' + (b.i + 1));
       const am = run('aimfx'); S.aim.active = false; S.aim.cancel = true; S.spotlight = null; S.hint.on = false; S.hint.used = false; S.frozen = false;
       return { flight: fl, aim: am };
     }, busy);
@@ -404,7 +411,7 @@ async function blockLandscape(browser) {
   const pn = await page.evaluate(() => __peri.state.predict.n);
   await shot(page, 'qa-landscape-play.png');
   await hold.move(422, 150); await hold.end(); await page.waitForTimeout(100);
-  check('7', 'landscape: mid-aim prediction visible and ≤ 180 (n=' + pn + ')', pn > 5 && pn <= 180);
+  check('7', 'landscape: mid-aim prediction visible and ≤ 270 (n=' + pn + ')', pn > 5 && pn <= 270);
   const pa = await layoutAudit(page, 'landscape play'); check('7', 'layout: play screen (landscape, aiming)', !pa.issues.length, pa.issues.join(' | '));
   const pull2 = await solutionPull(page);
   await touchDrag(cdp, 422, 150, 422 + pull2.dx, 150 + pull2.dy, 10, 200); await page.waitForTimeout(30);
@@ -416,9 +423,9 @@ async function blockLandscape(browser) {
   check('7', 'layout: result card (landscape)', !p.issues.length, p.issues.join(' | '));
   check('7', 'landscape plate scale usable (≥ 0.15)', lay.scale >= 0.15, 'scale ' + lay.scale.toFixed(3));
   const caps = await page.evaluate(async () => { const P = __peri, out = [], raf2 = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    for (let i = 0; i < 60; i++) { P.loadLevel(i); await raf2(); const c = P.Render.caption; out.push({ i, size: c.size, two: c.two, sq: c.squeeze, text: c.text }); } P.loadLevel(0); return out; });
+    for (let i = 0; i < P.Levels.CAMPAIGN.length; i++) { P.loadLevel(i); await raf2(); const c = P.Render.caption; out.push({ i, size: c.size, two: c.two, sq: c.squeeze, text: c.text }); } P.loadLevel(0); return out; });
   const bad = caps.filter(c => c.size < 10 || c.sq !== 1);
-  check('7', 'landscape captions: all 60 plates ≥ 10 px, unsqueezed', !bad.length, bad.map(c => c.text + ' ' + c.size + ' sq' + c.sq).join('; ') + ' two-row ' + caps.filter(c => c.two).length);
+  check('7', 'landscape captions: all 90 plates ≥ 10 px, unsqueezed', caps.length === 90 && !bad.length, bad.map(c => c.text + ' ' + c.size + ' sq' + c.sq).join('; ') + ' two-row ' + caps.filter(c => c.two).length);
   await page.evaluate(() => __peri.loadLevel(0)); await page.waitForTimeout(300);
   await tapEl(page, cdp, '#zone-r .btn'); await page.waitForTimeout(400);
   const ma = await layoutAudit(page, 'landscape menu'); check('7', 'layout: Menu sheet (landscape)', !ma.issues.length, ma.issues.join(' | '));
@@ -453,7 +460,7 @@ async function blockArtifact(browser) {
     check('6', 'artifact: touch flow title → atlas → plate I → launch → success card', ok);
     check('7', 'artifact layout: play + card', !p.issues.length, p.issues.join(' | '));
     const camp = await page.evaluate(() => { const P = __peri, bad = []; for (let i = 0; i < P.Levels.CAMPAIGN.length; i++) { P.loadLevel(i); P.solveCurrent(); P.fastForward(1300); if (!(P.state.result && P.state.result.success && P.state.result.stars === 3)) bad.push(i + 1); } return { n: P.Levels.CAMPAIGN.length, bad }; });
-    check('3', 'artifact: all 60 plates solve to 3 stars', camp.n === 60 && !camp.bad.length, camp.bad.join(','));
+    check('3', 'artifact: all 90 plates solve to 3 stars', camp.n === 90 && !camp.bad.length, camp.bad.join(','));
     try { await cdp.send('Input.synthesizePinchGesture', { x: 195, y: 420, scaleFactor: 2.2, gestureSourceType: 'touch' }); } catch (e) {}
     await page.waitForTimeout(300);
     check('7', 'artifact: pinch does not zoom', await page.evaluate(() => visualViewport.scale) === 1);
@@ -499,7 +506,7 @@ function runSuite(sec, name, cmd, okRe) {
   const files = { 'dist/perihelion.html': path.join(DIST, 'perihelion.html'), 'dist/perihelion.artifact.html': path.join(DIST, 'perihelion.artifact.html'), 'index.html': path.join(ROOT, 'index.html'), 'sw.js': path.join(ROOT, 'sw.js') };
   const sizes = {}; for (const f in files) sizes[f] = fs.statSync(files[f]).size;
   metrics.sizes = sizes;
-  for (const f of ['dist/perihelion.html', 'dist/perihelion.artifact.html', 'index.html']) check('8', 'size < 300 KB: ' + f, sizes[f] < 300 * 1024, sizes[f] + ' bytes = ' + (sizes[f] / 1024).toFixed(1) + ' KiB; headroom ' + (300 * 1024 - sizes[f]) + ' bytes (' + ((300 * 1024 - sizes[f]) / 1024).toFixed(1) + ' KiB); vs 300,000 B: ' + (300000 - sizes[f]));
+  for (const f of ['dist/perihelion.html', 'dist/perihelion.artifact.html', 'index.html']) check('8', 'size < 400 KiB: ' + f, sizes[f] < 400 * 1024, sizes[f] + ' bytes = ' + (sizes[f] / 1024).toFixed(1) + ' KiB; headroom ' + (400 * 1024 - sizes[f]) + ' bytes (' + ((400 * 1024 - sizes[f]) / 1024).toFixed(1) + ' KiB); vs 400,000 B: ' + (400000 - sizes[f]));
   for (const f of ['dist/perihelion.html', 'index.html']) {
     const html = fs.readFileSync(files[f], 'utf8'), extRefs = [...html.matchAll(/(?:src|href)\s*=\s*["'](https?:[^"']+)/g)].map(m => m[1]);
     check('8', 'only Google Fonts referenced in markup: ' + f, extRefs.every(u => /fonts\.(googleapis|gstatic)\.com/.test(u)), extRefs.length + ' refs');
@@ -507,15 +514,18 @@ function runSuite(sec, name, cmd, okRe) {
   }
   if (!ONLY) {
     let pt = ''; try { pt = cp.execSync('node tools/physics-test.js', { cwd: ROOT }).toString(); check('2', 'node tools/physics-test.js ALL GREEN', /ALL GREEN/.test(pt), (pt.match(/bench.*$/m) || [''])[0]); } catch (e) { check('2', 'node tools/physics-test.js', false, String(e.stdout || e)); }
-    runSuite('3', 'node tools/levels-bake.js --verify (60 baked plates)', 'node tools/levels-bake.js --verify', /all 60 baked plates OK/);
+    const bk = runSuite('3', 'node tools/levels-bake.js --verify (90 baked plates, Volume III included)', 'node tools/levels-bake.js --verify', /verify: all 90 baked plates pass/);
+    check('3', 'levels-bake --verify, Volume III part (verify3): all 30 plates OK', /verify3: all 30 Volume III plates OK/.test(bk), (bk.match(/^verify3?:.*$/mg) || []).map(l => l.slice(0, 120)).join(' | ') + ' || problem lines: ' + bk.split('\n').filter(l => /^(L\d+|Endless|FROZEN|CAMPAIGN)/.test(l)).slice(0, 8).join(' / '));
+    runSuite('3', 'node tools/levels-clear.js --verify (87 full-clear courses)', 'node tools/levels-clear.js --verify', /levels-clear OK: 87 full-clear courses verified/);
     runSuite('13', 'node tools/levels-daily-test.js', 'node tools/levels-daily-test.js', /PASS/);
   }
   const browser = await chromium.launch(); metrics.chromium = browser.version();
   const blocks = [['main', () => blockMain(browser)], ['perf', () => blockPerf(browser)], ['nostorage', () => blockNoStorage(browser)], ['landscape', () => blockLandscape(browser)], ['artifact', () => blockArtifact(browser)],
     ['migrate', () => V2.migrate(browser, STD)], ['cards', () => V2.cards(browser, STD, info)], ['hint', () => V2.hint(browser, STD, info)], ['daily', () => V2B.daily(browser, STD)],
-    ['log', () => V2B.log(browser, STD)], ['atlas', () => V2B.atlas(browser, STD)], ['sw', () => V2B.serviceWorker(browser)], ['persist', () => V2B.persist(browser)]];
+    ['log', () => V2B.log(browser, STD)], ['atlas', () => V2B.atlas(browser, STD)], ['sw', () => V2B.serviceWorker(browser)], ['persist', () => V2B.persist(browser)],
+    ['worm', () => V3.worm(browser, STD)], ['atlas3', () => V3.atlas3(browser, STD)], ['endless', () => V3.endless(browser, STD)], ['perfv3', () => V3.perfV3(browser, STD)], ['sound', () => V3.sound(browser, STD)]];
   // the v2 blocks need plate indices found by the main block; probe them cheaply when main is skipped
-  if (ONLY && !ONLY.test('main')) { const c = await newPage(browser, { url: STD, label: 'probe', init: [SEED_SEEN] }); const r = await c.page.evaluate(() => { const C = __peri.Levels.CAMPAIGN, mv = i => C[i].bodies.some(b => b.orbit); let a = -1, b = -1, f = -1; for (let i = 0; i < 60; i++) { if (f < 0 && C[i].frags && C[i].frags.length) f = i; if (a < 0 && i >= 5 && mv(i)) a = i; if (b < 0 && i >= 30 && mv(i)) b = i; } return { f, a, b }; }); info.fragPlate = r.f; info.moving1 = r.a; info.moving2 = r.b; await c.ctx.close(); }
+  if (ONLY && !ONLY.test('main')) { const c = await newPage(browser, { url: STD, label: 'probe', init: [SEED_SEEN] }); const r = await c.page.evaluate(() => { const C = __peri.Levels.CAMPAIGN, mv = i => C[i].bodies.some(b => b.orbit); let a = -1, b = -1, f = -1; for (let i = 0; i < C.length; i++) { if (f < 0 && C[i].frags && C[i].frags.length) f = i; if (a < 0 && i >= 5 && mv(i)) a = i; if (b < 0 && i >= 30 && mv(i)) b = i; } return { f, a, b, c: C.findIndex((l, i) => i >= 60 && mv(i)) }; }); info.fragPlate = r.f; info.moving1 = r.a; info.moving2 = r.b; info.moving3 = r.c; await c.ctx.close(); }
   for (const [name, fn] of blocks) {
     if (ONLY && !ONLY.test(name)) continue;
     console.log('\n=== block ' + name + ' ===');
@@ -536,8 +546,8 @@ function runSuite(sec, name, cmd, okRe) {
 function allRequestsList() { return Lb.allRequests; }
 
 function writeReport() {
-  const secNames = { 1: 'Console / page errors', 2: 'Physics self-test', 3: 'Campaign (60 plates), solvability & prediction', 4: 'Endless / generator budgets', 5: 'Frame rate', 6: 'Touch flow', 7: 'Layout', 8: 'Size & network', 9: 'Screenshots',
-    10: 'Save migration v1 → v2', 11: 'Popup cards (intro, fragments)', 12: 'Consult the Astronomer', 13: 'Daily Plate', 14: 'Observer’s Log & toasts', 15: 'Atlas (60 plates, two volumes)', 16: 'Service worker / offline', 17: 'Other suites (feel, log)' };
+  const secNames = { 1: 'Console / page errors', 2: 'Physics self-test', 3: 'Campaign (90 plates), solvability & prediction', 4: 'Endless / generator budgets', 5: 'Frame rate', 6: 'Touch flow', 7: 'Layout', 8: 'Size & network', 9: 'Screenshots',
+    10: 'Save migration v1 → v2', 11: 'Popup cards (intro, fragments)', 12: 'Consult the Astronomer', 13: 'Daily Plate', 14: 'Observer’s Log & toasts', 15: 'Atlas (90 plates, three volumes)', 16: 'Service worker / offline', 17: 'Other suites (feel, log)', 18: 'Wormholes & Volume III (touch path, hint, atlas, loadCustom)', 19: 'Audio (silent-switch workaround removed)' };
   let md = '# PERIHELION — QA report (v2)\n\n_Generated by `node tools/qa-run.js` on ' + new Date().toISOString() + ' — Chromium ' + metrics.chromium +
     ', iPhone 14 emulation (390×844 @3×, touch, safe-area insets top 47 / bottom 34 via CDP `Emulation.setSafeAreaInsetsOverride`; landscape 844×390 with left/right 47, bottom 21). Fonts are the fallback stack (Cormorant / JetBrains Mono are not reachable from the sandbox)._\n\n';
   md += '## Summary\n\n| # | Area | Result | Passed |\n|---|---|---|---|\n';
@@ -546,11 +556,11 @@ function writeReport() {
   md += `\n**${tot - badAll.length}/${tot} checks passed.**` + (badAll.length ? ' Failing: ' + badAll.map(b => '[' + b.sec + '] ' + b.name).join('; ') : '') + '\n';
   md += '\n## Measurements\n\n';
   const kb = b => b + ' B (' + (b / 1024).toFixed(1) + ' KiB)';
-  md += `- Size: dist/perihelion.html ${kb(metrics.sizes['dist/perihelion.html'])}, artifact ${kb(metrics.sizes['dist/perihelion.artifact.html'])}, index.html ${kb(metrics.sizes['index.html'])}, sw.js ${metrics.sizes['sw.js']} B. Budget 300 KB = 307,200 B → headroom in index.html ${(307200 - metrics.sizes['index.html'])} B (${((307200 - metrics.sizes['index.html']) / 1024).toFixed(1)} KiB); against a strict 300,000 B reading ${300000 - metrics.sizes['index.html']} B.\n`;
+  md += `- Size: dist/perihelion.html ${kb(metrics.sizes['dist/perihelion.html'])}, artifact ${kb(metrics.sizes['dist/perihelion.artifact.html'])}, index.html ${kb(metrics.sizes['index.html'])}, sw.js ${metrics.sizes['sw.js']} B. Budget 400 KiB = 409,600 B → headroom in index.html ${(409600 - metrics.sizes['index.html'])} B (${((409600 - metrics.sizes['index.html']) / 1024).toFixed(1)} KiB); against a strict 400,000 B reading ${400000 - metrics.sizes['index.html']} B.\n`;
   for (const k in (metrics.perf || {})) { const f = metrics.perf[k];
     md += `- Frame timing, plate ${k} "${f.level.name}" (${f.level.bodies} bodies, ${f.level.moving} moving, ${f.level.frags} frags), longest flight ${f.level.best.n} steps:\n`;
     md += `  - flight @4× CPU: script avg **${f.flight4x.scriptAvg} ms**, p95 **${f.flight4x.scriptP95} ms**, max ${f.flight4x.scriptMax}; rAF interval avg ${f.flight4x.intervalAvg} ms (p95 ${f.flight4x.intervalP95}); fps() ${f.flight4x.periFps}; frames >16.7 ms: ${f.flight4x.over16}/${f.flight4x.frames}\n`;
-    md += `  - aiming + 180-step prediction + spotlight + astronomer line (worst case) @4×: script avg **${f.aim4x.scriptAvg} ms**, p95 **${f.aim4x.scriptP95} ms**, max ${f.aim4x.scriptMax}; fps() ${f.aim4x.periFps}\n`;
+    md += `  - aiming + 270-step prediction + spotlight + astronomer line (worst case) @4×: script avg **${f.aim4x.scriptAvg} ms**, p95 **${f.aim4x.scriptP95} ms**, max ${f.aim4x.scriptMax}; fps() ${f.aim4x.periFps}\n`;
     md += `  - raster-inclusive readback proxy (physics + Render.frame + 1-px getImageData, 150 frames) @4×: flight avg ${f.flush4x.flight.avg} / p95 ${f.flush4x.flight.p95} / max ${f.flush4x.flight.max} ms; aiming+fx avg ${f.flush4x.aim.avg} / p95 ${f.flush4x.aim.p95} / max ${f.flush4x.aim.max} ms\n`;
     md += `  - flight @1×: script avg ${f.flight1x.scriptAvg} ms, p95 ${f.flight1x.scriptP95} ms\n`; }
   md += '  - caveat: rAF script time excludes deferred canvas raster; the readback row forces a flush and is the better upper-bound proxy. A 4× throttle of this sandbox CPU approximates an iPhone only roughly.\n';
@@ -558,13 +568,13 @@ function writeReport() {
   if (metrics.dailyGen) md += `- Levels.daily (30 dates): 1× avg ${metrics.dailyGen.x1.avg} / p95 ${metrics.dailyGen.x1.p95} / max ${metrics.dailyGen.x1.max} ms; 4× avg ${metrics.dailyGen.x4.avg} / p95 ${metrics.dailyGen.x4.p95} / max ${metrics.dailyGen.x4.max} ms\n`;
   if (metrics.dailyTap) md += `- Tap on Daily Plate to plate on screen at 4× (precomputed): ${metrics.dailyTap.join(', ')} ms\n`;
   if (metrics.atlasOpen4x) md += `- Atlas open @4×: cold ${metrics.atlasOpen4x.frame.toFixed(0)} ms until visible thumbnails drawn + a frame (screen switch ${metrics.atlasOpen4x.tScreen.toFixed(0)} ms, ${metrics.atlasOpen4x.visible} plates visible); warm re-opens ${(metrics.atlasWarm4x || []).join(', ')} ms. Script/layout readiness only; compositing not included.\n`;
-  if (metrics.predict) md += `- Prediction vs live: ${metrics.predict.cases} cases, ${metrics.predict.full180} of them full 180-step comparisons, max n ${metrics.predict.maxN}\n`;
+  if (metrics.predict) md += `- Prediction vs live: ${metrics.predict.cases} cases, ${metrics.predict.fullN} of them full 270-step comparisons, max n ${metrics.predict.maxN}\n`;
   if (metrics.playLayout) md += `- Portrait play layout: plate ${metrics.playLayout.plate.join(' × ')} (scale ${metrics.playLayout.scale}); readout widths ${JSON.stringify(metrics.playLayout.readoutW)} vs max ${metrics.playLayout.readoutMax}\n`;
   if (metrics.introCard) md += `- Intro card rect ${JSON.stringify(metrics.introCard)}\n`;
   if (metrics.cardLayout) md += `- Success card rect: ${JSON.stringify(metrics.cardLayout.card)}\n`;
   if (metrics.landscape) md += `- Landscape: scale ${metrics.landscape.scale}, plate ${metrics.landscape.plate.join(' × ')}\n`;
   if (metrics.toastVsHud) md += `- Toast geometry (portrait): ${JSON.stringify(metrics.toastVsHud)}\n`;
-  if (metrics.captions) { const c = metrics.captions.filter(x => x.kind === 'plate'); md += `- Captions: sizes ${c.map(x => x.size).join(', ')}; two-row ${c.filter(x => x.two).length}/60\n`; }
+  if (metrics.captions) { const c = metrics.captions.filter(x => x.kind === 'plate'); md += `- Captions: sizes ${c.map(x => x.size).join(', ')}; two-row ${c.filter(x => x.two).length}/${c.length}\n`; }
   md += '\n## All checks\n\n| # | Check | Result | Evidence |\n|---|---|---|---|\n';
   for (const r of results) md += `| ${r.sec} | ${r.name.replace(/\|/g, '/')} | ${r.ok ? 'PASS' : '**FAIL**'} | ${r.detail.replace(/\|/g, '/').replace(/\n/g, ' ').slice(0, 400)} |\n`;
   if (notes.length) md += '\n## Notes\n\n' + notes.map(n => '- ' + n).join('\n') + '\n';

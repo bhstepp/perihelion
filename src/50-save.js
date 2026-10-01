@@ -1,9 +1,9 @@
 /* PERIHELION — save.
-   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: 60 plates, `seen` flags for the
+   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: plates (60 at first, 90 with Volume III; shorter saved arrays are padded with zeros), `seen` flags for the
    popup cards, the Daily Plate record, lifetime `stats` and unlocked achievements. Every storage access is wrapped in
    try/catch; if storage is unavailable (private mode, sandboxed iframe, quota) the game keeps working from memory. */
 var Save = (function () {
-  var KEY = 'perihelion.v1', N = 60, VERSION = 2;
+  var KEY = 'perihelion.v1', N = 90, VERSION = 2;
   var persistent = false;
   var DAY = 86400000;
 

@@ -32,7 +32,7 @@ function seedScript(obj) {
   return `(() => { try { if (!localStorage.getItem('perihelion.v1')) localStorage.setItem('perihelion.v1', ${JSON.stringify(JSON.stringify(obj))}); } catch (e) {} })();`;
 }
 const zeros = n => new Array(n).fill(0);
-const SEEN_SAVE = { v: 2, stars: zeros(60), frags: zeros(60), unlocked: 1, endlessBest: 0, muted: false, seen: { intro: true, fragments: true } };
+const SEEN_SAVE = { v: 2, stars: zeros(90), frags: zeros(90), unlocked: 1, endlessBest: 0, muted: false, seen: { intro: true, fragments: true, wormholes: true } };
 const SEED_SEEN = seedScript(SEEN_SAVE);
 // date stub: window.__dayOffset shifts "now" by whole days
 const DATE_STUB = `(() => {
@@ -46,9 +46,9 @@ const SEED_HALF = `(() => { try { if (localStorage.getItem('perihelion.v1')) ret
   const now = new Date(), done = {};
   [[0, 3], [1, 2], [2, 3], [3, 1], [5, 2], [6, 3], [9, 1], [12, 2]].forEach(([ago, st]) => { done[key(new Date(now.getFullYear(), now.getMonth(), now.getDate() - ago, 12))] = st; });
   const stars = [], frags = [];
-  for (let i = 0; i < 60; i++) { stars.push(i < 44 ? [3, 2, 3, 1, 3, 2][i % 6] : 0); frags.push(i < 27 ? (i % 4 === 0 ? 2 : i % 3 === 0 ? 1 : 0) : 0); }
+  for (let i = 0; i < 90; i++) { stars.push(i < 44 ? [3, 2, 3, 1, 3, 2][i % 6] : 0); frags.push(i < 27 ? (i % 4 === 0 ? 2 : i % 3 === 0 ? 1 : 0) : 0); }
   const ach = {}; ['first_light', 'thread_needle', 'cartographer_10', 'apprentice', 'daily_3', 'near_ten', 'persistence', 'event_horizon', 'comet_hunter', 'one_shot_ten', 'long_way_round'].forEach((id, i) => { ach[id] = '2026-09-' + pad(10 + i); });
-  localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars, frags, unlocked: 45, endlessBest: 7, muted: true, seen: { intro: true, fragments: true },
+  localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars, frags, unlocked: 45, endlessBest: 7, muted: true, seen: { intro: true, fragments: true, wormholes: true },
     daily: { last: key(now), lastStars: 3, lastLaunches: 1, streak: 4, best: 6, done },
     stats: { launches: 143, wins: 61, losses: 82, crashes: 40, lost: 42, distance: 184230, frags: 31, hints: 3, nearMiss: 17, threads: 5, platesNoHint: 22, dailyWins: 8, endlessRounds: 12 }, ach }));
 } catch (e) {} })();`;
@@ -217,7 +217,7 @@ async function layoutAudit(page, tag) {
         if (P.state.spotlight) {
           info.rings = 0;
           for (const f of P.state.spotlight) {
-            const c = P.Render.worldToScreen(f.x, f.y), rr = 2.2 * K.FRAG_R * L.scale + 5; info.rings++;
+            const c = P.Render.worldToScreen(f.x, f.y), rr = (f.r || 2.2 * K.FRAG_R) * L.scale + 5; info.rings++;
             if (ov(r, { x: c.x - rr, r: c.x + rr, y: c.y - rr, b: c.y + rr })) issues.push('popup card overlaps the spotlight ring at (' + c.x.toFixed(0) + ',' + c.y.toFixed(0) + ')');
           }
         }
