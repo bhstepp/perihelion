@@ -71,6 +71,20 @@ Progress is saved on the device in `localStorage` (key `perihelion.v1`), so it d
 
 Sound is synthesized in the browser, so the first tap unlocks it. Like any web page, it follows the iPhone ringer switch: with the switch on silent the game is silent too. Use the in-game **Sound** toggle to mute it.
 
+## iPhone app (App Store build)
+
+The same game also builds as a native iPhone app with haptics, Game Center, a share sheet for the Daily Plate and a
+backed-up save, with every file inside the app. The web build is not affected by it.
+
+```sh
+npm install
+npm run ios:sync     # src/ -> ios-www/ -> the Xcode project in ios/
+npm run ios:open     # needs a Mac with Xcode 26+ and Node 22+
+npm run test:ios     # 59 checks of the app's page and its native layer
+```
+
+See [docs/IOS.md](docs/IOS.md) for what the app adds, how to run it, Game Center setup and the App Store checklist.
+
 ## Develop
 
 Requires Node 18 or newer. The game itself has no dependencies; `npm install` is only for the test tooling (Playwright and sharp).
@@ -124,6 +138,8 @@ To tune difficulty, `K.PREDICT_STEPS` in `src/00-const.js` sets how much of the 
 | `src/56-logui.js` | Observer's Log screen and achievement toasts |
 | `src/60-main.js` | Game loop, touch input, screens, cards, Daily and hint flows, test hooks (`window.__peri`) |
 | `src/shell.*.html` | Page head, styles and markup for the menus |
+| `src/native/ios-native.js` | iOS app only: haptics, save backup, Game Center, share (not in the web build) |
+| `ios/` | The Xcode project (Capacitor) and Game Center setup sheet |
 | `tools/` | Build, tests, level baker, icon generator |
 
 - **Physics:** semi-implicit Euler at a fixed 120 Hz with softened gravity, decoupled from rendering. Moons move on rails driven by an integer step counter, never accumulated time.
