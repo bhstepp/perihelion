@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E0D0B">
+<title>Perihelion · Support</title>
+<link rel="icon" href="icons/icon-192.png">
+<style>
+:root {
+  --ink: #0E0D0B; --paper: #EDE6D6; --paper-75: rgba(237,230,214,.75); --brass: #C9A45C;
+  --hair: rgba(237,230,214,.17);
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--ink); color: var(--paper); font: 18px/1.6 var(--serif);
+  padding: max(32px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 64px max(16px, env(safe-area-inset-left));
+}
+main { max-width: 40rem; margin: 0 auto; }
+h1 { font-weight: 600; font-size: 2rem; letter-spacing: .04em; margin: 0 0 .25rem; }
+h2 { font-weight: 600; font-size: 1.2rem; letter-spacing: .03em; color: var(--brass); margin: 2.25rem 0 .5rem; }
+h3 { font-weight: 600; font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
+p, li { color: var(--paper-75); }
+p { margin: .25rem 0 .75rem; }
+strong { color: var(--paper); font-weight: 600; }
+ul { padding-left: 1.25rem; }
+li { margin: .3rem 0; }
+a { color: var(--brass); text-underline-offset: 3px; }
+.meta { margin: 0 0 2rem; font-size: .95rem; }
+.contact { border: 1px solid var(--hair); border-left: 3px solid var(--brass); padding: .9rem 1.1rem; }
+.contact p { margin: 0; color: var(--paper); }
+nav { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--hair); font-size: .95rem; }
+nav a { margin-right: 1.25rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Perihelion Support</h1>
+  <p class="meta">A gravity-slingshot puzzle game, drawn as a 19th-century astronomical engraving.</p>
+
+  <div class="contact">
+    <p>Found a bug, stuck on a plate, or have an idea? <strong>Open an issue at
+    <a href="https://github.com/bhstepp/perihelion/issues">github.com/bhstepp/perihelion/issues</a></strong>.
+    Please mention your iPhone model, your iOS version and, for a bug, the plate you were on.</p>
+  </div>
+
+  <h2>How to play</h2>
+  <ul>
+    <li><strong>Aim:</strong> touch anywhere and pull back, then let go. The probe flies the opposite way, and a longer
+    pull launches it faster. A very short pull cancels.</li>
+    <li><strong>The dotted line</strong> shows only the start of the flight. Reading the rest of the course around the
+    planets, black holes and wormholes is the puzzle.</li>
+    <li><strong>Three launches per plate:</strong> seal it in one for three stars, two for two, three for one.</li>
+    <li><strong>Comet fragments</strong> are optional. Gather them all and reach the ring in one launch for a full
+    set.</li>
+    <li><strong>Stuck?</strong> Open <strong>Menu → Consult the Astronomer</strong> while aiming. A brass line shows
+    most of a winning course, at the cost of one star.</li>
+  </ul>
+
+  <h2>Questions</h2>
+
+  <h3>There's no sound.</h3>
+  <p>Perihelion follows the ringer switch: with your iPhone on silent, the game is silent too. Also check that
+  <strong>Sound</strong> on the title screen or in the Menu reads <strong>On</strong>.</p>
+
+  <h3>I don't feel any haptics.</h3>
+  <p>Check <strong>Settings → Sounds &amp; Haptics → System Haptics</strong> on your iPhone. Haptics are not
+  available on iPad.</p>
+
+  <h3>My scores aren't showing in Game Center.</h3>
+  <p>Make sure you are signed in under <strong>Settings → Game Center</strong>. The game reports everything you have
+  earned each time it starts, so anything missed while you were signed out arrives on the next launch. Open the
+  <strong>Observer's Log</strong> and tap <strong>Game Center</strong> to see leaderboards and achievements.</p>
+
+  <h3>Will my progress move to a new iPhone?</h3>
+  <p>Progress is saved on your iPhone and moves with it when you restore a new phone from an iCloud or computer
+  backup. Game Center keeps your leaderboard scores and achievements wherever you sign in. Deleting the app deletes
+  its saved progress.</p>
+
+  <h3>Does it need an internet connection?</h3>
+  <p>No. Everything is inside the app, including the Daily Plate, which is worked out from the date on your phone.</p>
+
+  <h3>When does the Daily Plate change?</h3>
+  <p>At midnight on your phone's clock. Seal it on consecutive days to build a streak, which is recorded in the
+  Observer's Log.</p>
+
+  <h3>Can I start over?</h3>
+  <p><strong>Reset</strong> (top left) or <strong>Menu → Restart plate</strong> starts the current plate again. To
+  erase all progress, delete and reinstall the app; Game Center scores and achievements are kept by Apple.</p>
+
+  <h2>Privacy</h2>
+  <p>Perihelion collects no personal data. Read the <a href="privacy.html">privacy policy</a>.</p>
+
+  <nav><a href="privacy.html">Privacy Policy</a><a href="./">Play Perihelion</a></nav>
+</main>
+</body>
+</html>

@@ -83,7 +83,9 @@ npm run ios:open     # needs a Mac with Xcode 26+ and Node 22+
 npm run test:ios     # 59 checks of the app's page and its native layer
 ```
 
-See [docs/IOS.md](docs/IOS.md) for what the app adds, how to run it, Game Center setup and the App Store checklist.
+See [docs/IOS.md](docs/IOS.md) for what the app adds, how to run it, Game Center setup and the App Store checklist. The App Store
+listing text is in [docs/APP-STORE.md](docs/APP-STORE.md), and the [privacy policy](privacy.html) and
+[support](support.html) pages are served by GitHub Pages with the game.
 
 ## Develop
 
