@@ -14,13 +14,28 @@
     "bake3": "node tools/levels-bake3.js",
     "icons": "node tools/make-icons.js",
     "serve": "python3 -m http.server 8080",
-    "test:log": "node tools/log-test.js"
+    "test:log": "node tools/log-test.js",
+    "build:ios": "node tools/build-ios.js",
+    "ios:sync": "node tools/build-ios.js && cap sync ios",
+    "ios:open": "cap open ios",
+    "test:ios": "node tools/ios-test.js"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/cormorant-sc": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "playwright": "^1.56.0",
     "sharp": "^0.34.0"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.2"
   }
 }

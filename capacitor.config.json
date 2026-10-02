@@ -1,0 +1,12 @@
+{
+  "appId": "com.bhstepp.perihelion",
+  "appName": "Perihelion",
+  "webDir": "ios-www",
+  "backgroundColor": "#0E0D0B",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "allowsLinkPreview": false,
+    "backgroundColor": "#0E0D0B"
+  }
+}
