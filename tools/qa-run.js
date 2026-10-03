@@ -519,7 +519,7 @@ function runSuite(sec, name, cmd, okRe) {
     runSuite('3', 'node tools/levels-clear.js --verify (87 full-clear courses)', 'node tools/levels-clear.js --verify', /levels-clear OK: 87 full-clear courses verified/);
     runSuite('13', 'node tools/levels-daily-test.js', 'node tools/levels-daily-test.js', /PASS/);
   }
-  const browser = await chromium.launch(); metrics.chromium = browser.version();
+  const browser = await chromium.launch(Lb.launchOpts(chromium)); metrics.chromium = browser.version();
   const blocks = [['main', () => blockMain(browser)], ['perf', () => blockPerf(browser)], ['nostorage', () => blockNoStorage(browser)], ['landscape', () => blockLandscape(browser)], ['artifact', () => blockArtifact(browser)],
     ['migrate', () => V2.migrate(browser, STD)], ['cards', () => V2.cards(browser, STD, info)], ['hint', () => V2.hint(browser, STD, info)], ['daily', () => V2B.daily(browser, STD)],
     ['log', () => V2B.log(browser, STD)], ['atlas', () => V2B.atlas(browser, STD)], ['sw', () => V2B.serviceWorker(browser)], ['persist', () => V2B.persist(browser)],

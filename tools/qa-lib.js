@@ -232,6 +232,19 @@ async function layoutAudit(page, tag) {
   }, tag);
 }
 
-module.exports = { fs, path, ROOT, QA, DIST, IPHONE, INSETS_P, INSETS_L, results, notes, metrics, check, note, sleep, RAF_WRAP,
+// Playwright may expect a newer browser build than the one preinstalled under PLAYWRIGHT_BROWSERS_PATH: fall back to whatever is there.
+function launchOpts(chromium) {
+  try { if (fs.existsSync(chromium.executablePath())) return {}; } catch (e) {}
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH, cands = [];
+  try {
+    for (const d of fs.readdirSync(base).sort().reverse()) {
+      if (/^chromium_headless_shell-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'headless_shell'), path.join(base, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+      else if (/^chromium-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'chrome'), path.join(base, d, 'chrome-linux64', 'chrome'));
+    }
+  } catch (e) {}
+  for (const c of cands) if (fs.existsSync(c)) return { executablePath: c };
+  return {};
+}
+module.exports = { launchOpts, fs, path, ROOT, QA, DIST, IPHONE, INSETS_P, INSETS_L, results, notes, metrics, check, note, sleep, RAF_WRAP,
   seedScript, zeros, SEEN_SAVE, SEED_SEEN, DATE_STUB, SEED_HALF, allErrors, allRequests, newPage, cdpTap, tapEl, touchDrag, touchHold,
   cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit };
