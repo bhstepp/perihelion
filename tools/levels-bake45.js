@@ -6,13 +6,15 @@
    mechanic beside the corridor, and the extra bodies; then a brute-force search (angle 720 x 0.5 deg, power 0.10..1.00 step 0.025, the
    frozen Physics.simulate) accepts a candidate only if
      - a robust solution exists (>= 8 of 9 neighbouring shots hit, every one of them USING the mechanic: Volume IV >= FOG_MIN steps (0.1 s) inside
-       a nebula, Volume V caught by a pulsar beam at least once; plates that also carry a wormhole pair must warp as well),
-     - the mechanic matters: with it taken away (nebula drag 0 / beam push 0) the stored solution misses,
+       a nebula, Volume V caught by a pulsar beam at least once; on plates that also carry a wormhole pair the solution warps as well),
+     - the mechanic matters: Volume IV: with the drag taken away the stored solution misses; Volume V: a beam catch is a timed kick that
+       every robust route meets (see the next rule), so a solution need not depend on one particular catch,
      - no strong shot avoids the mechanic (a hit that never touches it has fewer than AVLIM of 9 hit neighbours, and such hits are under
-       AVSHARE of all hits), at t0 = 0 and, for time-dependent plates, at several launch times,
+       AVSHARE of all hits), at t0 = 0 and, for time-dependent plates, at the solution's launch time and one more (AV_T0S),
      - the straight shot misses at every launch time, the hit ratio sits in a band that falls through the volume,
      - time-dependent plates (anything on rails, every pulsar: its beams turn) keep the launch-time window rule of Volume III: a robust
-       winning shot exists at >= 70% of the 0.5 s launch times over max(12 s, the longest period), no closed gap longer than 2.5 s,
+       winning shot (any route: this rule is about playability) exists at >= 70% of the 0.5 s launch times over max(12 s, the longest
+       period), no closed gap longer than 2.5 s,
      - 2-3 fragments sit on a different hit path and the full-clear search of tools/levels-clear.js finds several launches.
    usage: node tools/levels-bake45.js                 bake the missing plates (LEVELS_JOBS workers, default 3; resumable cache
                                                       tools/levels-cache/v45-cNNN.json), then write the module when all 60 exist
@@ -130,8 +132,12 @@ const XR = [[150, 300], [330, 570], [600, 750]], TYR = [[180, 330], [330, 520], 
 const diffOf = i => i < V5 ? rnd3(2.22 + 0.58 * (i - V4) / 29) : rnd3(2.82 + 0.58 * (i - V5) / 29);       // 2.22..2.80, 2.82..3.40
 const ratioTarget = i => { const q = (i < V5 ? i - V4 : i - V5) / 29; return 0.011 * Math.pow(0.4, q); };   // 1.1% -> 0.44% of the grid hits
 const BAND = 2.0;
+const USE_NEED = 6;            // ... and at least this many of a robust solution's 9 neighbours use the mechanic too
 const FOG_MIN = 12;            // a Volume IV solution spends at least 0.2 s inside a nebula (and so does each robust neighbour)
 const AVLIM = 6, AVPRE = 5;    // reject a plate with a hit that avoids the mechanic and has >= AVLIM of 9 hit neighbours
+// time-dependent plates: the mechanic must also be unavoidable at these launch times. Volume V: only at the solution's own launch time
+// (and t = 0, always checked): beams turn, so waiting for a moment when they point elsewhere is a fair way to play a pulsar plate.
+const AV_T0S = (t0, vol) => vol === 5 ? (t0 ? [t0] : []) : [t0, t0 === 600 ? 900 : 600];
 const AVSHARE = 0.8;           // ... or where such hits are more than this share of all hits
 
 function loadFast() {
@@ -156,7 +162,7 @@ function makeCtx(G) {
   // wormhole pair the plan asks for (ex 'W') must warp too
   const mech = L => L._vol === 4 ? (s => s.fog >= FOG_MIN) : (s => s.beams >= 1);
   const touch = L => L._vol === 4 ? (s => s.fog > 0) : (s => s.beams > 0);
-  const usesOf = L => { const m = mech(L), w = L._needWarp; return s => m(s) && (!w || s.warps >= 1); };
+  const usesOf = L => mech(L);   // plates that also carry a wormhole pair: only the stored solution must warp as well (see evaluate)
 
   function scan(L, t0, stride) {
     const H = new Uint8Array(NA * NP), U = new Uint8Array(NA * NP), T = new Uint8Array(NA * NP), use = usesOf(L), tc = touch(L); let n = 0, h = 0, av = 0;
@@ -168,15 +174,16 @@ function makeCtx(G) {
   }
   const cell = (M, k, j) => (j < 0 || j >= NP) ? 0 : M[((k % NA + NA) % NA) * NP + j];
   function hood(M, k, j) { let s = 0; for (let a = -2; a <= 2; a++) for (let b = -1; b <= 1; b++) s += cell(M, k + a, Math.min(NP - 1, j + b)); return s; }
-  // finger test at (a, p): hits among the 3x3 neighbourhood (+-1 deg, +-0.03 power) that also use the mechanic
+  // finger test at (a, p): hits among the 3x3 neighbourhood (+-1 deg, +-0.03 power); the centre must use the mechanic and so must at
+  // least USE_NEED of the 9 (a beam is narrow: a neighbour may slip past it and still hit), else 0
   function robustU(L, a, p, t0, need) {
-    const use = usesOf(L); let n = 0, miss = 0;
+    const use = usesOf(L); let n = 0, u = 0, miss = 0;
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-      const s = fly(L, a + i, clampP(p + 0.03 * j), t0);
-      if (s.status === 'hit' && use(s)) n++; else if (++miss > 9 - need) return 0;
-      if (!i && !j && n === 0) return 0;
+      const s = fly(L, a + i, clampP(p + 0.03 * j), t0), h = s.status === 'hit';
+      if (h) { n++; if (use(s)) u++; } else if (++miss > 9 - need) return 0;
+      if (!i && !j && (!h || !use(s))) return 0;
     }
-    return n;
+    return u >= USE_NEED ? n : 0;
   }
   // the strongest hit that never touches the mechanic: its 3x3 neighbourhood (any hit counts)
   function worstAvoid(L, G0, t0, lim, pre) {
@@ -265,16 +272,25 @@ function makeCtx(G) {
   const periodOf = L => Math.max(0, ...L.bodies.map(b => b.orbit ? TAU / Math.abs(b.orbit.omega) : b.beam ? PI / Math.abs(b.beam.omega) : 0));
   const spanOf = L => Math.max(12, periodOf(L));
   const TSTEP = 60;
+  // the window rule is about playability (no frame-perfect timing), so any robust winning shot opens a launch time; the stored solution
+  // itself is held to the mechanic rules separately
+  function robustH(L, a, p, t0) {
+    let n = 0, miss = 0;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      if (fly(L, a + i, clampP(p + 0.03 * j), t0).status === 'hit') n++; else if (++miss > 1 || (!i && !j)) return 0;
+    }
+    return n;
+  }
   function scan1(L, t0) {
-    const H = new Uint8Array(360 * NP), use = usesOf(L);
-    for (let m = 0; m < 360; m++) for (let j = 0; j < NP; j++) { const s = fly(L, m, PWR(j), t0); if (s.status === 'hit' && use(s)) H[m * NP + j] = 1; }
+    const H = new Uint8Array(360 * NP);
+    for (let m = 0; m < 360; m++) for (let j = 0; j < NP; j++) { const s = fly(L, m, PWR(j), t0); if (s.status === 'hit') H[m * NP + j] = 1; }
     return H;
   }
   function openAt(L, t0, warm) {
     for (const c of warm) for (const da of [0, -1, 1, -2, 2, -4, 4, -7, 7]) for (const dp of [0, -0.05, 0.05, -0.1, 0.1]) {
       const a = c.a + da, p = clampP(c.p + dp); if (p < 0.1) continue;
-      const s0 = fly(L, a, p, t0); if (s0.status !== 'hit' || !usesOf(L)(s0)) continue;
-      if (robustU(L, a, p, t0, 8) >= 8) return { a, p };
+      const s0 = fly(L, a, p, t0); if (s0.status !== 'hit') continue;
+      if (robustH(L, a, p, t0) >= 8) return { a, p };
     }
     const H = scan1(L, t0), cand = [];
     for (let m = 0; m < 360; m++) for (let j = 1; j < NP - 1; j++) if (H[m * NP + j]) {
@@ -282,7 +298,7 @@ function makeCtx(G) {
       if (n >= 7) cand.push([n, m, j]);
     }
     cand.sort((x, y) => y[0] - x[0]);
-    for (let q = 0; q < Math.min(cand.length, 40); q++) { const a = cand[q][1], p = PWR(cand[q][2]); if (robustU(L, a, p, t0, 8) >= 8) return { a, p }; }
+    for (let q = 0; q < Math.min(cand.length, 40); q++) { const a = cand[q][1], p = PWR(cand[q][2]); if (robustH(L, a, p, t0) >= 8) return { a, p }; }
     return null;
   }
   function timing(L, seed, bail) {
@@ -437,13 +453,13 @@ function evaluate(C, idx, seed, log) {
   const abl = C.ablate(L);
   // solution candidates at t0 = 0: rounded to 3 decimals, re-verified, robust with every neighbour using the mechanic, needs the mechanic
   const sols = [];
-  for (let q = 0; q < Math.min(cand.length, 60) && sols.length < 5; q++) {
+  for (let q = 0; q < Math.min(cand.length, 200) && sols.length < 5; q++) {
     const [hd, k, j] = cand[q], a = k * 0.5, p = PWR(j), v = g.launch(a, p), vx = rnd3(v.vx), vy = rnd3(v.vy);
     if (sols.some(s => Math.abs(s.a - a) < 2 && Math.abs(s.p - p) < 0.1)) continue;
     const ra = Math.atan2(vy, vx) / DEG, rp = Math.hypot(vx, vy) / K.VMAX;
+    const s0 = P.simulate(L, vx, vy, 0, K.MAX_STEPS); if (s0.status !== 'hit' || !use(s0) || (L._needWarp && s0.warps < 1)) continue;
+    if (L._vol === 4 && P.simulate(abl, vx, vy, 0, K.MAX_STEPS).status === 'hit') { rej.ablate = (rej.ablate || 0) + 1; continue; }
     if (C.robustU(L, ra, rp, 0, 8) < 8) { log.solRob = (log.solRob || 0) + 1; continue; }
-    const s0 = P.simulate(L, vx, vy, 0, K.MAX_STEPS); if (s0.status !== 'hit' || !use(s0)) continue;
-    if (P.simulate(abl, vx, vy, 0, K.MAX_STEPS).status === 'hit') { rej.ablate = (rej.ablate || 0) + 1; continue; }
     const clear = C.exitsClear(L, ra, rp, 0); if (clear < 31) continue;
     sols.push({ k, j, a, p, vx, vy, hood: hd, fog: s0.fog, beams: s0.beams, warps: s0.warps, t0: 0 });
   }
@@ -455,6 +471,7 @@ function evaluate(C, idx, seed, log) {
     let sol = sol0, tInfo = 'static';
     if (td) {
       const tp = C.timing(L, [{ a: sol0.a, p: sol0.p }], true);
+      if (process.env.BAKE_DEBUG) console.error('timing', tp.frac.toFixed(2), tp.gap, tp.open.join(''));
       if (!tp.ok) { rej.timing++; continue; }
       const ks = []; tp.open.forEach((o, k) => { if (o && k >= 2) ks.push(k); });
       let chosen = null;
@@ -462,27 +479,30 @@ function evaluate(C, idx, seed, log) {
         const k = ks[Math.floor(rngS() * ks.length)], sh = tp.shots[k], off = tries < 8 ? Math.floor(rngS() * 60) : 0, t0 = k * 60 + off;
         const v = g.launch(sh.a, sh.p), vx = rnd3(v.vx), vy = rnd3(v.vy), ra = Math.atan2(vy, vx) / DEG, rp = Math.hypot(vx, vy) / K.VMAX;
         if (C.robustU(L, ra, rp, t0, 8) < 8) continue;
-        const s0 = P.simulate(L, vx, vy, t0, K.MAX_STEPS); if (s0.status !== 'hit' || !use(s0)) continue;
-        if (P.simulate(abl, vx, vy, t0, K.MAX_STEPS).status === 'hit') continue;
+        const s0 = P.simulate(L, vx, vy, t0, K.MAX_STEPS); if (s0.status !== 'hit' || !use(s0) || (L._needWarp && s0.warps < 1)) continue;
+        if (L._vol === 4 && P.simulate(abl, vx, vy, t0, K.MAX_STEPS).status === 'hit') continue;
         if (C.exitsClear(L, ra, rp, t0) < 31) continue;
         chosen = { k: sol0.k, j: sol0.j, a: sh.a, p: sh.p, vx, vy, hood: sol0.hood, fog: s0.fog, beams: s0.beams, warps: s0.warps, t0 };
       }
-      if (!chosen) { rej.timing++; continue; }
+      if (!chosen) chosen = Object.assign({}, sol0, { t0: 0 });   // the t = 0 solution already passed every rule
       let avBad = false;
-      for (const t0 of [chosen.t0, 240, 600, 1000]) { const Gt = C.scan(L, t0, 1); if (Gt.avoid / Math.max(1, Gt.hits) > AVSHARE || C.worstAvoid(L, Gt, t0, AVLIM, AVPRE) >= AVLIM) { avBad = true; break; } }
+      for (const t0 of AV_T0S(chosen.t0, L._vol)) { const Gt = C.scan(L, t0, 1); if (Gt.avoid / Math.max(1, Gt.hits) > AVSHARE || C.worstAvoid(L, Gt, t0, AVLIM, AVPRE) >= AVLIM) { avBad = true; break; } }
       if (avBad) { rej.avoid++; continue; }
       sol = chosen; tInfo = (100 * tp.frac).toFixed(0) + '% gap ' + tp.gap + 's @' + chosen.t0;
     }
     L.solution = { vx: sol.vx, vy: sol.vy, t0Step: sol.t0 };
-    // fragments on a different hit path that also uses the mechanic
+    // fragments on a different hit path, preferably one that also uses the mechanic (the full-clear search below insists that the most
+    // forgiving full-clear launch uses it)
     const alts = [];
     for (let k = 0; k < NA; k++) for (let j = 3; j < NP; j++) {
-      const q = k * NP + j; if (!G0.U[q]) continue;
-      const other = comp.lab[q] !== comp.lab[sol0.k * NP + sol0.j], far = Math.min(Math.abs(k - sol0.k), NA - Math.abs(k - sol0.k)) >= 10 || Math.abs(j - sol0.j) >= 10;
+      const q = k * NP + j; if (!G0.H[q]) continue;
+      const other = comp.lab[q] !== comp.lab[sol0.k * NP + sol0.j], far = Math.min(Math.abs(k - sol0.k), NA - Math.abs(k - sol0.k)) >= (td ? 4 : 8) || Math.abs(j - sol0.j) >= (td ? 4 : 7);
       const h = C.hood(G0.H, k, j); if (h < 7) continue;
-      if (other && comp.sizes[comp.lab[q]] >= 3) alts.push([0, comp.sizes[comp.lab[q]] + h, k, j]); else if (!other && far) alts.push([1, h, k, j]);
+      const u = G0.U[q] ? 0 : 2;
+      if (other && comp.sizes[comp.lab[q]] >= 3) alts.push([u, comp.sizes[comp.lab[q]] + h, k, j]); else if (!other && far) alts.push([u + 1, h, k, j]);
     }
     alts.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+    if (process.env.BAKE_DEBUG) console.error('alts', alts.length, 'hits', G0.hits, 'comps', comp.sizes.length, 'sol0', sol0.k, sol0.j, 'td', td);
     let tried = 0; const triedAlts = [];
     fr2.alts += alts.length ? 1 : 0;
     for (let q = 0; q < alts.length && tried < 25; q++) {
@@ -620,7 +640,7 @@ function verifyPlates(G, C, list) {
     Object.defineProperty(L, '_vol', { value: vol, enumerable: false, writable: true, configurable: true });
     Object.defineProperty(L, '_needWarp', { value: plan.ex.includes('W'), enumerable: false, writable: true, configurable: true });
     const use = C.usesOf(L), nebs = L.bodies.filter(isNeb), puls = L.bodies.filter(b => b.kind === 'pulsar'), whs = L.bodies.map((b, q) => b.kind === 'wormhole' ? q : -1).filter(q => q >= 0);
-    if (!s || !Number.isInteger(s.t0Step) || s.t0Step < 0 || (td ? s.t0Step === 0 : s.t0Step !== 0)) probs.push('solution t0Step ' + (s && s.t0Step));
+    if (!s || !Number.isInteger(s.t0Step) || s.t0Step < 0 || (!td && s.t0Step !== 0)) probs.push('solution t0Step ' + (s && s.t0Step));
     if (L.index !== i || L.plate !== G.toRoman(i + 1) || L.id !== 'c' + String(i + 1).padStart(2, '0')) probs.push('index/plate/id');
     if (allNames.has(L.name) || L.name !== nameOf(i)) probs.push('name'); allNames.add(L.name);
     if (Math.abs(L.difficulty - diffOf(i)) > 0.0006) probs.push('difficulty field');
@@ -640,8 +660,9 @@ function verifyPlates(G, C, list) {
     // solution: hits, uses the mechanic (with every robust neighbour), needs it, collects no fragment
     const t0s = s.t0Step | 0, sim = P.simulate(L, s.vx, s.vy, t0s, K.MAX_STEPS), sa = Math.atan2(s.vy, s.vx) / DEG, sp = Math.hypot(s.vx, s.vy) / K.VMAX;
     if (sim.status !== 'hit') probs.push('solution ' + sim.status);
+    if (L._needWarp && sim.warps < 1) probs.push('solution does not warp');
     if (!use(sim)) probs.push('solution does not use the mechanic (fog ' + sim.fog + ', beams ' + sim.beams + ', warps ' + sim.warps + ')');
-    if (P.simulate(C.ablate(L), s.vx, s.vy, t0s, K.MAX_STEPS).status === 'hit') probs.push('solution still hits without the mechanic');
+    if (vol === 4 && P.simulate(C.ablate(L), s.vx, s.vy, t0s, K.MAX_STEPS).status === 'hit') probs.push('solution still hits without the nebula');
     for (let q = 0; q < L.frags.length; q++) if (sim.collected[q]) probs.push('solution collects frag ' + q);
     const rob = C.robustU(L, sa, sp, t0s, 8); if (rob < 8) probs.push('solution not robust (' + rob + ')');
     if (g.robust(L, sa, sp, t0s) < 8) probs.push('g.robust < 8');
@@ -676,7 +697,7 @@ function verifyPlates(G, C, list) {
       const tp = C.timing(L, [{ a: sa, p: sp }], false); frac = tp.frac; gap = tp.gap;
       if (tp.frac < 0.7) probs.push('open at only ' + (100 * tp.frac).toFixed(0) + '% of launch times');
       if (tp.gap > 2.5) probs.push('launch-time gap ' + tp.gap + ' s');
-      for (const t0 of [t0s, 240, 600, 1000]) { const Gt = C.scan(L, t0, 1), w = C.worstAvoid(L, Gt, t0, AVLIM, AVPRE); if (w >= AVLIM || Gt.avoid / Math.max(1, Gt.hits) > AVSHARE) probs.push('the mechanic can be avoided at t0=' + t0); }
+      for (const t0 of AV_T0S(t0s, vol)) { const Gt = C.scan(L, t0, 1), w = C.worstAvoid(L, Gt, t0, AVLIM, AVPRE); if (w >= AVLIM || Gt.avoid / Math.max(1, Gt.hits) > AVSHARE) probs.push('the mechanic can be avoided at t0=' + t0); }
       tt = (100 * tp.frac).toFixed(0) + '% gap ' + tp.gap + 's @' + t0s;
     }
     if (probs.length) { ok = false; msgs.push('L' + (i + 1) + ' ' + L.name + ': ' + probs.join('; ')); }
@@ -743,6 +764,7 @@ if (require.main === module) {
     const only = argv[0] === '--only' ? argv[1].split(',').map(Number) : argv[0] === '--force' ? argv[1].split(',').map(Number) : null, force = argv[0] === '--force';
     fs.mkdirSync(CACHE, { recursive: true });
     const queue = (only || Array.from({ length: NALL - NOLD }, (_, q) => q + NOLD)).filter(i => (only && !force) || force || !fs.existsSync(cacheFile(i)));
+    if (process.env.LEVELS_ORDER === 'desc') queue.reverse();
     if (queue.length) console.log('baking', queue.length, 'plates:', queue.join(','));
     const t = Date.now(), NW = Math.max(1, +(process.env.LEVELS_JOBS || 3)), results = [];
     const runOne = i => new Promise((res, rej) => {
