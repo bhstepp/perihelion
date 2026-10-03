@@ -4,7 +4,7 @@
 // Files: qa-lib.js (helpers, layout audit), qa-v2.js / qa-v2b.js (v2 feature blocks), this file (core blocks, report).
 // Outputs: qa/qa-*.png, qa/qa-report.md (auto part regenerated; text after the MANUAL marker is preserved), qa/qa-metrics.json.
 const Lb = require('./qa-lib.js');
-const { fs, path, ROOT, QA, DIST, IPHONE, INSETS_P, results, notes, metrics, check, note, sleep, SEED_SEEN, SEED_HALF, newPage, cdpTap, tapEl, touchDrag, touchHold, cardOn, frames, shot, text, solutionPull, layoutAudit } = Lb;
+const { FINAL, volHead, fs, path, ROOT, QA, DIST, IPHONE, INSETS_P, results, notes, metrics, check, note, sleep, SEED_SEEN, SEED_HALF, newPage, cdpTap, tapEl, touchDrag, touchHold, cardOn, frames, shot, text, solutionPull, layoutAudit } = Lb;
 const { chromium } = require('playwright');
 const cp = require('child_process');
 const V2 = require('./qa-v2.js'), V2B = require('./qa-v2b.js'), V3 = require('./qa-v3.js');
@@ -20,8 +20,10 @@ async function blockMain(browser) {
   const { ctx, page, cdp, errors } = await newPage(browser, { url: STD, label: 'std', init: [`window.__lsBoot = (() => { try { const r = localStorage.getItem('perihelion.v1'); return r ? r.length : null; } catch (e) { return 'ERR'; } })();`, SEED_SEEN] });
   await page.waitForTimeout(1500);
   check('6', 'hooks present (incl. v2 hooks)', await page.evaluate(() => ['state', 'Physics', 'Levels', 'Render', 'loadLevel', 'loadEndless', 'launch', 'fastForward', 'solveCurrent', 'fps', 'screen', 'openCard', 'closeCard', 'useHint', 'loadDaily', 'loadCustom', 'Log', 'LogUI', 'Save'].every(k => k in window.__peri && window.__peri[k] != null)));
-  const lv = await page.evaluate(() => ({ n: __peri.Levels.CAMPAIGN.length, sn: __peri.Save.N, vols: JSON.stringify(__peri.Levels.VOLUMES), ps: K.PREDICT_STEPS, hm: K.HINT_MAX }));
-  check('3', 'Levels.CAMPAIGN.length === Save.N === 90, three volumes, PREDICT_STEPS 270, HINT_MAX 1100', lv.n === 90 && lv.sn === 90 && JSON.parse(lv.vols).length === 3 && /Volume III/.test(lv.vols) && lv.ps === 270 && lv.hm === 1100, JSON.stringify(lv));
+  const lv = await page.evaluate(() => ({ n: __peri.Levels.CAMPAIGN.length, sn: __peri.Save.N, vols: __peri.Levels.VOLUMES, ps: K.PREDICT_STEPS, hm: K.HINT_MAX }));
+  info.N = lv.n; info.vols = lv.vols;
+  const volsOk = lv.vols.length === FINAL.VOLS && lv.vols.every((v, k) => v.from === k * 30 && v.to === k * 30 + 29 && volHead(v) === FINAL.HEADS[k]) && lv.vols[lv.vols.length - 1].to === lv.n - 1;
+  check('3', 'Levels.CAMPAIGN.length === Save.N === ' + FINAL.N + ', ' + FINAL.VOLS + ' volumes of 30 (I..V, contiguous, covering the campaign), PREDICT_STEPS 270, HINT_MAX 1100', lv.n === FINAL.N && lv.sn === FINAL.N && volsOk && lv.ps === 270 && lv.hm === 1100, JSON.stringify({ n: lv.n, sn: lv.sn, vols: lv.vols.map(v => v.name + ' ' + v.from + '-' + v.to), ps: lv.ps, hm: lv.hm }));
   const safeRead = await page.evaluate(() => __peri.Render.layout.safe);
   check('7', 'safe-area insets reach Render.resize (top 47 / bottom 34)', safeRead.top === 47 && safeRead.bottom === 34, JSON.stringify(safeRead));
   const st = await page.evaluate(() => { const t0 = performance.now(); const r = __peri.Physics.selfTest(); return { ok: r.ok, ms: performance.now() - t0, bad: r.checks.filter(c => !c.ok) }; });
@@ -131,26 +133,33 @@ async function blockMain(browser) {
   await cdpTap(cdp, 195, 90); await sleep(200);
   check('6', 'tap on veil resumes after visibility pause', await page.evaluate(() => !__peri.state.paused));
 
-  // ---- (3) all 90 campaign plates: solveCurrent + fastForward → 3 stars
+  // ---- (3) all campaign plates (150): solveCurrent + fastForward → 3 stars
   const camp = await page.evaluate(() => {
     const P = __peri, out = [];
     for (let i = 0; i < P.Levels.CAMPAIGN.length; i++) {
       P.loadLevel(i); const t0 = performance.now(), sol = P.solveCurrent(); P.fastForward(1300); const r = P.state.result;
-      out.push({ i, name: P.state.level.name, sol: !!sol, t0: sol && sol.t0Step, moving: P.state.level.bodies.some(b => b.orbit), kinds: [...new Set(P.state.level.bodies.map(b => b.kind))].join('+'), frags: (P.state.level.frags || []).length, nb: P.state.level.bodies.length,
+      out.push({ i, name: P.state.level.name, sol: !!sol, t0: sol && sol.t0Step, moving: P.state.level.bodies.some(b => b.orbit || b.beam), kinds: [...new Set(P.state.level.bodies.map(b => b.kind))].join('+'), frags: (P.state.level.frags || []).length, nb: P.state.level.bodies.length,
         ok: !!(r && r.success && r.stars === 3 && P.state.launches === 1), status: r && r.status, stars: r && r.stars, card: document.getElementById('card').classList.contains('on'), ms: +(performance.now() - t0).toFixed(1) });
     }
     return out;
   });
   metrics.campaign = camp;
-  check('3', 'campaign: 90 plates present (Volume I 30 + Volume II 30 + Volume III 30)', camp.length === 90);
+  const kindsIn = (a, b) => camp.filter(c => c.i >= a && c.i <= b);
+  check('3', 'campaign: ' + FINAL.N + ' plates present (five volumes of 30); every Volume IV plate has a nebula, every Volume V plate a pulsar', camp.length === FINAL.N && kindsIn(90, 119).length === 30 && kindsIn(90, 119).every(c => /nebula/.test(c.kinds)) && kindsIn(120, 149).length === 30 && kindsIn(120, 149).every(c => /pulsar/.test(c.kinds)),
+    'plates ' + camp.length + '; IV without nebula: ' + kindsIn(90, 119).filter(c => !/nebula/.test(c.kinds)).map(c => c.i + 1).join(',') + '; V without pulsar: ' + kindsIn(120, 149).filter(c => !/pulsar/.test(c.kinds)).map(c => c.i + 1).join(','));
   for (const c of camp) check('3', 'plate ' + (c.i + 1) + ' "' + c.name + '" solveCurrent+fastForward → success ★3', c.ok && c.card, c.status + ' stars ' + c.stars + ' t0 ' + c.t0 + ' ' + c.kinds + (c.moving ? ' (moving)' : '') + ' bodies ' + c.nb + ' frags ' + c.frags);
   info.fragPlate = camp.findIndex(c => c.frags > 0);
   const mv = camp.filter(c => c.moving).map(c => c.i);
   info.moving1 = mv.find(i => i >= 5) || 5; info.moving2 = mv.find(i => i >= 30) || 30; info.moving3 = mv.find(i => i >= 60) || 60;
+  info.moving4 = mv.find(i => i >= 90 && camp[i] && camp[i].kinds.indexOf('nebula') >= 0); info.moving5 = mv.find(i => i >= 120);   // a drifting-cloud plate, a pulsar plate (beams turn)
+  { const v5 = camp.filter(c => c.i >= 120 && c.i < 150);
+    check('3', 'every Volume V (pulsar) plate counts as time-dependent (a body with a beam), so QA starts its stored solution at solution.t0Step', v5.length === 30 && v5.every(c => c.moving), v5.filter(c => !c.moving).map(c => c.i + 1).join(','));
+    note('Volume V stored solutions: t0Step non-zero on ' + v5.filter(c => c.t0).length + '/' + v5.length + ' plates; Volume IV time-dependent plates (clouds/moons on rails): ' + camp.filter(c => c.i >= 90 && c.i < 120 && c.moving).length + '/30.'); }
 
   // ---- (3) prediction === live flight for the full K.PREDICT_STEPS (270) steps, moving bodies, wormholes, nonzero start steps
-  const movingV1 = mv.filter(i => i < 30), movingV2 = mv.filter(i => i >= 30 && i < 60), movingV3 = mv.filter(i => i >= 60);
-  const pick = [0, ...movingV1.slice(0, 2), movingV1[movingV1.length - 1], 29, 30, ...movingV2.slice(0, 3), ...movingV2.slice(-3), 44, 49, 59, 60, 61, 66, ...movingV3.slice(0, 3), ...movingV3.slice(-2), 78, 84, 89].filter((v, i, a) => a.indexOf(v) === i);
+  const movingV1 = mv.filter(i => i < 30), movingV2 = mv.filter(i => i >= 30 && i < 60), movingV3 = mv.filter(i => i >= 60 && i < 90), movingV4 = mv.filter(i => i >= 90 && i < 120), movingV5 = mv.filter(i => i >= 120 && i < 150);
+  const pick = [0, ...movingV1.slice(0, 2), movingV1[movingV1.length - 1], 29, 30, ...movingV2.slice(0, 3), ...movingV2.slice(-3), 44, 49, 59, 60, 61, 66, ...movingV3.slice(0, 3), ...movingV3.slice(-2), 78, 84, 89,
+    90, 91, 104, ...movingV4.slice(0, 2), ...movingV4.slice(-1), 119, 120, 121, 134, ...movingV5.slice(-2), 149].filter((v, i, a) => v != null && v < camp.length && a.indexOf(v) === i);
   const pv = await page.evaluate((pick) => {
     const P = __peri, S = P.state, out = [];
     for (const i of pick) for (const S0 of [0, 173, 611]) for (const variant of [{ f: 0.93, rot: 0.05 }, { f: 0.55, rot: -0.03 }]) {
@@ -174,7 +183,7 @@ async function blockMain(browser) {
   }, pick);
   metrics.predict = { cases: pv.length, fullN: pv.filter(r => r.pn === 270).length, maxN: Math.max(...pv.map(r => r.pn)) };
   const bad = pv.filter(r => !(r.mism === -1 && r.t0 === r.stepAt && r.pn <= 270 && (r.ln === r.pn || r.status !== 'flying')));
-  check('3', 'predicted path === live flight, ' + pv.length + ' cases over ' + pick.length + ' plates (all three volumes, moving bodies, wormhole plates, start steps 0/173/611)', bad.length === 0, bad.slice(0, 4).map(r => JSON.stringify(r)).join(' '));
+  check('3', 'predicted path === live flight, ' + pv.length + ' cases over ' + pick.length + ' plates (all five volumes, moving bodies, wormhole plates, start steps 0/173/611; nebulae and pulsar beams included)', bad.length === 0, bad.slice(0, 4).map(r => JSON.stringify(r)).join(' '));
   check('3', 'state.predict.n ≤ 270 in every case (max ' + metrics.predict.maxN + ')', metrics.predict.maxN <= 270 && metrics.predict.maxN > 200);
   // 270 steps is longer than a few solution flights (plate I hits in fewer), so "full length" can only be demanded where the stored solution's
   // flight itself runs at least 270 steps: every such picked plate must have been compared over all 270 steps in at least one case
@@ -183,11 +192,11 @@ async function blockMain(browser) {
   const longPicks = pick.filter(i => solLen[i] >= 270), shortPicks = pick.filter(i => solLen[i] < 270);
   check('3', 'the full 270 steps (K.PREDICT_STEPS) were compared live vs predicted on ' + perPlateFull.filter(Boolean).length + '/' + pick.length + ' picked plates (' + metrics.predict.fullN + '/' + pv.length + ' cases); every picked plate whose stored solution flies ≥ 270 steps (' + longPicks.length + ' of them) is covered', longPicks.every(i => perPlateFull[pick.indexOf(i)]) && metrics.predict.fullN >= pv.length / 2 && perPlateFull.filter(Boolean).length >= 16, 'not full: ' + pick.filter((i, k) => !perPlateFull[k]).map(i => (i + 1) + ' (solution flight ' + solLen[i] + ' steps)').join(', '));
 
-  // ---- (9) aim screenshots on plates 31, 45, 60, 61, 90
-  for (const i of [30, 44, 59, 60, 89]) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(300); await aimShot(i, 'qa-aim-' + (i + 1) + '.png'); if (i === 44) { const a = await layoutAudit(page, 'plate XLV aim'); check('7', 'layout: plate XLV (portrait, aiming)', !a.issues.length, a.issues.join(' | ')); } }
+  // ---- (9) aim screenshots on plates 31, 45, 60, 61, 90, 91, 121, 150
+  for (const i of [30, 44, 59, 60, 89, 90, 120, 149].filter(i => i < camp.length)) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(300); await aimShot(i, 'qa-aim-' + (i + 1) + '.png'); if (i === 44) { const a = await layoutAudit(page, 'plate XLV aim'); check('7', 'layout: plate XLV (portrait, aiming)', !a.issues.length, a.issues.join(' | ')); } }
   await page.evaluate(() => { const a = __peri.state.aim; a.active = false; a.cancel = true; });
 
-  // ---- (7) captions of all 90 plates (+ DAILY captions): ≥ 10 px, unsqueezed, two-row layout
+  // ---- (7) captions of all plates (150) (+ DAILY captions): ≥ 10 px, unsqueezed, two-row layout
   const caps = await page.evaluate(async () => {
     const P = __peri, out = [], raf2 = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     const grab = (kind, i, k) => { const c = P.Render.caption; out.push({ kind, i, k, text: c.text, size: c.size, two: c.two, sq: c.squeeze, name: P.state.level.name }); };
@@ -198,9 +207,9 @@ async function blockMain(browser) {
   metrics.captions = caps;
   const cp1 = caps.filter(c => c.kind === 'plate'), cd = caps.filter(c => c.kind === 'daily');
   const smallP = cp1.filter(c => c.size < 10 || c.sq !== 1), smallD = cd.filter(c => c.size < 10 || c.sq !== 1);
-  check('7', 'plate captions ≥ 10 px and unsqueezed on all 30 Volume I plates (fallback fonts)', !smallP.filter(c => c.i < 30).length, smallP.filter(c => c.i < 30).map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; '));
-  check('7', 'plate captions ≥ 10 px and unsqueezed on all 30 Volume II plates (fallback fonts)', !smallP.filter(c => c.i >= 30 && c.i < 60).length, smallP.filter(c => c.i >= 30 && c.i < 60).map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; '));
-  check('7', 'plate captions ≥ 10 px and unsqueezed on all 30 Volume III plates (fallback fonts)', cp1.length === 90 && !smallP.filter(c => c.i >= 60).length, smallP.filter(c => c.i >= 60).map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; '));
+  check('7', 'captions grabbed for all ' + FINAL.N + ' plates', cp1.length === FINAL.N, cp1.length + ' plates');
+  for (const v of info.vols) { const inV = smallP.filter(c => c.i >= v.from && c.i <= v.to);
+    check('7', 'plate captions ≥ 10 px and unsqueezed on all ' + (v.to - v.from + 1) + ' ' + v.name + ' plates (fallback fonts)', cp1.filter(c => c.i >= v.from && c.i <= v.to).length === v.to - v.from + 1 && !inV.length, inV.map(c => c.text + ' ' + c.size + 'px sq' + c.sq).join('; ')); }
   check('7', 'DAILY captions ≥ 10 px and unsqueezed on 40 dates across a year', !smallD.length, smallD.map(c => c.text + ' ' + c.size).join('; ') + ' | sizes ' + [...new Set(cd.map(c => c.size))].join('/'));
   const twoN = cp1.filter(c => c.two).length;
   note('captions: ' + twoN + '/' + cp1.length + ' plates use the two-row HUD (sizes ' + [...new Set(cp1.map(c => c.size))].sort((a, b) => a - b).join(', ') + ' px); DAILY sizes ' + [...new Set(cd.map(c => c.size))].join(', ') + ' px, two-row ' + cd.filter(c => c.two).length + '/40. Cormorant SC is unavailable here, so widths are those of the Georgia fallback.');
@@ -213,8 +222,8 @@ async function blockMain(browser) {
   await page.evaluate(() => __peri.loadDaily('2026-11-28')); await page.waitForTimeout(300);
   { const Lo = await page.evaluate(() => __peri.Render.layout); await shot(page, 'qa-caption-daily.png', { clip: { x: 0, y: Lo.plate.y - 58, width: Lo.w, height: 62 } }); }
   { const bads = [];
-    for (const i of [30, 59, 44, 60, 74, 84, 89]) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(250); const a = await layoutAudit(page, 'portrait plate ' + (i + 1)); if (a.issues.length) bads.push('plate ' + (i + 1) + ': ' + a.issues.join(' | ')); }
-    check('7', 'layout: plates XXXI, XLV, LX, LXI, LXXV, LXXXV, XC (portrait) — HUD rows, readout, buttons', !bads.length, bads.join(' || ') || 'no issues'); }
+    for (const i of [30, 59, 44, 60, 74, 84, 89, 90, 104, 119, 120, 134, 149].filter(i => i < camp.length)) { await page.evaluate(i => __peri.loadLevel(i), i); await page.waitForTimeout(250); const a = await layoutAudit(page, 'portrait plate ' + (i + 1)); if (a.issues.length) bads.push('plate ' + (i + 1) + ': ' + a.issues.join(' | ')); }
+    check('7', 'layout: plates XXXI, XLV, LX, LXI, LXXV, LXXXV, XC, XCI, CV, CXX, CXXI, CXXXV, CL (portrait) — HUD rows, readout, buttons', !bads.length, bads.join(' || ') || 'no issues'); }
 
   // crash screenshot
   const cr = await page.evaluate(() => {
@@ -290,7 +299,7 @@ async function blockMain(browser) {
   const lost = m2.lsBoot === null && pre !== 'null';
   if (lost) note('file:// reload lost localStorage in the main session (lsBoot null although the save held ' + pre + ' before reload): headless-Chromium file:// quirk, reproduced 3/10 on a 2-line page; persistence is verified over http in block [6] "http origin" instead.');
   check('6', 'mute toggle persists across reload (file://; skipped if Chromium dropped file:// storage, see note)', lost || (m0 === false && m1.muted && m2.muted && m2.saved === true && /Off/.test(m2.lbl)), JSON.stringify({ pre, m1, m2 }));
-  check('6', 'progress persists across reload (all 90 sealed → unlocked 90; file:// skip as above)', lost || (m2.unlocked === 90 && m2.ln === 90), 'unlocked ' + m2.unlocked);
+  check('6', 'progress persists across reload (all ' + info.N + ' sealed → unlocked ' + info.N + '; file:// skip as above)', lost || (m2.unlocked === info.N && m2.ln === FINAL.N), 'unlocked ' + m2.unlocked + ' stars.length ' + m2.ln);
   await tapEl(page, cdp, '#scr-title [data-act="sound"]');
   await page.evaluate(() => __peri.loadLevel(3)); await page.waitForTimeout(200);
   try { await cdp.send('Input.synthesizePinchGesture', { x: 195, y: 420, scaleFactor: 2.2, gestureSourceType: 'touch' }); } catch (e) { note('pinch synth failed: ' + e.message); }
@@ -310,7 +319,7 @@ async function blockPerf(browser) {
     const busy = await page.evaluate((i) => {
       const P = __peri, lv = P.Levels.CAMPAIGN[i]; let best = null;
       for (let a = 0; a < 360; a += 3) for (const p of [0.45, 0.6, 0.75, 0.9]) { const ang = a * Math.PI / 180, vx = Math.cos(ang) * 640 * p, vy = Math.sin(ang) * 640 * p, s = P.Physics.simulate(lv, vx, vy, 0, 1200); if (!best || s.n > best.n) best = { vx, vy, n: s.n, status: s.status }; }
-      return { i, name: lv.name, bodies: lv.bodies.length, moving: lv.bodies.filter(b => b.orbit).length, frags: (lv.frags || []).length, best };
+      return { i, name: lv.name, bodies: lv.bodies.length, moving: lv.bodies.filter(b => b.orbit || b.beam).length, frags: (lv.frags || []).length, best };
     }, idx);
     await page.evaluate(b => __peri.loadLevel(b.i), busy); await page.waitForTimeout(400);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
@@ -425,7 +434,7 @@ async function blockLandscape(browser) {
   const caps = await page.evaluate(async () => { const P = __peri, out = [], raf2 = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     for (let i = 0; i < P.Levels.CAMPAIGN.length; i++) { P.loadLevel(i); await raf2(); const c = P.Render.caption; out.push({ i, size: c.size, two: c.two, sq: c.squeeze, text: c.text }); } P.loadLevel(0); return out; });
   const bad = caps.filter(c => c.size < 10 || c.sq !== 1);
-  check('7', 'landscape captions: all 90 plates ≥ 10 px, unsqueezed', caps.length === 90 && !bad.length, bad.map(c => c.text + ' ' + c.size + ' sq' + c.sq).join('; ') + ' two-row ' + caps.filter(c => c.two).length);
+  check('7', 'landscape captions: all ' + FINAL.N + ' plates ≥ 10 px, unsqueezed', caps.length === FINAL.N && !bad.length, bad.map(c => c.text + ' ' + c.size + ' sq' + c.sq).join('; ') + ' two-row ' + caps.filter(c => c.two).length);
   await page.evaluate(() => __peri.loadLevel(0)); await page.waitForTimeout(300);
   await tapEl(page, cdp, '#zone-r .btn'); await page.waitForTimeout(400);
   const ma = await layoutAudit(page, 'landscape menu'); check('7', 'layout: Menu sheet (landscape)', !ma.issues.length, ma.issues.join(' | '));
@@ -460,7 +469,7 @@ async function blockArtifact(browser) {
     check('6', 'artifact: touch flow title → atlas → plate I → launch → success card', ok);
     check('7', 'artifact layout: play + card', !p.issues.length, p.issues.join(' | '));
     const camp = await page.evaluate(() => { const P = __peri, bad = []; for (let i = 0; i < P.Levels.CAMPAIGN.length; i++) { P.loadLevel(i); P.solveCurrent(); P.fastForward(1300); if (!(P.state.result && P.state.result.success && P.state.result.stars === 3)) bad.push(i + 1); } return { n: P.Levels.CAMPAIGN.length, bad }; });
-    check('3', 'artifact: all 90 plates solve to 3 stars', camp.n === 90 && !camp.bad.length, camp.bad.join(','));
+    check('3', 'artifact: all ' + FINAL.N + ' plates solve to 3 stars', camp.n === FINAL.N && !camp.bad.length, camp.bad.join(','));
     try { await cdp.send('Input.synthesizePinchGesture', { x: 195, y: 420, scaleFactor: 2.2, gestureSourceType: 'touch' }); } catch (e) {}
     await page.waitForTimeout(300);
     check('7', 'artifact: pinch does not zoom', await page.evaluate(() => visualViewport.scale) === 1);
@@ -489,9 +498,9 @@ async function blockArtifact(browser) {
 }
 
 // ------------------------------------------------------------------ orchestration
-function runSuite(sec, name, cmd, okRe) {
+function runSuite(sec, name, cmd, okRe, timeoutMin = 9) {
   let out = '', code = 0;
-  try { out = cp.execSync(cmd, { cwd: ROOT, maxBuffer: 1 << 26, timeout: 9 * 60000, env: { ...process.env, NODE_PATH: process.env.NODE_PATH || '/home/claude/.npm-global/lib/node_modules' } }).toString(); }
+  try { out = cp.execSync(cmd, { cwd: ROOT, maxBuffer: 1 << 26, timeout: timeoutMin * 60000, env: { ...process.env, NODE_PATH: process.env.NODE_PATH || '/home/claude/.npm-global/lib/node_modules' } }).toString(); }
   catch (e) { out = String(e.stdout || '') + String(e.stderr || ''); code = e.status || 1; }
   const lines = out.trim().split('\n'), last = lines.filter(l => /passed|ALL GREEN|PASS|verify:/.test(l)).pop() || lines.pop() || '';
   const fails = lines.filter(l => /^FAIL/.test(l)).slice(0, 5).join(' / ');
@@ -514,18 +523,20 @@ function runSuite(sec, name, cmd, okRe) {
   }
   if (!ONLY) {
     let pt = ''; try { pt = cp.execSync('node tools/physics-test.js', { cwd: ROOT }).toString(); check('2', 'node tools/physics-test.js ALL GREEN', /ALL GREEN/.test(pt), (pt.match(/bench.*$/m) || [''])[0]); } catch (e) { check('2', 'node tools/physics-test.js', false, String(e.stdout || e)); }
-    const bk = runSuite('3', 'node tools/levels-bake.js --verify (90 baked plates, Volume III included)', 'node tools/levels-bake.js --verify', /verify: all 90 baked plates pass/);
+    // the full verify (common checks + verify3 + verify45 in worker processes) takes ~15 min on this machine: allow 40
+    const bk = runSuite('3', 'node tools/levels-bake.js --verify (' + FINAL.N + ' baked plates, Volumes III-V included)', 'node tools/levels-bake.js --verify', new RegExp('verify: all ' + FINAL.N + ' baked plates pass'), 40);
     check('3', 'levels-bake --verify, Volume III part (verify3): all 30 plates OK', /verify3: all 30 Volume III plates OK/.test(bk), (bk.match(/^verify3?:.*$/mg) || []).map(l => l.slice(0, 120)).join(' | ') + ' || problem lines: ' + bk.split('\n').filter(l => /^(L\d+|Endless|FROZEN|CAMPAIGN)/.test(l)).slice(0, 8).join(' / '));
-    runSuite('3', 'node tools/levels-clear.js --verify (87 full-clear courses)', 'node tools/levels-clear.js --verify', /levels-clear OK: 87 full-clear courses verified/);
+    check('3', 'levels-bake --verify, Volumes IV-V part (verify45): all 60 plates OK', /verify45: all 60 Volume IV and V plates OK/.test(bk), (bk.match(/^verify45:.*$/mg) || []).map(l => l.slice(0, 120)).join(' | ') || 'no verify45 line');
+    runSuite('3', 'node tools/levels-clear.js --verify (' + (FINAL.N - 3) + ' full-clear courses: every plate but I-III)', 'node tools/levels-clear.js --verify', new RegExp('levels-clear OK: ' + (FINAL.N - 3) + ' full-clear courses verified'));
     runSuite('13', 'node tools/levels-daily-test.js', 'node tools/levels-daily-test.js', /PASS/);
   }
   const browser = await chromium.launch(Lb.launchOpts(chromium)); metrics.chromium = browser.version();
   const blocks = [['main', () => blockMain(browser)], ['perf', () => blockPerf(browser)], ['nostorage', () => blockNoStorage(browser)], ['landscape', () => blockLandscape(browser)], ['artifact', () => blockArtifact(browser)],
     ['migrate', () => V2.migrate(browser, STD)], ['cards', () => V2.cards(browser, STD, info)], ['hint', () => V2.hint(browser, STD, info)], ['daily', () => V2B.daily(browser, STD)],
     ['log', () => V2B.log(browser, STD)], ['atlas', () => V2B.atlas(browser, STD)], ['sw', () => V2B.serviceWorker(browser)], ['persist', () => V2B.persist(browser)],
-    ['worm', () => V3.worm(browser, STD)], ['atlas3', () => V3.atlas3(browser, STD)], ['endless', () => V3.endless(browser, STD)], ['perfv3', () => V3.perfV3(browser, STD)], ['sound', () => V3.sound(browser, STD)]];
+    ['worm', () => V3.worm(browser, STD)], ['vol45', () => V3.vol45(browser, STD)], ['atlas3', () => V3.atlas3(browser, STD)], ['endless', () => V3.endless(browser, STD)], ['perfv3', () => V3.perfV3(browser, STD)], ['sound', () => V3.sound(browser, STD)]];
   // the v2 blocks need plate indices found by the main block; probe them cheaply when main is skipped
-  if (ONLY && !ONLY.test('main')) { const c = await newPage(browser, { url: STD, label: 'probe', init: [SEED_SEEN] }); const r = await c.page.evaluate(() => { const C = __peri.Levels.CAMPAIGN, mv = i => C[i].bodies.some(b => b.orbit); let a = -1, b = -1, f = -1; for (let i = 0; i < C.length; i++) { if (f < 0 && C[i].frags && C[i].frags.length) f = i; if (a < 0 && i >= 5 && mv(i)) a = i; if (b < 0 && i >= 30 && mv(i)) b = i; } return { f, a, b, c: C.findIndex((l, i) => i >= 60 && mv(i)) }; }); info.fragPlate = r.f; info.moving1 = r.a; info.moving2 = r.b; info.moving3 = r.c; await c.ctx.close(); }
+  if (ONLY && !ONLY.test('main')) { const c = await newPage(browser, { url: STD, label: 'probe', init: [SEED_SEEN] }); const r = await c.page.evaluate(() => { const C = __peri.Levels.CAMPAIGN, mv = i => C[i].bodies.some(b => b.orbit || b.beam); let a = -1, b = -1, f = -1; for (let i = 0; i < C.length; i++) { if (f < 0 && C[i].frags && C[i].frags.length) f = i; if (a < 0 && i >= 5 && mv(i)) a = i; if (b < 0 && i >= 30 && mv(i)) b = i; } const d = C.findIndex((l, i) => i >= 90 && i < 120 && mv(i)), e = C.findIndex((l, i) => i >= 120 && mv(i)); return { f, a, b, c: C.findIndex((l, i) => i >= 60 && mv(i)), d, e, N: C.length, vols: __peri.Levels.VOLUMES }; }); info.fragPlate = r.f; info.moving1 = r.a; info.moving2 = r.b; info.moving3 = r.c; info.moving4 = r.d >= 0 ? r.d : undefined; info.moving5 = r.e >= 0 ? r.e : undefined; info.N = r.N; info.vols = r.vols; await c.ctx.close(); }
   for (const [name, fn] of blocks) {
     if (ONLY && !ONLY.test(name)) continue;
     console.log('\n=== block ' + name + ' ===');
@@ -546,8 +557,8 @@ function runSuite(sec, name, cmd, okRe) {
 function allRequestsList() { return Lb.allRequests; }
 
 function writeReport() {
-  const secNames = { 1: 'Console / page errors', 2: 'Physics self-test', 3: 'Campaign (90 plates), solvability & prediction', 4: 'Endless / generator budgets', 5: 'Frame rate', 6: 'Touch flow', 7: 'Layout', 8: 'Size & network', 9: 'Screenshots',
-    10: 'Save migration v1 → v2', 11: 'Popup cards (intro, fragments)', 12: 'Consult the Astronomer', 13: 'Daily Plate', 14: 'Observer’s Log & toasts', 15: 'Atlas (90 plates, three volumes)', 16: 'Service worker / offline', 17: 'Other suites (feel, log)', 18: 'Wormholes & Volume III (touch path, hint, atlas, loadCustom)', 19: 'Audio (silent-switch workaround removed)' };
+  const secNames = { 1: 'Console / page errors', 2: 'Physics self-test', 3: 'Campaign (150 plates), solvability & prediction', 4: 'Endless / generator budgets', 5: 'Frame rate', 6: 'Touch flow', 7: 'Layout', 8: 'Size & network', 9: 'Screenshots',
+    10: 'Save migration v1 → v2', 11: 'Popup cards (intro, fragments)', 12: 'Consult the Astronomer', 13: 'Daily Plate', 14: 'Observer’s Log & toasts', 15: 'Atlas (150 plates, five volumes)', 16: 'Service worker / offline', 17: 'Other suites (feel, log)', 18: 'Wormholes, nebulae & pulsars (Volumes III-V: touch path, cards, menu, hint, atlas, loadCustom)', 19: 'Audio (silent-switch workaround removed)' };
   let md = '# PERIHELION — QA report (v2)\n\n_Generated by `node tools/qa-run.js` on ' + new Date().toISOString() + ' — Chromium ' + metrics.chromium +
     ', iPhone 14 emulation (390×844 @3×, touch, safe-area insets top 47 / bottom 34 via CDP `Emulation.setSafeAreaInsetsOverride`; landscape 844×390 with left/right 47, bottom 21). Fonts are the fallback stack (Cormorant / JetBrains Mono are not reachable from the sandbox)._\n\n';
   md += '## Summary\n\n| # | Area | Result | Passed |\n|---|---|---|---|\n';

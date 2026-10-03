@@ -1,8 +1,8 @@
 // PERIHELION — QA v2 feature blocks part 1 (owner: QA AGENT): save migration, popup cards, Consult the Astronomer.
 const L = require('./qa-lib.js');
-const { check, note, sleep, newPage, tapEl, cdpTap, touchDrag, touchHold, cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit, SEED_SEEN, seedScript, zeros } = L;
+const { check, note, sleep, newPage, tapEl, cdpTap, touchDrag, touchHold, cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit, SEED_SEEN, seedScript, zeros, FINAL } = L;
 
-// ================================================================= (a) v1 -> v2/v3 migration  [section 10] (Save.N is now 90: v1/v2 saves are padded with zeros)
+// ================================================================= (a) v1 -> v2/v3 migration  [section 10] (Save.N is now 150: v1/v2 saves are padded with zeros)
 async function migrate(browser, STD) {
   const S = '10';
   const v1 = { v: 1, stars: [3, 2, 1, 3, 2, 1, 3, 2, 1, 3, 2].concat(zeros(19)), frags: [1, 0, 2, 0, 1, 0, 0, 3, 0, 1, 0].concat(zeros(19)), unlocked: 12, endlessBest: 7, muted: false };
@@ -10,12 +10,12 @@ async function migrate(browser, STD) {
     const { ctx, page, cdp, errors } = await newPage(browser, { url: STD, label: 'migrate-a', init: [seedScript(v1)] });
     await page.waitForTimeout(900);
     const r = await page.evaluate(() => { const D = __peri.Save.data; return { n: __peri.Save.N, sl: D.stars.length, fl: D.frags.length, s: D.stars.slice(0, 12), sTail: D.stars.slice(11).every(v => v === 0), f: D.frags.slice(0, 11), u: D.unlocked, e: D.endlessBest, m: D.muted, seen: D.seen, hasDaily: !!D.daily && D.daily.streak === 0, stats: Object.keys(D.stats).length, ach: Object.keys(D.ach).length, best: document.getElementById('t-best').innerText }; });
-    check(S, 'v1 save: arrays padded to 90 (stars, frags)', r.n === 90 && r.sl === 90 && r.fl === 90, JSON.stringify({ n: r.n, sl: r.sl, fl: r.fl }));
+    check(S, 'v1 save: arrays padded to Save.N = ' + FINAL.N + ' (stars, frags)', r.n === FINAL.N && r.sl === r.n && r.fl === r.n, JSON.stringify({ n: r.n, sl: r.sl, fl: r.fl }));
     check(S, 'v1 save: stars / frags / unlocked / endlessBest / muted preserved', JSON.stringify(r.s.slice(0, 11)) === JSON.stringify(v1.stars.slice(0, 11)) && r.s[11] === 0 && r.sTail && JSON.stringify(r.f) === JSON.stringify(v1.frags.slice(0, 11)) && r.u === 12 && r.e === 7 && r.m === false, JSON.stringify({ s: r.s, u: r.u, e: r.e, m: r.m }));
     check(S, 'v1 save: v2 fields default (seen {}, daily empty, stats {}, ach {}) and title shows best survey 7', JSON.stringify(r.seen) === '{}' && r.hasDaily && r.stats === 0 && r.ach === 0 && /7/.test(r.best), JSON.stringify(r));
     await tapEl(page, cdp, '[data-act="begin"]'); await page.waitForTimeout(600);
-    const at = await page.evaluate(() => { const lk = i => document.querySelector('.plate[data-i="' + i + '"]').classList.contains('locked'); return { p12: lk(11), p13: lk(12), p31: lk(30), p60: lk(59), locked: document.querySelectorAll('.plate.locked').length, n: document.querySelectorAll('.plate').length }; });
-    check(S, 'v1 save: atlas shows plates I–XII open, XIII onward and XXXI locked', !at.p12 && at.p13 && at.p31 && at.p60 && at.locked === 78 && at.n === 90, JSON.stringify(at));
+    const at = await page.evaluate(() => { const lk = i => document.querySelector('.plate[data-i="' + i + '"]').classList.contains('locked'); return { p12: lk(11), p13: lk(12), p31: lk(30), p60: lk(59), locked: document.querySelectorAll('.plate.locked').length, n: document.querySelectorAll('.plate').length, N: __peri.Levels.CAMPAIGN.length }; });
+    check(S, 'v1 save: atlas shows plates I–XII open, XIII onward (' + (FINAL.N - 12) + ') and XXXI locked', !at.p12 && at.p13 && at.p31 && at.p60 && at.locked === at.N - 12 && at.n === at.N && at.N === FINAL.N, JSON.stringify(at));
     await page.evaluate(() => document.querySelector('.plate[data-i="30"]').click()); await page.waitForTimeout(150);
     check(S, 'v1 save: tapping locked plate XXXI does nothing', await page.evaluate(() => __peri.state.screen === 'select'));
     await tapEl(page, cdp, '.plate[data-i="11"]'); await page.waitForTimeout(600);
@@ -34,7 +34,7 @@ async function migrate(browser, STD) {
     await page.evaluate(() => { __peri.loadLevel(29); __peri.solveCurrent(); __peri.fastForward(1400); });
     await page.evaluate(() => __peri.screen('select')); await page.waitForTimeout(500);
     const a1 = await page.evaluate(() => { const lk = i => document.querySelector('.plate[data-i="' + i + '"]').classList.contains('locked'); const raw = JSON.parse(localStorage.getItem('perihelion.v1')); return { p31: lk(30), p32: lk(31), u: __peri.Save.data.unlocked, s30: __peri.Save.data.stars[29], v: raw.v, sl: raw.stars.length, fl: raw.frags.length, prevOk: raw.stars.slice(0, 5).join() === '3,2,1,3,2' }; });
-    check(S, 'sealing plate XXX unlocks XXXI (not XXXII); storage rewritten as v2 with 90-entry arrays, old stars intact', !a1.p31 && a1.p32 && a1.u === 31 && a1.s30 === 3 && a1.v === 2 && a1.sl === 90 && a1.fl === 90 && a1.prevOk, JSON.stringify(a1));
+    check(S, 'sealing plate XXX unlocks XXXI (not XXXII); storage rewritten as v2 with ' + FINAL.N + '-entry arrays, old stars intact', !a1.p31 && a1.p32 && a1.u === 31 && a1.s30 === 3 && a1.v === 2 && a1.sl === FINAL.N && a1.fl === FINAL.N && a1.prevOk, JSON.stringify(a1));
     await tapEl(page, cdp, '.plate[data-i="30"]'); await page.waitForTimeout(500);
     check(S, 'plate XXXI playable through the atlas after XXX is sealed', await page.evaluate(() => __peri.state.screen === 'play' && __peri.state.levelIndex === 30));
     check(S, 'no console errors (v1 migration B)', errors.length === 0, errors.join(' | '));
@@ -45,11 +45,11 @@ async function migrate(browser, STD) {
     const { ctx, page, errors } = await newPage(browser, { url: STD, label: 'migrate-c', init: [`try { localStorage.setItem('perihelion.v1', ${JSON.stringify(bad)}); } catch (e) {}`] });
     await page.waitForTimeout(800);
     const g = await page.evaluate(() => { const D = __peri.Save.data; return { s: D.stars.slice(0, 6), sl: D.stars.length, u: D.unlocked, e: D.endlessBest }; });
-    check(S, 'garbage v1 save is clamped (stars 0–3, arrays 90, unlocked from progress)', g.sl === 90 && g.s.join() === '3,0,0,0,2,0' && g.u === 6 && g.e === 0, JSON.stringify(g));
+    check(S, 'garbage v1 save is clamped (stars 0–3, arrays ' + FINAL.N + ', unlocked from progress)', g.sl === FINAL.N && g.s.join() === '3,0,0,0,2,0' && g.u === 6 && g.e === 0, JSON.stringify(g));
     await ctx.close();
     const c2 = await newPage(browser, { url: STD, label: 'migrate-d', init: [`try { localStorage.setItem('perihelion.v1', '{not json'); } catch (e) {}`] });
     await c2.page.waitForTimeout(800);
-    check(S, 'unparseable save boots to a fresh v2 save', await c2.page.evaluate(() => __peri.state.screen === 'title' && __peri.Save.data.unlocked === 1 && __peri.Save.data.stars.length === 90) && c2.errors.length === 0, c2.errors.join(' | '));
+    check(S, 'unparseable save boots to a fresh v2 save', await c2.page.evaluate(() => __peri.state.screen === 'title' && __peri.Save.data.unlocked === 1 && __peri.Save.data.stars.length === __peri.Save.N) && c2.errors.length === 0, c2.errors.join(' | '));
     await c2.ctx.close();
     check(S, 'no console errors (garbage save)', errors.length === 0, errors.join(' | '));
   }
@@ -150,7 +150,7 @@ async function hint(browser, STD, info) {
   const S = '12';
   const { ctx, page, cdp, errors } = await newPage(browser, { url: STD, label: 'hint', init: [SEED_SEEN] });
   await page.waitForTimeout(1000);
-  // ---- invariants on all 90 plates through the hooks
+  // ---- invariants on every campaign plate (150) through the hooks
   const all = await page.evaluate(() => {
     const P = __peri, S = P.state, out = [], buf = new Float32Array(2600);
     for (let i = 0; i < P.Levels.CAMPAIGN.length; i++) {
@@ -159,9 +159,9 @@ async function hint(browser, STD, info) {
       const ok = P.useHint();
       const sim = P.Physics.simulate(lv, sol.vx, sol.vy, t0, 1200, buf);
       const h = S.hint;
-      let expN; { const q = P.Physics.createSim(lv, sol.vx, sol.vy, t0); let tot = 0, got = 0, last = 0, wp = 0, lastW = 0; while (q.status === 'flying' && q.step < 1200) { P.Physics.stepSim(q, lv); tot++; const c = q.collected.reduce((a, b) => a + b, 0); if (c > got) { got = c; last = tot; } if (q.warps > wp) { wp = q.warps; lastW = tot; } }
-        // rule (CONTRACT-v2 §10): 55%, or on to the last fragment + 24 steps (cap 92%), cap K.HINT_MAX. FEEL additionally runs the line on to the last warp passage + 24 steps (cap 92%) on wormhole courses (src/60-main.js useHint; feel-test covers it)
-        expN = Math.floor(0.55 * tot); if (got) expN = Math.max(expN, Math.min(last + 24, Math.floor(0.92 * tot))); if (wp) expN = Math.max(expN, Math.min(lastW + 24, Math.floor(0.92 * tot))); expN = Math.min(1100, expN); }
+      let expN; { const q = P.Physics.createSim(lv, sol.vx, sol.vy, t0); let tot = 0, got = 0, last = 0, wp = 0, lastW = 0, bm = 0, lastB = 0; while (q.status === 'flying' && q.step < 1200) { P.Physics.stepSim(q, lv); tot++; const c = q.collected.reduce((a, b) => a + b, 0); if (c > got) { got = c; last = tot; } if (q.warps > wp) { wp = q.warps; lastW = tot; } if (q.beams > bm) { bm = q.beams; lastB = tot; } }
+        // rule (CONTRACT-v2 §10): 55%, or on to the last fragment + 24 steps (cap 92%), cap K.HINT_MAX. FEEL additionally runs the line on to the last warp passage / last pulsar-beam catch + 24 steps (cap 92%) (src/60-main.js useHint; feel-test covers it)
+        expN = Math.floor(0.55 * tot); if (got) expN = Math.max(expN, Math.min(last + 24, Math.floor(0.92 * tot))); if (wp) expN = Math.max(expN, Math.min(lastW + 24, Math.floor(0.92 * tot))); if (bm) expN = Math.max(expN, Math.min(lastB + 24, Math.floor(0.92 * tot))); expN = Math.min(1100, expN); }
       let prefix = h.n === expN;
       for (let k = 0; k < 2 * h.n && prefix; k++) if (h.pts[k] !== buf[k]) prefix = false;
       const copy = h.pts.slice(0, 2 * h.n);
@@ -173,23 +173,23 @@ async function hint(browser, STD, info) {
       const r = S.result;
       let live = !!r && r.n > h.n;   // live path holds the launch point first, Physics.simulate starts after step 1
       if (live) for (let k = 0; k < 2 * h.n; k++) if (r.pts[k + 2] !== copy[k]) { live = false; break; }
-      out.push({ i, name: lv.name, ok, again, stepBefore, t0, fr, n: h.n, expN, simN: sim.n, prefix, launchedStep, hintOffAtLaunch, success: !!(r && r.success), stars: r && r.stars, card: /Astronomer consulted: one star forfeited/.test(document.getElementById('card').innerText), live, moving: lv.bodies.some(b => b.orbit), warps: S.sim ? S.sim.warps : -1 });
+      out.push({ i, name: lv.name, ok, again, stepBefore, t0, fr, n: h.n, expN, simN: sim.n, prefix, launchedStep, hintOffAtLaunch, success: !!(r && r.success), stars: r && r.stars, card: /Astronomer consulted: one star forfeited/.test(document.getElementById('card').innerText), live, moving: lv.bodies.some(b => b.orbit || b.beam), warps: S.sim ? S.sim.warps : -1 });
     }
     return out;
   });
   metrics_set('hintAll', all.map(a => ({ i: a.i, n: a.n, simN: a.simN })));
-  check(S, 'useHint() succeeds on all ' + all.length + ' plates and freezes at solution t0Step (step nonzero before)', all.length === 90 && all.every(a => a.ok && a.fr.frozen && a.fr.on && a.fr.used && a.fr.step === a.t0), all.filter(a => !(a.ok && a.fr.frozen && a.fr.step === a.t0)).map(a => a.i + 1).join(','));
-  check(S, 'hint length = 55% of the course (or on to the last fragment / last warp passage + 24 steps, ≤ 92%) ≤ 1100 on every plate; ' + all.filter(a => a.n === 1100).length + ' plates hit the cap', all.every(a => a.n === a.expN && a.n > 20 && a.n <= 1100), all.filter(a => a.n !== a.expN).map(a => a.i + 1).join(','));
+  check(S, 'useHint() succeeds on all ' + all.length + ' plates and freezes at solution t0Step (step nonzero before)', all.length === FINAL.N && all.every(a => a.ok && a.fr.frozen && a.fr.on && a.fr.used && a.fr.step === a.t0), all.filter(a => !(a.ok && a.fr.frozen && a.fr.step === a.t0)).map(a => a.i + 1).join(','));
+  check(S, 'hint length = 55% of the course (or on to the last fragment / last warp passage / last beam catch + 24 steps, ≤ 92%) ≤ 1100 on every plate; ' + all.filter(a => a.n === 1100).length + ' plates hit the cap', all.every(a => a.n === a.expN && a.n > 20 && a.n <= 1100), all.filter(a => a.n !== a.expN).map(a => a.i + 1).join(','));
   check(S, 'hint path is exactly the prefix of Physics.simulate(hint course) on every plate (float-exact)', all.every(a => a.prefix), all.filter(a => !a.prefix).map(a => a.i + 1).join(','));
   check(S, 'hint path is also the exact prefix of the live game flight when the hint course is launched (every plate)', all.every(a => a.live), all.filter(a => !a.live).map(a => a.i + 1).join(','));
-  check(S, 'launching the hint course after the hint hits on all 90 plates with 2 stars; card says the astronomer line', all.every(a => a.success && a.stars === 2 && a.card && a.launchedStep === a.t0 && a.hintOffAtLaunch), all.filter(a => !(a.success && a.stars === 2 && a.card)).map(a => a.i + 1 + ':' + a.stars).join(','));
+  check(S, 'launching the hint course after the hint hits on all ' + all.length + ' plates with 2 stars; card says the astronomer line', all.every(a => a.success && a.stars === 2 && a.card && a.launchedStep === a.t0 && a.hintOffAtLaunch), all.filter(a => !(a.success && a.stars === 2 && a.card)).map(a => a.i + 1 + ':' + a.stars).join(','));
   check(S, 'hint unavailable once used (useHint() returns false the second time) on every plate', all.every(a => a.again === false));
-  // ---- frozen for 60 real frames on a moving plate of each volume
-  for (const i of [info.moving1, info.moving2, info.moving3]) {
+  // ---- frozen for 60 real frames on a moving plate of each volume (IV: a drifting cloud if any, V: turning pulsar beams)
+  for (const i of [info.moving1, info.moving2, info.moving3, info.moving4, info.moving5].filter(i => i != null && i >= 0)) {
     await page.evaluate(i => { __peri.loadLevel(i); __peri.fastForward(200); __peri.useHint(); }, i);
     const st = await page.evaluate(() => __peri.state.step); await frames(page, 60);
     const r = await page.evaluate(() => ({ step: __peri.state.step, fz: __peri.state.frozen, sim: __peri.Physics }));
-    check(S, 'state.step does not advance over 60 frames while frozen (plate ' + (i + 1) + ', moving bodies)', r.step === st && r.fz, 'step ' + st + ' -> ' + r.step);
+    check(S, 'state.step does not advance over 60 frames while frozen (plate ' + (i + 1) + ', moving bodies / turning beams)', r.step === st && r.fz, 'step ' + st + ' -> ' + r.step);
     const pv = await page.evaluate(() => {   // prediction uses the frozen step
       const P = __peri, S = P.state, sol = P.Levels.clearFor(S.level) || S.level.solution, dx = -sol.vx / 640 * 300 * 0.9, dy = -sol.vy / 640 * 300 * 0.9, v = P.Physics.launchVelocity(dx, dy);
       Object.assign(S.aim, { active: true, cancel: false, dx, dy, power: v.power, vx: v.vx, vy: v.vy }); P.fastForward(0);

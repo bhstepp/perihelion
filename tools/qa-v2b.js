@@ -1,6 +1,6 @@
 // PERIHELION — QA v2 feature blocks part 2 (owner: QA AGENT): Daily Plate, Observer's Log, Atlas, service worker.
 const L = require('./qa-lib.js');
-const { fs, path, ROOT, check, note, sleep, newPage, tapEl, cdpTap, touchDrag, touchHold, cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit, SEED_SEEN, SEED_HALF, DATE_STUB, metrics } = L;
+const { fs, path, ROOT, check, note, sleep, newPage, tapEl, cdpTap, touchDrag, touchHold, cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit, SEED_SEEN, SEED_HALF, DATE_STUB, metrics, FINAL, volHead } = L;
 const cp = require('child_process'), http = require('http'), os = require('os');
 
 // ================================================================= (d) Daily Plate  [section 13]
@@ -143,8 +143,8 @@ async function log(browser, STD) {
     // Observer's Log now lists First Light as recorded
     await page.evaluate(() => __peri.screen('title')); await page.waitForTimeout(4000);
     await tapEl(page, cdp, '[data-act="log"]'); await page.waitForTimeout(600);
-    const lg = await page.evaluate(() => ({ on: document.getElementById('logui').classList.contains('on'), got: [...document.querySelectorAll('.lg-hon.got')].map(e => e.innerText.replace(/\s+/g, ' ').slice(0, 40)), n: document.querySelectorAll('.lg-hon').length, cnt: document.querySelector('.lg-count').textContent }));
-    check(S, 'Observer’s Log opens from the title by touch; First Light is recorded, 31 honours listed', lg.on && lg.n === 31 && lg.got.some(t => /First Light/i.test(t)), JSON.stringify(lg));
+    const lg = await page.evaluate(() => ({ on: document.getElementById('logui').classList.contains('on'), got: [...document.querySelectorAll('.lg-hon.got')].map(e => e.innerText.replace(/\s+/g, ' ').slice(0, 40)), n: document.querySelectorAll('.lg-hon').length, total: __peri.Log.ACHIEVEMENTS.length, cnt: document.querySelector('.lg-count').textContent }));
+    check(S, 'Observer’s Log opens from the title by touch; First Light is recorded, all ' + FINAL.HONOURS + ' honours listed (Log.ACHIEVEMENTS)', lg.on && lg.total === FINAL.HONOURS && lg.n === lg.total && lg.got.some(t => /First Light/i.test(t)), JSON.stringify(lg));
     check(S, 'no console errors (log play)', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -155,8 +155,8 @@ async function log(browser, STD) {
     await page.waitForTimeout(1000);
     await tapEl(page, cdp, '[data-act="log"]'); await page.waitForTimeout(600);
     const o = await page.evaluate(() => { const r = document.getElementById('logui'), sc = r.querySelector('.lg-scroll'), b = r.querySelector('.lg-back').getBoundingClientRect();
-      return { on: r.classList.contains('on'), backW: b.width, backH: b.height, ovx: sc.scrollWidth > sc.clientWidth, sh: sc.scrollHeight, ch: sc.clientHeight, got: r.querySelectorAll('.lg-hon.got').length, cnt: r.querySelector('.lg-count').textContent, scr: __peri.state.screen }; });
-    check(S, 'Observer’s Log opens from the title by touch (' + tag + '), 11 of 31 honours, no horizontal overflow', o.on && o.got === 11 && !o.ovx, JSON.stringify(o));
+      return { on: r.classList.contains('on'), backW: b.width, backH: b.height, ovx: sc.scrollWidth > sc.clientWidth, sh: sc.scrollHeight, ch: sc.clientHeight, got: r.querySelectorAll('.lg-hon.got').length, n: r.querySelectorAll('.lg-hon').length, total: __peri.Log.ACHIEVEMENTS.length, cnt: r.querySelector('.lg-count').textContent, scr: __peri.state.screen }; });
+    check(S, 'Observer’s Log opens from the title by touch (' + tag + '), 11 of ' + FINAL.HONOURS + ' honours, no horizontal overflow', o.on && o.got === 11 && o.n === o.total && o.total === FINAL.HONOURS && !o.ovx, JSON.stringify(o));
     check(S, 'log back button ≥ 44 px (' + tag + ')', o.backW >= 44 && o.backH >= 44, o.backW.toFixed(0) + '×' + o.backH.toFixed(0));
     await shot(page, land ? 'qa-landscape-log.png' : 'qa-log.png');
     const x = land ? 422 : 200, y0 = land ? 330 : 650, y1 = land ? 100 : 150;
@@ -211,14 +211,14 @@ async function atlas(browser, STD) {
       const op = e => +getComputedStyle(e).opacity;
       const dim = c => Math.min(op(c), op(c.querySelector('.thumb')) * op(c)); const unl = cards[0], lkd = lk[0];
       const cols = getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length;
-      const idxLocked = lk.map(c => +c.dataset.i), okLocked = idxLocked.length === 89 && idxLocked[0] === 1;
-      return { heads, n: cards.length, nLocked: lk.length, okLocked, plate31: cards[30].classList.contains('locked'), dimLocked: +dim(lkd).toFixed(2), dimOpen: +dim(unl).toFixed(2), cols, tally: document.getElementById('tally').innerText.replace(/\s+/g, ' '), grids: document.querySelectorAll('.grid').length,
+      const N = __peri.Levels.CAMPAIGN.length, idxLocked = lk.map(c => +c.dataset.i), okLocked = idxLocked.length === N - 1 && idxLocked[0] === 1;
+      return { N, vols: __peri.Levels.VOLUMES, heads, n: cards.length, nLocked: lk.length, okLocked, plate31: cards[30].classList.contains('locked'), dimLocked: +dim(lkd).toFixed(2), dimOpen: +dim(unl).toFixed(2), cols, tally: document.getElementById('tally').innerText.replace(/\s+/g, ' '), grids: document.querySelectorAll('.grid').length,
         names: cards.slice(28, 34).map(c => c.querySelector('.pl-name').innerText) };
     });
-    check(S, 'Atlas lists 90 plates in three volumes with headings "Volume I · Plates I–XXX" / "Volume II · Plates XXXI–LX" / "Volume III · Plates LXI–XC"', a.n === 90 && a.grids === 3 && a.heads.length === 3 && /^Volume I\s*·\s*Plates I–XXX$/i.test(a.heads[0]) && /^Volume II\s*·\s*Plates XXXI–LX$/i.test(a.heads[1]) && /^Volume III\s*·\s*Plates LXI–XC$/i.test(a.heads[2]), JSON.stringify(a.heads));
-    check(S, 'fresh save: plates II–XC locked (89), including all of Volumes II and III; only plate I open', a.nLocked === 89 && a.okLocked && a.plate31, JSON.stringify({ nLocked: a.nLocked, plate31: a.plate31 }));
+    check(S, 'Atlas lists ' + FINAL.N + ' plates in ' + FINAL.VOLS + ' volumes with headings ' + FINAL.HEADS.map(h => '"' + h + '"').join(' / ') + ' (one per Levels.VOLUMES entry)', a.n === a.N && a.N === FINAL.N && a.grids === a.vols.length && a.vols.length === FINAL.VOLS && a.heads.length === FINAL.VOLS && a.heads.every((h, k) => h === FINAL.HEADS[k] && h === volHead(a.vols[k])), JSON.stringify(a.heads));
+    check(S, 'fresh save: every plate but I locked (' + (FINAL.N - 1) + '), including all of Volumes II–V; only plate I open', a.nLocked === FINAL.N - 1 && a.okLocked && a.plate31, JSON.stringify({ nLocked: a.nLocked, plate31: a.plate31 }));
     check(S, 'locked plates are dimmed (thumb opacity ≤ .25 vs open plate 1)', a.dimLocked <= 0.25 && a.dimOpen >= 0.99, JSON.stringify({ locked: a.dimLocked, open: a.dimOpen }));
-    check(S, 'Atlas is 3 columns in portrait; tally shows "Stars 0/270 · Sealed 0/90"', a.cols === 3 && /Stars 0\/270.*Sealed 0\/90/i.test(a.tally), JSON.stringify({ cols: a.cols, tally: a.tally }));
+    check(S, 'Atlas is 3 columns in portrait; tally shows "Stars 0/' + 3 * FINAL.N + ' · Sealed 0/' + FINAL.N + '"', a.cols === 3 && new RegExp('Stars 0/' + 3 * FINAL.N + '.*Sealed 0/' + FINAL.N, 'i').test(a.tally), JSON.stringify({ cols: a.cols, tally: a.tally }));
     const th = await page.evaluate(() => {
       const sc = document.getElementById('s-scroll').getBoundingClientRect(), out = { vis: 0, drawn: 0, blank: 0, total: document.querySelectorAll('.plate').length, allDrawn: 0 };
       for (const c of document.querySelectorAll('.plate')) {
@@ -228,7 +228,7 @@ async function atlas(browser, STD) {
       return out;
     });
     check(S, 'thumbnails are drawn for every visible row and none is blank', th.vis >= 9 && th.drawn === th.vis && th.blank === 0, JSON.stringify(th));
-    check(S, 'thumbnails are lazy: fewer than all 90 canvases drawn before scrolling', th.allDrawn < th.total, th.allDrawn + '/' + th.total + ' drawn');
+    check(S, 'thumbnails are lazy: fewer than all ' + FINAL.N + ' canvases drawn before scrolling', th.allDrawn < th.total, th.allDrawn + '/' + th.total + ' drawn');
     // scroll to volume II by touch (real swipes), thumbnails follow
     for (let k = 0; k < 6; k++) { await touchDrag(cdp, 195, 700, 195, 250, 8); await page.waitForTimeout(150); }
     await page.waitForTimeout(500);
@@ -237,7 +237,7 @@ async function atlas(browser, STD) {
     check(S, 'no console errors (atlas fresh)', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
-  {   // seeded mid-progress: Volume II and III screenshots
+  {   // seeded mid-progress: Volume II-V screenshots
     const { ctx, page, cdp, errors } = await newPage(browser, { url: STD, label: 'atlas-half', init: [SEED_HALF] });
     await page.waitForTimeout(1000);
     await tapEl(page, cdp, '[data-act="begin"]'); await page.waitForTimeout(600);
@@ -250,8 +250,16 @@ async function atlas(browser, STD) {
     await shot(page, 'qa-atlas-vol3.png');
     const au3 = await layoutAudit(page, 'atlas vol III');
     check(S, 'layout: Atlas Volume III (portrait)', !au3.issues.length, au3.issues.join(' | '));
+    for (const [k, nm] of [[3, 'IV'], [4, 'V']]) {
+      await toVol(k); await page.waitForTimeout(700);
+      await shot(page, 'qa-atlas-vol' + (k + 1) + '.png');
+      const auk = await layoutAudit(page, 'atlas vol ' + nm);
+      const th = await page.evaluate(k => { const g = document.querySelectorAll('.grid')[k], sc = document.getElementById('s-scroll').getBoundingClientRect(), v = g ? [...g.querySelectorAll('.plate')].filter(c => { const r = c.getBoundingClientRect(); return r.bottom > sc.top && r.top < sc.bottom; }) : [];
+        return { vis: v.length, drawn: v.filter(c => c.querySelector('canvas').width !== 300).length, locked: v.filter(c => c.classList.contains('locked')).length }; }, k);
+      check(S, 'Atlas Volume ' + nm + ' (portrait): layout audit clean; visible thumbnails drawn, all locked on this save', !auk.issues.length && th.vis >= 3 && th.drawn === th.vis && th.locked === th.vis, auk.issues.join(' | ') + ' ' + JSON.stringify(th));
+    }
     const vs = await page.evaluate(() => { const lk = i => document.querySelector('.plate[data-i="' + i + '"]').classList.contains('locked'); return { p44: lk(44), p45: lk(45), tally: document.getElementById('tally').innerText.replace(/\s+/g, ' ') }; });
-    check(S, 'seeded save (unlocked 45): plate XLV open, XLVI locked; tally counts 90 plates (/270 stars)', !vs.p44 && vs.p45 && /\/270/.test(vs.tally) && /\/90/.test(vs.tally), JSON.stringify(vs));
+    check(S, 'seeded save (unlocked 45): plate XLV open, XLVI locked; tally counts ' + FINAL.N + ' plates (/' + 3 * FINAL.N + ' stars)', !vs.p44 && vs.p45 && new RegExp('/' + 3 * FINAL.N + '\\b').test(vs.tally) && new RegExp('/' + FINAL.N + '\\b').test(vs.tally), JSON.stringify(vs));
     check(S, 'no console errors (atlas seeded)', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -280,7 +288,7 @@ async function serviceWorker(browser) {
     await ctx.setOffline(true);
     await page.reload(); await page.waitForTimeout(1500);
     const off = await page.evaluate(() => ({ has: !!window.__peri, scr: window.__peri && __peri.state.screen, n: window.__peri && __peri.Levels.CAMPAIGN.length }));
-    check(S, 'offline reload boots the game to the title from the cache', off.has && off.scr === 'title' && off.n === 90, JSON.stringify(off));
+    check(S, 'offline reload boots the game to the title from the cache', off.has && off.scr === 'title' && off.n === FINAL.N, JSON.stringify(off));
     await page.evaluate(() => { __peri.loadLevel(0); __peri.solveCurrent(); __peri.fastForward(1500); });
     let ok = true; try { await cardOn(page, 10000); } catch (e) { ok = false; }
     check(S, 'offline: plate I plays and seals (success card, 3 stars)', ok && await page.evaluate(() => __peri.state.result && __peri.state.result.stars === 3));
