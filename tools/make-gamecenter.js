@@ -21,22 +21,26 @@ const CONFIG = vm.runInNewContext('(' + cfgText + ')');
 
 const honours = load(['55-log.js']).Log.ACHIEVEMENTS;
 
-// Game Center allows 1000 points per game and 100 per achievement.
+// Game Center allows 1000 points per game and 100 per achievement. (Rebalanced for the 39 honours of Volumes IV and V;
+// the earlier 31 used all 1000.)
 const POINTS = {
-  first_light: 10, thread_needle: 25, near_ten: 25, dead_center: 25, clean_sweep: 25, one_shot_ten: 25,
-  cartographer_10: 10, cartographer_30: 25, cartographer_60: 50, cartographer_90: 100,
-  volume_one: 25, volume_two: 50, volume_three: 50, perfectionist: 100,
-  event_horizon: 25, contrary_star: 25, binary_star: 25, first_gate: 10, double_gate: 25, gate_keeper: 25,
-  persistence: 10, long_way_round: 25, comet_hunter: 25, apprentice: 10, self_reliant: 25,
-  daily_3: 10, daily_7: 25, daily_30: 90, daily_perfect: 25, endless_5: 25, endless_10: 50
+  first_light: 5, thread_needle: 20, near_ten: 20, dead_center: 20, clean_sweep: 20, one_shot_ten: 25,
+  cartographer_10: 10, cartographer_30: 20, cartographer_60: 30, cartographer_90: 40, cartographer_120: 50, cartographer_150: 80,
+  volume_one: 20, volume_two: 30, volume_three: 30, volume_four: 30, volume_five: 30, perfectionist: 80,
+  event_horizon: 20, contrary_star: 20, binary_star: 20, first_gate: 10, double_gate: 20, gate_keeper: 20,
+  into_the_veil: 10, becalmed: 20, lighthouse: 10, beam_rider: 20,
+  persistence: 10, long_way_round: 20, comet_hunter: 20, apprentice: 5, self_reliant: 25,
+  daily_3: 10, daily_7: 25, daily_30: 75, daily_perfect: 20, endless_5: 20, endless_10: 40
 };
 const missing = honours.filter(h => !(h.id in POINTS)).map(h => h.id);
 if (missing.length) throw new Error('make-gamecenter: give these honours a points value: ' + missing.join(', '));
 const total = honours.reduce((s, h) => s + POINTS[h.id], 0);
 if (total > 1000 || honours.some(h => POINTS[h.id] > 100)) throw new Error('make-gamecenter: points exceed Game Center limits (total ' + total + ')');
 
+// the Atlas as the save holds it (Save.N plates, three stars each), never a hard-coded size
+const PLATES = load(['50-save.js']).Save.N;
 const LEADERBOARDS = [
-  { key: 'stars', name: 'Atlas Stars', unit: 'star / stars', range: '0 to 270', what: 'Total stars across the 90 plates of the Atlas.' },
+  { key: 'stars', name: 'Atlas Stars', unit: 'star / stars', range: '0 to ' + 3 * PLATES, what: 'Total stars across the ' + PLATES + ' plates of the Atlas.' },
   { key: 'endless', name: 'Endless Survey', unit: 'star / stars', range: '0 to 1,000,000', what: 'Best score in a single Endless Survey.' },
   { key: 'streak', name: 'Daily Streak', unit: 'day / days', range: '0 to 100,000', what: 'Longest run of consecutive Daily Plates.' }
 ];
@@ -44,7 +48,7 @@ const achId = id => CONFIG.prefix + CONFIG.achievements + id;
 const lbId = key => CONFIG.prefix + CONFIG.leaderboards[key];
 
 function roman(n) {
-  const m = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]; let s = '';
+  const m = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]; let s = '';
   for (const [v, r] of m) while (n >= v) { s += r; n -= v; }
   return s;
 }
@@ -81,7 +85,7 @@ function seal(label, small) {
   fs.mkdirSync(path.join(OUT, 'achievements'), { recursive: true });
   fs.mkdirSync(path.join(OUT, 'leaderboards'), { recursive: true });
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOpts(chromium));
   const page = await (await browser.newContext({ viewport: { width: 1024, height: 1024 }, deviceScaleFactor: 1 })).newPage();
   async function render(svg, file) {
     await page.setContent(`<style>@font-face{font-family:"Cormorant SC";font-weight:600;src:url(data:font/woff2;base64,${face}) format("woff2")}
@@ -91,7 +95,7 @@ function seal(label, small) {
     await page.screenshot({ path: file, omitBackground: false, clip: { x: 0, y: 0, width: 1024, height: 1024 } });
   }
   for (let i = 0; i < honours.length; i++) await render(seal(roman(i + 1), 'Honour'), path.join(OUT, 'achievements', honours[i].id + '.png'));
-  const LB_MARK = { stars: 'XC', endless: '∞', streak: 'XXX' }, LB_SMALL = { stars: 'Atlas', endless: 'Survey', streak: 'Daily' };
+  const LB_MARK = { stars: roman(PLATES), endless: '∞', streak: 'XXX' }, LB_SMALL = { stars: 'Atlas', endless: 'Survey', streak: 'Daily' };
   for (const lb of LEADERBOARDS) await render(seal(LB_MARK[lb.key], LB_SMALL[lb.key]), path.join(OUT, 'leaderboards', lb.key + '.png'));
   await browser.close();
 
@@ -126,3 +130,19 @@ description works for both states too; the earned one can simply repeat it.
   fs.writeFileSync(path.join(OUT, 'SETUP.md'), md);
   console.log(`wrote ios/game-center/SETUP.md, ${honours.length} achievement images, ${LEADERBOARDS.length} leaderboard images (${total} points)`);
 })().catch(e => { console.error(e); process.exit(1); });
+
+// The installed Playwright may expect a newer browser build than the one preinstalled: fall back to any headless shell /
+// Chromium found under PLAYWRIGHT_BROWSERS_PATH (never runs `playwright install`).
+function launchOpts(chromium) {
+  const fs = require('fs'), path = require('path');
+  try { if (fs.existsSync(chromium.executablePath())) return {}; } catch (e) {}
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH, cands = [];
+  try {
+    for (const d of fs.readdirSync(base).sort().reverse()) {
+      if (/^chromium_headless_shell-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'headless_shell'), path.join(base, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+      else if (/^chromium-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'chrome'), path.join(base, d, 'chrome-linux64', 'chrome'));
+    }
+  } catch (e) {}
+  for (const c of cands) if (fs.existsSync(c)) return { executablePath: c };
+  return {};
+}

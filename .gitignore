@@ -4,3 +4,4 @@ qa/
 # built by `npm run build:ios` and copied into the Xcode project by `cap sync`
 ios-www/
 .DS_Store
+tools/levels-cache/

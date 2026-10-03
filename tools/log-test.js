@@ -25,7 +25,9 @@ function world(opts) {
     Sound: { ach() { sounds.push(1); } },
     LogUI: { toast(t, s, o) { toasts.push({ t, s, o }); } }
   });
-  if (opts.volumes) ctx.Levels = { VOLUMES: opts.volumes };
+  if (opts.volumes || opts.campaign) ctx.Levels = {};
+  if (opts.volumes) ctx.Levels.VOLUMES = opts.volumes;
+  if (opts.campaign) ctx.Levels.CAMPAIGN = new Array(opts.campaign).fill(null).map((x, i) => ({ id: 'c' + (i + 1) }));
   vm.runInContext(SRC('50-save.js') + '\n' + SRC('55-log.js') + '\n', ctx, { filename: 'save+log' });
   const W = { ctx, Save: ctx.Save, Log: ctx.Log, toasts, sounds, store };
   W.ev = (n, d) => ctx.Log.event(n, d);
@@ -52,6 +54,8 @@ function seal(W, o) {
 }
 
 let NH = 0;
+const V2 = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }], V3 = V2.concat([{ name: 'Volume III', from: 60, to: 89 }]);
+const V5 = V3.concat([{ name: 'Volume IV', from: 90, to: 119 }, { name: 'Volume V', from: 120, to: 149 }]);
 function logicTests() {
   let W;
   NH = world().Log.ACHIEVEMENTS.length;
@@ -107,12 +111,12 @@ function logicTests() {
   W = world(); W.seedStars(new Array(29).fill(3)); seal(W, { plateIndex: 29, stars: 3 }); check('perfectionist', W.has('perfectionist') && W.has('volume_one'));
   W = world(); const s3 = new Array(29).fill(3); s3[4] = 2; W.seedStars(s3); seal(W, { plateIndex: 29, stars: 3 }); check('perfectionist: one two-star plate no', !W.has('perfectionist') && W.has('volume_one'));
 
-  // cartographer_60 keeps its condition (sixty plates sealed); cartographer_90 needs all ninety
-  check('Save.N is 90', world().Save.N === 90);
-  W = world(); W.seedStars(new Array(89).fill(1)); seal(W, { plateIndex: 89, stars: 1 });
-  check('cartographer_90: all ninety', W.has('cartographer_90') && W.has('cartographer_60') && W.has('cartographer_30'));
-  W = world(); W.seedStars(new Array(88).fill(1)); seal(W, { plateIndex: 89, stars: 1 }); check('cartographer_90: 89 of 90 no', !W.has('cartographer_90') && W.has('cartographer_60'));
-  W = world(); W.seedStars(new Array(60).fill(1)); W.ev('launch', { launchNo: 1 }); check('cartographer_60: retro for a 60-plate veteran, 90 needs more', W.has('cartographer_60') && !W.has('cartographer_90'));
+  // cartographer_60 keeps its condition (sixty plates sealed); cartographer_90 needs ninety (the end of Volume III)
+  eq('Save.N is 150', world().Save.N, 150);
+  W = world({ volumes: V3, campaign: 90 }); W.seedStars(new Array(89).fill(1)); seal(W, { plateIndex: 89, stars: 1 });
+  check('cartographer_90: all ninety', W.has('cartographer_90') && W.has('cartographer_60') && W.has('cartographer_30') && !W.has('cartographer_120'));
+  W = world({ volumes: V3, campaign: 90 }); W.seedStars(new Array(88).fill(1)); seal(W, { plateIndex: 89, stars: 1 }); check('cartographer_90: 89 of 90 no', !W.has('cartographer_90') && W.has('cartographer_60'));
+  W = world({ volumes: V3, campaign: 90 }); W.seedStars(new Array(60).fill(1)); W.ev('launch', { launchNo: 1 }); check('cartographer_60: retro for a 60-plate veteran, 90 needs more', W.has('cartographer_60') && !W.has('cartographer_90'));
   W = world(); W.seedStars(new Array(59).fill(1)); seal(W, { plateIndex: 75, stars: 1 }); check('cartographer_60: sixty sealed anywhere counts', W.has('cartographer_60'));
   W = world(); W.Save.data.ach.cartographer_60 = '2026-01-01'; W.Save.data.ach.volume_two = '2026-01-02'; W.Save.data.ach.perfectionist = '2026-01-03';
   W.ev('launch', { launchNo: 1 }); W.ev('flightEnd', { status: 'lost', sim: {}, level: L() }); seal(W, { plateIndex: 0, stars: 1 });
@@ -121,12 +125,11 @@ function logicTests() {
   check('a held honour keeps its date', W.Save.data.ach.cartographer_60 === '2026-01-01');
 
   // volumes from Levels.VOLUMES: two volumes (as shipped before Volume III) and three
-  const V2 = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }], V3 = V2.concat([{ name: 'Volume III', from: 60, to: 89 }]);
-  const vs = (from, to, n) => { const a = new Array(90).fill(0); for (let i = from; i <= to; i++) a[i] = n || 1; return a; };
+  const vs = (from, to, n) => { const a = new Array(150).fill(0); for (let i = from; i <= to; i++) a[i] = n || 1; return a; };
   W = world({ volumes: V2 }); W.seedStars(vs(0, 89).map((x, i) => i < 89 ? 3 : 0)); seal(W, { plateIndex: 89, stars: 3 });
   check('volume_three never unlocks while the volume does not exist', !W.has('volume_three') && W.has('volume_two') && W.has('volume_one'));
   W = world(); W.seedStars(vs(0, 89).map((x, i) => i < 89 ? 3 : 0)); seal(W, { plateIndex: 89, stars: 3 });
-  check('volume_three never unlocks with no Levels at all (and Volumes I/II still use their defaults)', !W.has('volume_three') && W.has('volume_two') && W.has('volume_one') && W.has('cartographer_90'));
+  check('volume_three / cartographer_90 never unlock with no Levels at all (Volumes I/II still use their defaults)', !W.has('volume_three') && W.has('volume_two') && W.has('volume_one') && !W.has('cartographer_90') && W.has('cartographer_60'));
   W = world({ volumes: V3 }); W.seedStars(vs(60, 88)); seal(W, { plateIndex: 89, stars: 1 });
   check('volume_three: Volume III sealed (plates 60-89)', W.has('volume_three') && !W.has('volume_one') && !W.has('volume_two') && !W.has('cartographer_90'));
   W = world({ volumes: V3 }); W.seedStars(vs(60, 87)); seal(W, { plateIndex: 89, stars: 1 }); check('volume_three: one plate missing no', !W.has('volume_three'));
@@ -135,8 +138,66 @@ function logicTests() {
   W = world({ volumes: V3 }); W.seedStars(vs(60, 88, 1)); seal(W, { plateIndex: 89, stars: 1 }); check('perfectionist stays Volume I only (Volume III at one star no)', !W.has('perfectionist'));
   W = world({ volumes: [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }, { name: 'Volume III', from: 60, to: 119 }] }); W.seedStars(vs(60, 89)); seal(W, { plateIndex: 89, stars: 1 });
   check('volume_three: a range beyond Save.N never unlocks', !W.has('volume_three'));
+  W = world({ volumes: V3, campaign: 60 }); W.seedStars(vs(0, 88)); seal(W, { plateIndex: 89, stars: 1 });
+  check('volume_three / cartographer_90: never while the campaign holds only 60 plates', !W.has('volume_three') && !W.has('cartographer_90') && W.has('volume_two'));
   W = world({ volumes: [{}, null, 7] }); let th = false; try { W.seedStars(vs(0, 88)); seal(W, { plateIndex: 89, stars: 1 }); } catch (e) { th = true; }
   check('malformed Levels.VOLUMES never throws or unlocks volumes', !th && !W.has('volume_three') && !W.has('volume_one'));
+
+  // Volumes IV and V, cartographer_120 / cartographer_150: only once those plates exist
+  W = world({ volumes: V5, campaign: 90 }); W.seedStars(vs(0, 148)); seal(W, { plateIndex: 149, stars: 1 });
+  check('V/IV: volumes listed but campaign still 90 -> no volume_four/five, no cartographer_120/150',
+    !W.has('volume_four') && !W.has('volume_five') && !W.has('cartographer_120') && !W.has('cartographer_150') && W.has('volume_three') && W.has('cartographer_90'));
+  W = world({ volumes: V3, campaign: 150 }); W.seedStars(vs(0, 148)); seal(W, { plateIndex: 149, stars: 1 });
+  check('V/IV: 150 plates but VOLUMES not yet extended -> no volume_four/five, no cartographer_120/150',
+    !W.has('volume_four') && !W.has('volume_five') && !W.has('cartographer_120') && !W.has('cartographer_150') && W.has('cartographer_90'));
+  W = world({ volumes: V5 }); W.seedStars(vs(0, 148)); seal(W, { plateIndex: 149, stars: 1 });
+  check('V/IV: no CAMPAIGN falls back to Save.N (150): all five volumes and cartographers', ['volume_one', 'volume_two', 'volume_three', 'volume_four', 'volume_five', 'cartographer_90', 'cartographer_120', 'cartographer_150'].every(i => W.has(i)));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(0, 148, 3)); seal(W, { plateIndex: 149, stars: 3 });
+  check('all 150 plates: every volume and cartographer honour, perfectionist', ['volume_one', 'volume_two', 'volume_three', 'volume_four', 'volume_five', 'cartographer_10', 'cartographer_30', 'cartographer_60', 'cartographer_90', 'cartographer_120', 'cartographer_150', 'perfectionist'].every(i => W.has(i)));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(90, 118)); seal(W, { plateIndex: 119, stars: 1 });
+  check('volume_four: plates 90-119 only', W.has('volume_four') && !W.has('volume_five') && !W.has('volume_three') && !W.has('cartographer_60'));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(90, 117)); seal(W, { plateIndex: 119, stars: 1 }); check('volume_four: one plate missing no', !W.has('volume_four'));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(120, 148)); seal(W, { plateIndex: 149, stars: 1 });
+  check('volume_five: plates 120-149 only', W.has('volume_five') && !W.has('volume_four'));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(0, 118)); seal(W, { plateIndex: 149, stars: 1 });
+  check('cartographer_120: any 120 plates', W.has('cartographer_120') && !W.has('cartographer_150') && !W.has('volume_five') && !W.has('volume_four'));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(0, 117)); seal(W, { plateIndex: 149, stars: 1 }); check('cartographer_120: 119 no', !W.has('cartographer_120') && W.has('cartographer_90'));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(0, 147)); seal(W, { plateIndex: 149, stars: 1 }); check('cartographer_150: 149 no', !W.has('cartographer_150') && W.has('cartographer_120'));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(30, 148, 1).map((x, i) => i < 30 ? 3 : x)); seal(W, { plateIndex: 149, stars: 1 });
+  check('perfectionist stays Volume I only at 150 plates', W.has('perfectionist') && W.has('cartographer_150'));
+  W = world({ volumes: V5, campaign: 150 }); W.seedStars(vs(0, 89)); W.ev('launch', { launchNo: 1 });
+  check('a 90-plate veteran keeps cartographer_90 and gains nothing new', W.has('cartographer_90') && W.has('volume_three') && !W.has('volume_four') && !W.has('cartographer_120'));
+  W = world(); ['cartographer_90', 'volume_three', 'cartographer_120', 'volume_four'].forEach((id, i) => { W.Save.data.ach[id] = '2026-01-0' + (i + 1); });
+  W.ev('launch', { launchNo: 1 }); seal(W, { plateIndex: 0, stars: 1 });
+  check('held volume/cartographer honours survive a save with nothing sealed and no Levels', ['cartographer_90', 'volume_three', 'cartographer_120', 'volume_four'].every(id => W.has(id)) && W.Save.data.ach.cartographer_90 === '2026-01-01');
+
+  // nebulae and pulsars: stats on every flight, honours judged on the sealing flight
+  const LN = L({ bodies: [{ kind: 'nebula', r: 100, mu: 0, drag: 0.8 }] }), LQ = L({ bodies: [{ kind: 'pulsar', r: 12, mu: 1e7, beam: {} }] });
+  const hitF = (W, lv, sim, extra) => flight(W, 'hit', simHit({ sim }), lv, extra);
+  W = world(); hitF(W, LN, { fog: 1 }); seal(W, { level: LN });
+  check('into_the_veil: one step in a nebula', W.has('into_the_veil') && !W.has('becalmed'));
+  W = world(); hitF(W, LN, { fog: 0 }); seal(W, { level: LN }); check('into_the_veil: a nebula plate without passing through no', !W.has('into_the_veil'));
+  W = world(); hitF(W, LN, { fog: 239 }); seal(W, { level: LN }); check('becalmed: 239 steps no', !W.has('becalmed') && W.has('into_the_veil'));
+  W = world(); hitF(W, LN, { fog: 240 }); seal(W, { level: LN }); check('becalmed: 240 steps (2 s)', W.has('becalmed') && W.has('into_the_veil'));
+  W = world(); hitF(W, LN, { fog: 200 }); hitF(W, LN, { fog: 200 }); seal(W, { level: LN }); check('becalmed: two flights do not add up', !W.has('becalmed'));
+  W = world(); flight(W, 'lost', simHit({ sim: { fog: 500, beams: 4 } }), LN); hitF(W, LN, {}); seal(W, { level: LN, launches: 2, stars: 2 });
+  check('veil/beam honours: only the sealing flight counts', !W.has('into_the_veil') && !W.has('becalmed') && !W.has('lighthouse') && W.stat('fog') === 500 && W.stat('beams') === 4);
+  W = world(); hitF(W, LN, { fog: 300 }); flight(W, 'hit', simHit({ sim: {} })); W.ev('plateSealed', { mode: 'campaign', level: L({ id: 'c2' }), plateIndex: 1, stars: 3, launches: 1 });
+  check('into_the_veil: a flight of another plate does not count', !W.has('into_the_veil'));
+  W = world(); hitF(W, LQ, { beams: 1 }); seal(W, { level: LQ }); check('lighthouse: one beam catch', W.has('lighthouse') && !W.has('beam_rider'));
+  W = world(); hitF(W, LQ, { beams: 2 }); seal(W, { level: LQ }); check('beam_rider: two catches in one flight (also lighthouse)', W.has('beam_rider') && W.has('lighthouse'));
+  W = world(); hitF(W, LQ, { beams: 1 }); hitF(W, LQ, { beams: 1 }); seal(W, { level: LQ }); check('beam_rider: catches of two flights do not add up', !W.has('beam_rider') && W.has('lighthouse'));
+  W = world(); hitF(W, LQ, { beams: 0 }); seal(W, { level: LQ }); check('lighthouse: a pulsar plate without a catch no', !W.has('lighthouse'));
+  W = world(); hitF(W, LQ, { beams: 3, fog: 260, warps: 2 }); seal(W, { level: LQ, mode: 'daily', plateIndex: -1 });
+  check('one flight: veil, becalmed, lighthouse, beam_rider and the gates together, any mode', ['into_the_veil', 'becalmed', 'lighthouse', 'beam_rider', 'first_gate', 'double_gate'].every(i => W.has(i)));
+  W = world(); hitF(W, LN, { fog: 300, beams: 2 }); check('veil/beam honours need a seal (flightEnd alone no)', !W.has('into_the_veil') && !W.has('lighthouse'));
+  W = world(); flight(W, 'crash', simHit({ sim: { fog: 10, beams: 1 } })); flight(W, 'lost', simHit({ sim: { fog: 20, beams: 2 } })); flight(W, 'timeout', simHit({ sim: { fog: 30 } })); flight(W, 'captured', simHit({ sim: { beams: 5 } })); flight(W, 'hit', simHit({ sim: { fog: 40, beams: 1 } }));
+  check('fog / beams counted on every flightEnd, hit or not', W.stat('fog') === 100 && W.stat('beams') === 9, 'fog ' + W.stat('fog') + ' beams ' + W.stat('beams'));
+  W = world(); [-3, NaN, 2.9, 'x', null, Infinity].forEach(v => flight(W, 'lost', simHit({ sim: { fog: v, beams: v } })));
+  check('fog / beams: garbage, negatives and Infinity ignored, fractions floored', W.stat('fog') === 2 && W.stat('beams') === 2, 'fog ' + W.stat('fog') + ' beams ' + W.stat('beams'));
+  W = world(); flight(W, 'hit', simHit()); const sn0 = W.Log.snapshot().stats; check('snapshot carries fog and beams (0)', sn0.fog === 0 && sn0.beams === 0);
+  W = world(); hitF(W, LN, { fog: 360, beams: 3 }); const sn1 = W.Log.snapshot().stats; check('snapshot stats.fog / stats.beams', sn1.fog === 360 && sn1.beams === 3);
+  W = world({ brokenStorage: true }); hitF(W, LQ, { fog: 300, beams: 2 }); seal(W, { level: LQ }); check('memory-only Save: veil/beam honours still unlock', ['into_the_veil', 'becalmed', 'lighthouse', 'beam_rider'].every(i => W.has(i)));
 
   // gates: wormhole plates carry `pair` on their mouths, which must not read as a binary star
   const LW = L({ bodies: [{ kind: 'wormhole', r: 32, mu: 0, pair: 1 }, { kind: 'wormhole', r: 32, mu: 0, pair: 0 }] });
@@ -293,7 +354,7 @@ async function browserTests() {
   const file = path.join(ROOT, 'dist', 'perihelion.html');
   const IPHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' };
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOpts(chromium));
 
   // seeding runs in the page before the bundle: dates are relative to the page's "today"
   const seedHalf = () => {
@@ -309,11 +370,14 @@ async function browserTests() {
       daily: { last: t, lastStars: 3, lastLaunches: 1, streak: 4, best: 6, done },
       stats: { launches: 143, wins: 61, losses: 82, crashes: 40, lost: 42, distance: 184230, frags: 31, hints: 3, nearMiss: 17, threads: 5, platesNoHint: 22, dailyWins: 8, endlessRounds: 12 }, ach }));
   };
+  // every plate of the campaign as it stands (90 now, 150 once Volumes IV and V are baked): seeded before the bundle with
+  // 90, then topped up to Levels.CAMPAIGN.length in the page (fullUp) so the totals read N/N either way
   const seedFull = () => {
     const stars = [], frags = []; for (let i = 0; i < 90; i++) { stars.push(3); frags.push(1); }
     localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars, frags, unlocked: 90, muted: true, seen: { intro: true, fragments: true },
-      stats: { launches: 1234567, wins: 999999, distance: 98765432, nearMiss: 1500, threads: 250, warps: 1234567 } }));
+      stats: { launches: 1234567, wins: 999999, distance: 98765432, nearMiss: 1500, threads: 250, warps: 1234567, fog: 12345678, beams: 1234567 } }));
   };
+  const fullUp = () => { for (let i = 0; i < Levels.CAMPAIGN.length; i++) { Save.data.stars[i] = 3; Save.data.frags[i] = 1; } return Levels.CAMPAIGN.length; };
 
   async function open(opts, seed) {
     const ctx = await browser.newContext(opts);
@@ -379,6 +443,8 @@ async function browserTests() {
   await s.page.evaluate(() => { document.querySelector('.lg-scroll').scrollTop = 1e6; }); await s.page.waitForTimeout(200);
   await shot(s.page, 'log-half-end.png');
   m = await s.page.evaluate(() => { const sc = document.querySelector('.lg-scroll'); return { count: document.querySelector('.lg-count').textContent, got: document.querySelectorAll('.lg-hon.got').length, sealedDays: document.querySelectorAll('.lg-day.got').length, days: document.querySelectorAll('.lg-day').length, overflowX: sc.scrollWidth > sc.clientWidth, txt: document.querySelector('.lg-figs').textContent }; });
+  m.rows = await s.page.evaluate(() => Array.from(document.querySelectorAll('.lg-ledger li')).map(r => r.textContent));
+  check('half-full: an old save shows the new ledger rows at zero', m.rows.some(r => /Time in nebulae/.test(r) && /0\.0s$/.test(r)) && m.rows.some(r => /Beam catches/.test(r) && /0$/.test(r)), JSON.stringify(m.rows));
   check('half-full: 11 honours, 8 sealed days of 14', m.got === 11 && new RegExp('11 of ' + NH).test(m.count) && m.sealedDays === 8 && m.days === 14 && !m.overflowX, JSON.stringify(m));
   // toast
   await s.page.evaluate(() => { LogUI.toast('Threading the Needle', 'Win a flight that passes within 12 units of a body.', { ach: true }); });
@@ -434,12 +500,14 @@ async function browserTests() {
     return { n: out.length, clashes: out.filter(o => o.clash), errs: out.filter(o => o.err), highest: out.filter(o => o.top !== undefined).sort((a, b) => a.top - b.top).slice(0, 3), toastBottom: R2.b };
   }, [{ l: 0, r: 390, t: r1.t, b: r1.b }, NOTCH]);
   // (the full-width rect is the worst case: any target that clears it clears the real, narrower banner)
-  check('no target of the 90 plates + 28 daily plates reaches the banner band', hit.n === 118 && hit.clashes.length === 0 && hit.errs.length === 0, JSON.stringify({ n: hit.n, clashes: hit.clashes, errs: hit.errs, highest: hit.highest, toastBottom: hit.toastBottom }));
+  const NC = await s.page.evaluate(() => Levels.CAMPAIGN.length);
+  check('no target of the ' + NC + ' plates + 28 daily plates reaches the banner band', hit.n === NC + 28 && hit.clashes.length === 0 && hit.errs.length === 0, JSON.stringify({ n: hit.n, clashes: hit.clashes, errs: hit.errs, highest: hit.highest, toastBottom: hit.toastBottom }));
   check('no console errors (half-full)', s.errors.length === 0, s.errors.join(' | '));
   await s.ctx.close();
 
   // ---- portrait, everything full, extreme numbers
   s = await open(IPHONE, seedFull);
+  const NF = await s.page.evaluate(fullUp);
   await s.page.evaluate(() => { Save.data.ach.first_light = '2026-09-30'; Log.ACHIEVEMENTS.forEach(a => { Save.data.ach[a.id] = '2026-09-30'; }); });
   await openLog(s.page);
   await shot(s.page, 'log-full.png');
@@ -452,7 +520,8 @@ async function browserTests() {
       lastVisible: last.bottom <= box.bottom + 1, rowsFit: rows.every(r => r.scrollWidth <= r.clientWidth), rows: rows.map(r => r.textContent), figs, pageW: document.documentElement.scrollWidth <= innerWidth, W };
   });
   check('full state, 390x844: all ' + NH + ' honours fit and the last is reachable', m.n === NH && m.clipped === 0 && m.offscreen === 0 && m.lastVisible && m.rowsFit && m.pageW, JSON.stringify(m));
-  check('full state: totals read x/90 and x/270; gates passed is shown', m.figs[0] === '90/90' && m.figs[1] === '270/270' && m.rows.some(r => /Gates passed/.test(r) && /1,234,567/.test(r)), JSON.stringify(m.figs) + ' ' + JSON.stringify(m.rows));
+  check('full state: totals read ' + NF + '/' + NF + ' and ' + 3 * NF + '/' + 3 * NF + '; gates passed is shown', m.figs[0] === NF + '/' + NF && m.figs[1] === 3 * NF + '/' + 3 * NF && m.rows.some(r => /Gates passed/.test(r) && /1,234,567/.test(r)), JSON.stringify(m.figs) + ' ' + JSON.stringify(m.rows));
+  check('full state: time in nebulae in seconds, beam catches', m.rows.some(r => /Time in nebulae/.test(r) && /102,881s$/.test(r)) && m.rows.some(r => /Beam catches/.test(r) && /1,234,567$/.test(r)), JSON.stringify(m.rows));
   await shot(s.page, 'log-full-end.png');
   check('no console errors (full)', s.errors.length === 0, s.errors.join(' | '));
   await s.ctx.close();
@@ -487,3 +556,19 @@ async function browserTests() {
   console.log('\n' + (results.length - bad.length) + '/' + results.length + ' passed');
   if (bad.length) { console.log('FAILED:\n  ' + bad.map(b => b.name).join('\n  ')); process.exit(1); }
 })();
+
+// The installed Playwright may expect a newer browser build than the one preinstalled: fall back to any headless shell /
+// Chromium found under PLAYWRIGHT_BROWSERS_PATH (never runs `playwright install`).
+function launchOpts(chromium) {
+  const fs = require('fs'), path = require('path');
+  try { if (fs.existsSync(chromium.executablePath())) return {}; } catch (e) {}
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH, cands = [];
+  try {
+    for (const d of fs.readdirSync(base).sort().reverse()) {
+      if (/^chromium_headless_shell-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'headless_shell'), path.join(base, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+      else if (/^chromium-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'chrome'), path.join(base, d, 'chrome-linux64', 'chrome'));
+    }
+  } catch (e) {}
+  for (const c of cands) if (fs.existsSync(c)) return { executablePath: c };
+  return {};
+}

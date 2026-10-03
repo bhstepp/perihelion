@@ -16,7 +16,13 @@
    - Volume ranges come from Levels.VOLUMES (Volumes I and II fall back to 0-29 / 30-59 if Levels is missing); a volume that
      does not exist never unlocks its honour. Plate counts come from Save.N. Honours are only ever added, never revoked.
    - Wormholes: flightEnd counts sim.warps (stat 'warps') and remembers whether the winning flight warped; plateSealed uses
-     that for the gate honours (stat 'gateSeals' counts sealed flights that warped). */
+     that for the gate honours (stat 'gateSeals' counts sealed flights that warped).
+   - Nebulae and pulsars (CONTRACT-v4 §6) work the same way: flightEnd counts sim.fog (stat 'fog', steps inside nebulae)
+     and sim.beams (stat 'beams', beam catches) on every flight, and plateSealed judges the veil/beam honours on the
+     sealing flight only.
+   - Nothing assumes a plate count. The campaign size is Levels.CAMPAIGN.length (Save.N without Levels); the later
+     cartographers ask for every plate up to the end of their volume (cartographer_90 = Volume III's last plate + 1, so
+     still ninety plates) and, like the volume honours, never unlock while that volume's plates do not exist. */
 var Log = (function () {
   var ROM_VOL = [{ from: 0, to: 29 }, { from: 30, to: 59 }];
 
@@ -38,10 +44,27 @@ var Log = (function () {
     for (var i = 0; i < b.length; i++) if (b[i] && b[i].kind !== 'wormhole' && b[i].pair !== undefined && b[i].pair !== null) return true;
     return false;
   }
-  function vol(i) { var v; try { v = Levels.VOLUMES[i]; } catch (e) {} return v || ROM_VOL[i] || null; }
-  function volDone(c, i, min) { var v = vol(i); return !!v && v.to >= v.from && sealedAll(c, v.from, v.to, min); }
+  function vol(i) {
+    var v = null, have = false;
+    try { have = Levels.VOLUMES && typeof Levels.VOLUMES.length === 'number'; if (have) v = Levels.VOLUMES[i]; } catch (e) {}
+    if (!have) v = ROM_VOL[i];
+    if (!v || typeof v !== 'object') return null;
+    var from = Math.floor(Number(v.from)), to = Math.floor(Number(v.to));
+    return isFinite(from) && isFinite(to) && from >= 0 && to >= from ? { from: from, to: to } : null;
+  }
+  // plates that exist now: the campaign as loaded (it may still be shorter than the save), never more than the save holds
+  function platesNow() {
+    var n = 0; try { n = Save.N | 0; } catch (e) {}
+    try { if (Levels.CAMPAIGN && typeof Levels.CAMPAIGN.length === 'number') n = n > 0 ? Math.min(n, Levels.CAMPAIGN.length) : Levels.CAMPAIGN.length; } catch (e) {}
+    return n;
+  }
+  function volDone(c, i, min) { var v = vol(i); return !!v && v.to < platesNow() && sealedAll(c, v.from, v.to, min); }
+  // seal as many plates as there are up to the end of volume i (and those plates exist)
+  function volCount(c, i) { var v = vol(i); return !!v && v.to < platesNow() && c.totals.sealed >= v.to + 1; }
   function sealedNow(c) { return c.ev === 'plateSealed'; }
   function oneShot(c) { return sealedNow(c) && c.data.launches === 1; }
+  // physics steps in two seconds (240 at the 120 Hz step)
+  var FOG_LONG = 240; try { if (K.DT > 0) FOG_LONG = Math.round(2 / K.DT); } catch (e) {}
 
   var LIST = [
     { id: 'first_light', name: 'First Light', blurb: 'Seal any plate.',
@@ -65,14 +88,22 @@ var Log = (function () {
       test: function (c) { return c.totals.sealed >= 30; } },
     { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal sixty plates of the Atlas.',
       test: function (c) { return c.totals.sealed >= 60; } },
-    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal all ninety plates of the Atlas.',
-      test: function (c) { return c.totals.sealed >= 90; } },
+    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal ninety plates of the Atlas.',
+      test: function (c) { return volCount(c, 2); } },
+    { id: 'cartographer_120', name: 'Cartographer of the Fourth Volume', blurb: 'Seal one hundred and twenty plates of the Atlas.',
+      test: function (c) { return volCount(c, 3); } },
+    { id: 'cartographer_150', name: 'Cartographer of the Fifth Volume', blurb: 'Seal one hundred and fifty plates of the Atlas.',
+      test: function (c) { return volCount(c, 4); } },
     { id: 'volume_one', name: 'Volume I, Complete', blurb: 'Seal every plate of Volume I.',
       test: function (c) { return volDone(c, 0, 1); } },
     { id: 'volume_two', name: 'Volume II, Complete', blurb: 'Seal every plate of Volume II.',
       test: function (c) { return volDone(c, 1, 1); } },
     { id: 'volume_three', name: 'Volume III, Complete', blurb: 'Seal every plate of Volume III.',
       test: function (c) { return volDone(c, 2, 1); } },
+    { id: 'volume_four', name: 'Volume IV, Complete', blurb: 'Seal every plate of Volume IV.',
+      test: function (c) { return volDone(c, 3, 1); } },
+    { id: 'volume_five', name: 'Volume V, Complete', blurb: 'Seal every plate of Volume V.',
+      test: function (c) { return volDone(c, 4, 1); } },
     { id: 'perfectionist', name: 'The Perfectionist', blurb: 'Three stars on every plate of Volume I.',
       test: function (c) { return volDone(c, 0, 3); } },
     { id: 'event_horizon', name: 'Event Horizon', blurb: 'Seal a plate holding a black hole with a single launch.',
@@ -87,6 +118,14 @@ var Log = (function () {
       test: function (c) { return sealedNow(c) && c.warps >= 2; } },
     { id: 'gate_keeper', name: 'Keeper of the Gates', blurb: 'Seal ten flights that passed a wormhole.',
       test: function (c) { return c.stat('gateSeals') >= 10; } },
+    { id: 'into_the_veil', name: 'Into the Veil', blurb: 'Seal a plate with a flight that passed through a nebula.',
+      test: function (c) { return sealedNow(c) && c.fog > 0; } },
+    { id: 'becalmed', name: 'Becalmed', blurb: 'Seal a plate with one flight that spent two seconds in nebulae.',
+      test: function (c) { return sealedNow(c) && c.fog >= FOG_LONG; } },
+    { id: 'lighthouse', name: 'By the Lighthouse', blurb: 'Seal a plate with a flight that a pulsar’s beam pushed.',
+      test: function (c) { return sealedNow(c) && c.beams > 0; } },
+    { id: 'beam_rider', name: 'Riding the Beam', blurb: 'Seal a plate with one flight caught twice by pulsar beams.',
+      test: function (c) { return sealedNow(c) && c.beams >= 2; } },
     { id: 'persistence', name: 'Persistence of Vision', blurb: 'Seal a plate on your third and final launch.',
       test: function (c) { return sealedNow(c) && c.data.launches === 3; } },
     { id: 'long_way_round', name: 'The Long Way Round', blurb: 'Win with a flight of 960 steps or more.',
@@ -115,7 +154,7 @@ var Log = (function () {
 
   // ---- helpers -------------------------------------------------------------------------------------------------------
   var STAT_NAMES = ['launches', 'wins', 'losses', 'crashes', 'lost', 'distance', 'frags', 'hints', 'nearMiss', 'threads',
-    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps'];
+    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps', 'fog', 'beams'];
 
   function num(x, dflt) { x = Number(x); return isFinite(x) ? x : dflt; }
   function stat(n) { try { return Save.stat(n) || 0; } catch (e) { return 0; } }
@@ -151,7 +190,8 @@ var Log = (function () {
   function starsNow(pending) {
     var a = [], i, src = null;
     try { src = Save.data.stars; } catch (e) {}
-    var n = 90; try { n = Save.N || 90; } catch (e) {}
+    var n = 0; try { n = Save.N | 0; } catch (e) {}
+    if (!(n > 0)) n = src && src.length ? src.length : 0;
     for (i = 0; i < n; i++) a.push(src && src[i] ? src[i] : 0);
     if (pending && pending.idx >= 0 && pending.idx < n) a[pending.idx] = Math.max(a[pending.idx], pending.stars > 0 ? pending.stars : 1);
     return a;
@@ -179,7 +219,7 @@ var Log = (function () {
     var full = {
       ev: c.ev, data: c.data || {}, level: c.level || null, win: !!c.win,
       minGap: c.minGap === undefined ? Infinity : c.minGap, minDist: c.minDist === undefined ? Infinity : c.minDist,
-      steps: c.steps || 0, warps: c.warps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
+      steps: c.steps || 0, warps: c.warps || 0, fog: c.fog || 0, beams: c.beams || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
       endlessRound: c.endlessRound || 0,
       stars: stars, totals: c.totals || totalsOf(stars), stat: stat, dailyBest: 0
     };
@@ -208,7 +248,9 @@ var Log = (function () {
   // ---- events --------------------------------------------------------------------------------------------------------
   function isWin(status) { return status === 'hit'; }
 
-  var last = { lv: null, w: 0 };      // the latest flightEnd: its plate and (if it hit) how many times it warped
+  // the latest flightEnd: its plate and (if it hit) how many times it warped, its steps in nebulae and its beam catches
+  var last = { lv: null, w: 0, f: 0, b: 0 };
+  function count(x) { return Math.max(0, Math.floor(num(x, 0))); }
   var handlers = {
     launch: function (d) {
       bump('launches');
@@ -228,9 +270,11 @@ var Log = (function () {
       if (win && gap <= 12) bump('threads');
       var fd = fragDelta(d.level, d.fragsThisAttempt);
       if (fd > 0) bump('frags', fd);
-      var wp = Math.max(0, Math.floor(num(sim.warps, 0)));
+      var wp = count(sim.warps), fg = count(sim.fog), bm = count(sim.beams);
       if (wp > 0) bump('warps', wp);
-      last = { lv: d.level, w: win ? wp : 0 };
+      if (fg > 0) bump('fog', fg);
+      if (bm > 0) bump('beams', bm);
+      last = { lv: d.level, w: win ? wp : 0, f: win ? fg : 0, b: win ? bm : 0 };
       return { ev: 'flightEnd', data: d, level: d.level, win: win, minGap: gap, minDist: num(sim.minDist, Infinity),
         steps: num(sim.step, 0), aimOff: win ? aimOffset(sim, d.level) : Infinity };
     },
@@ -241,13 +285,14 @@ var Log = (function () {
       if (fd > 0) bump('frags', fd);
       var idx = num(d.plateIndex, -1);
       if (idx >= 0 && !d.hintUsed) bump('platesNoHint');
-      var wp = (last.lv || null) === level ? last.w : 0;
-      last = { lv: null, w: 0 };
+      var same = (last.lv || null) === level;
+      var wp = same ? last.w : 0, fg = same ? last.f : 0, bm = same ? last.b : 0;
+      last = { lv: null, w: 0, f: 0, b: 0 };
       if (wp > 0) bump('gateSeals');
       var stars = starsNow({ idx: idx, stars: num(d.stars, 1) });
       var plateFrags = level && level.frags ? level.frags.length : num(d.fragsTotal, 0);
       return { ev: 'plateSealed', data: d, level: level, stars: stars, totals: totalsOf(stars),
-        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp };
+        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp, fog: fg, beams: bm };
     },
 
     hint: function (d) {

@@ -333,6 +333,8 @@ svg.comet.off circle { fill: var(--paper-45); }
         <button class="btn" data-act="howto">How to play</button>
         <button class="btn" data-act="fragments">About comet fragments</button>
         <button class="btn" data-act="wormholes" id="sheet-worm" hidden>About wormholes</button>
+        <button class="btn" data-act="nebulae" id="sheet-neb" hidden>About nebulae</button>
+        <button class="btn" data-act="pulsars" id="sheet-pul" hidden>About pulsars</button>
         <button class="btn" data-act="restart">Restart plate</button>
         <button class="btn" data-act="atlas" id="sheet-exit">Return to the Atlas</button>
       </div>
@@ -405,8 +407,12 @@ function toRoman(n) {
    body collisions (per body: blackhole capture, then crash) -> target -> bounds -> timeout (K.MAX_STEPS).
    Gravity is softened Newtonian: a = mu*d / (|d|^2 + EPS2)^1.5 (mu < 0 = repulsor).
    DETERMINISM RULE: numeric behaviour is FROZEN (baked levels + solutions depend on it; see
-   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3) are a pure addition: a separate branch that never runs for
-   the older kinds, so every older flight is bit-identical. Time is ALWAYS abs*DT from an integer step counter, never accumulated.
+   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3), nebulae (kind 'nebula') and pulsars (kind 'pulsar', both v4)
+   are pure additions: separate branches that never run for the older kinds, so every older flight is bit-identical.
+   Nebula: inert to gravity (mu 0) and harmless; while the probe centre is inside (start-of-step positions, like gravity) the velocity
+   just updated by gravity is multiplied by (1 - drag*DT) before the position update: a dust cloud that bleeds speed.
+   Pulsar: a crashable body with ordinary gravity plus two opposite beams at angle beam.phase + beam.omega*t; a probe within beam.reach
+   of the centre and inside a beam (half-width beam.half radians) is pushed straight outward by beam.push (units/s^2), in accel(). Time is ALWAYS abs*DT from an integer step counter, never accumulated.
    predict/simulate and the live flight run the very same createSim + stepSim, so a predicted point is
    bit-identical (===) to the live probe at that step. Never reorder float ops here; `node tools/physics-test.js`
    must stay green. Guards for bad input (NaN/Infinity) only change results for non-finite values. */
@@ -426,6 +432,15 @@ var Physics = (function () {
     return out;
   }
 
+  // Pulsar beams: is the offset (dx, dy) from the pulsar centre inside one of its two opposite beams at time t? No atan2: the beam axis
+  // u = (cos, sin)(phase + omega*t); inside when |d x u| < |d . u| * tan(half) and |d| < reach.
+  function inBeam(bm, dx, dy, t) {
+    var d2 = dx * dx + dy * dy;
+    if (!(d2 < bm.reach * bm.reach) || d2 < 1e-9) return false;
+    var a = bm.phase + bm.omega * t, ux = cos(a), uy = sin(a), al = dx * ux + dy * uy, pe = dx * uy - dy * ux;
+    return (pe < 0 ? -pe : pe) < (al < 0 ? -al : al) * Math.tan(bm.half);
+  }
+
   var _p = { x: 0, y: 0 };
   // Softened Newtonian gravity: a = mu * d / (|d|^2 + eps^2)^(3/2). Negative mu = repulsor, mu = 0 = inert.
   function accel(level, x, y, t, out) {
@@ -437,6 +452,7 @@ var Physics = (function () {
       var d2 = dx * dx + dy * dy + e2;
       var inv = b.mu / (d2 * sqrt(d2));
       ax += dx * inv; ay += dy * inv;
+      if (b.beam && inBeam(b.beam, -dx, -dy, t)) { var bl = sqrt(dx * dx + dy * dy), bp = b.beam.push / bl; ax -= dx * bp; ay -= dy * bp; }
     }
     out.x = ax; out.y = ay;
     return out;
@@ -453,6 +469,11 @@ var Physics = (function () {
     return { cancel: false, vx: dx * s, vy: dy * s, power: power };
   }
 
+  function hasFx(level) {
+    for (var i = 0, bs = level.bodies; i < bs.length; i++) if (bs[i].kind === 'nebula' || bs[i].beam) return true;
+    return false;
+  }
+
   function createSim(level, vx, vy, t0Step) {
     return {
       x: level.probe.x, y: level.probe.y, vx: vx, vy: vy,
@@ -463,8 +484,13 @@ var Physics = (function () {
       minDist: Infinity,                // closest approach to target centre
       dist: 0,                          // path length travelled so far, in units
       warps: 0,                         // wormhole passages so far
+      fog: 0,                           // steps spent inside a nebula
+      beams: 0,                         // pulsar beam crossings (entries) so far
+      inFog: -1, inBeam: -1,            // body index of the nebula / pulsar beam the probe is in now (-1 = none)
+      fx: hasFx(level),                 // the level has a nebula or a pulsar beam (else stepSim skips that loop entirely)
       minGap: Infinity,                 // closest approach to any non-repulsor body SURFACE (within 60 u), for 'near miss' stats
-      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} pushed as they happen; consumer may clear
+      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} / {type:'fog', i, step} / {type:'beam', i, step}
+                                        // pushed as they happen (fog/beam on entering); consumer may clear
     };
   }
 
@@ -474,10 +500,26 @@ var Physics = (function () {
     if (sim.status !== 'flying') return sim.status;
     accel(level, sim.x, sim.y, sim.abs * DT, _a);
     sim.vx += _a.x * DT; sim.vy += _a.y * DT;
+    // v4: nebula drag and beam bookkeeping (start-of-step positions, like gravity). Only nebulae and pulsars do anything here.
+    var bs0 = level.bodies, fog = -1, beam = -1, t0 = sim.abs * DT;
+    if (sim.fx) for (var k = 0; k < bs0.length; k++) {
+      var c = bs0[k];
+      if (c.kind === 'nebula') {
+        bodyPos(c, t0, _q);
+        var nx = sim.x - _q.x, ny = sim.y - _q.y;
+        if (nx * nx + ny * ny < c.r * c.r) { var f = 1 - c.drag * DT; sim.vx *= f; sim.vy *= f; if (fog < 0) fog = k; }
+      } else if (c.beam && beam < 0) {
+        bodyPos(c, t0, _q);
+        if (inBeam(c.beam, sim.x - _q.x, sim.y - _q.y, t0)) beam = k;
+      }
+    }
     sim.x += sim.vx * DT; sim.y += sim.vy * DT;
     sim.abs++; sim.step++;
     sim.dist += sqrt(sim.vx * sim.vx + sim.vy * sim.vy) * DT;
     var t = sim.abs * DT, x = sim.x, y = sim.y, i, dx, dy, pr = C.PROBE_R, fr2 = C.FRAG_R * C.FRAG_R;
+    if (fog >= 0) { sim.fog++; if (sim.inFog < 0) sim.events.push({ type: 'fog', i: fog, step: sim.step }); }
+    if (beam >= 0 && sim.inBeam < 0) { sim.beams++; sim.events.push({ type: 'beam', i: beam, step: sim.step }); }
+    sim.inFog = fog; sim.inBeam = beam;
 
     var fr = level.frags, got = sim.collected;
     if (fr) for (i = 0; i < fr.length; i++) {
@@ -492,6 +534,7 @@ var Physics = (function () {
       bodyPos(b, t, _q);
       dx = _q.x - x; dy = _q.y - y;
       var d2 = dx * dx + dy * dy;
+      if (b.kind === 'nebula') continue;   // a dust cloud: no surface, no harm, not a near miss
       if (b.kind === 'wormhole') {
         // Mouth: inert to gravity (mu 0) and harmless. Entering it (centre within r) leaves by the twin b.pair, speed kept, velocity
         // turned by b.turn (radians), placed just outside the twin's mouth along the new heading so it cannot re-enter at once.
@@ -598,7 +641,7 @@ var Physics = (function () {
     });
     chk('fragment events once', function () {
       var l = L(1450, [], fr3), s = createSim(l, 0, -100), e = [];
-      while (stepSim(s, l) === 'flying' && s.step < 900) { e = e.concat(s.events); s.events.length = 0; }
+      while (stepSim(s, l) === 'flying') { e = e.concat(s.events); s.events.length = 0; }
       return e.length === 3 && e[0].i === 0 && e[1].i === 1 && e[2].i === 2 && s.collected.join() === '1,1,1' || 'ev ' + e.length;
     });
     chk('rails + integrator order', function () {
@@ -636,6 +679,41 @@ var Physics = (function () {
       if (q.warps !== 1 || Math.abs(Math.hypot(q.x - g.x, q.y - g.y) - (30 + C.WARP_GAP)) > 1e-9) return 'moving mouth exit';
       var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withW = L(1420, [B(330, 780, 70, 2.4e7), W(100, 100, 30, 2), W(800, 100, 30, 1)]);
       return same(S(plain, 90, -400), S(withW, 90, -400)) || 'an unrelated wormhole pair changed a flight';
+    });
+    function Nb(x, y, r, drag, orb) { return { kind: 'nebula', x: x, y: y, r: r, mu: 0, orbit: orb || null, drag: drag }; }
+    function Pu(x, y, r, mu, om, ph, half, reach, push) { return { kind: 'pulsar', x: x, y: y, r: r, mu: mu, orbit: null, beam: { omega: om, phase: ph, half: half, reach: reach, push: push } }; }
+    chk('nebula: drag factor inside only, harmless, fog count + one event, predict === simulate, far nebula inert', function () {
+      var l = L(1400, [Nb(450, 1000, 120, 0.5)]), s = createSim(l, 0, -300, 0), was = 0, ev = [];
+      while (stepSim(s, l) === 'flying') {
+        var sp = speed(s); ev = ev.concat(s.events); s.events.length = 0;
+        if (s.inFog >= 0 && was && Math.abs(sp - was * (1 - 0.5 * DT)) > 1e-9) return 'factor @' + s.step;
+        if (s.inFog < 0 && was && Math.abs(sp - was) > 1e-9) return 'drag outside @' + s.step;
+        was = sp;
+      }
+      if (s.status !== 'hit' || s.minGap !== Infinity || s.hitBody !== -1) return 'status ' + s.status + ' ' + s.minGap;
+      if (ev.length !== 1 || ev[0].type !== 'fog' || ev[0].i !== 0 || s.fog < 50 || s.fog > 200) return 'fog ' + s.fog + ' ev ' + ev.length;
+      var pp = new Float64Array(2 * N), f2 = new Float32Array(2 * Q), a2 = S(l, 0, -300, 0, N, pp), b2 = predict(l, 0, -300, 0, f2);
+      for (var i = 0; i < b2.n; i++) if (f2[2 * i] !== Math.fround(pp[2 * i])) return 'pred@' + i;
+      var mv = L(1400, [Nb(450, 1000, 90, 0.6, { cx: 450, cy: 1000, rad: 60, omega: 1, phase: 0 })]), m2 = S(mv, 0, -300, 0);
+      if (m2.fog < 1 || m2.status !== 'hit') return 'moving nebula';
+      var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withN = L(1420, [B(330, 780, 70, 2.4e7), Nb(800, 100, 60, 3)]);
+      return same(S(plain, 90, -400), S(withN, 90, -400)) || 'a far nebula changed a flight';
+    });
+    chk('pulsar: gravity like a planet, beams push outward, crash on contact, beam events, predict === simulate', function () {
+      var pl = L(1420, [B(330, 780, 14, 2e7)]), pu = L(1420, [Pu(330, 780, 14, 2e7, 1, 0, 0.15, 500, 0)]);
+      if (!same(S(pl, 90, -400, 3), S(pu, 90, -400, 3))) return 'push 0 is not a planet';
+      // a beam fixed along +y (phase pi/2, omega 0) under the probe's straight path from (450,1400) up: pushed along -y? no: the probe flies
+      // up the beam axis away from the pulsar at (450,1500) -> it speeds up while inside the beam, then coasts
+      var up = L(1400, [Pu(450, 1560, 10, 0, 0, Math.PI / 2, 0.2, 400, 900)]), q = createSim(up, 0, -200, 0);
+      stepSim(q, up); if (!(q.vy < -200) || q.beams !== 1 || q.events[0].type !== 'beam') return 'push ' + q.vy + ' beams ' + q.beams;
+      while (stepSim(q, up) === 'flying' && q.inBeam >= 0);
+      var v1 = q.vy; stepSim(q, up); if (q.vy !== v1 || q.beams !== 1) return 'outside the reach ' + q.vy;
+      var side = L(1400, [Pu(450, 1560, 10, 0, 0, 0, 0.2, 400, 900)]), r = S(side, 0, -200, 0); if (r.beams !== 0) return 'beam off-axis';
+      var sw = L(1400, [Pu(700, 1000, 12, 1e6, 2.5, 0, 0.12, 600, 1200)]), p1 = new Float64Array(2 * N), f1 = new Float32Array(2 * Q), a1 = S(sw, 20, -350, 77, N, p1), b1 = predict(sw, 20, -350, 77, f1);
+      for (var i = 0; i < b1.n; i++) if (f1[2 * i] !== Math.fround(p1[2 * i])) return 'pred@' + i;
+      if (a1.beams < 1) return 'no sweep crossing';
+      var hitP = S(L(1400, [Pu(450, 1000, 20, 1e6, 0, 0, 0.1, 300, 500)]), 0, -300, 0);
+      return hitP.status === 'crash' && hitP.hitBody === 0 && hitP.minGap < C.PROBE_R || 'crash ' + hitP.status;
     });
     for (var i = 0, ok = true; i < cks.length; i++) ok = ok && cks[i].ok;
     return { ok: ok, checks: cks };
@@ -1301,6 +1379,7 @@ var Render = (function () {
   var Lplate = null, Lplay = null, Ltitle = null, grainTile = null;
   var moving = [];                 // [{b, spr}] bodies on rails (sprites)
   var repulsors = [];              // fixed repulsors [{x,y,r}] (animated rings)
+  var pulsars = [];                // pulsar bodies with beams (animated wedges)
   var tgtSpr = null;
   var hudSpr = { launch: [null, null, null, null], star: [null, null, null], launchW: 70 };
   var titleSpr = [], titleMoonSpr = null;
@@ -1606,6 +1685,11 @@ var Render = (function () {
       var ex = Math.abs(cx - x) - hw, ey = Math.abs(cy - y) - hh; ex = ex > 0 ? ex : 0; ey = ey > 0 ? ey : 0;
       var ov = r - Math.sqrt(ex * ex + ey * ey); return ov > 0 ? w * (ov + 2) : 0;
     }
+    function ringCross(cx, cy, x, y, r) {             // small cost when the box straddles a nebula's dotted boundary
+      var ax = Math.abs(cx - x), ay = Math.abs(cy - y), ex = Math.max(0, ax - hw), ey = Math.max(0, ay - hh);
+      var near = Math.sqrt(ex * ex + ey * ey), fx = ax + hw, fy = ay + hh, far = Math.sqrt(fx * fx + fy * fy);
+      return near < r && far > r ? 3 : 0;
+    }
     for (c = 0; c < 32; c++) {
       var th = (c & 15) * Math.PI / 8, dx = Math.cos(th), dy = Math.sin(th), extra = c < 16 ? 0 : 10;
       var d = R * 1.26 + 4.5 + Math.abs(dx) * hw + Math.abs(dy) * hh + extra;
@@ -1620,6 +1704,8 @@ var Render = (function () {
           if (o.kind === 'blackhole') p += circ(cx, cy, ox, oy, (o.capture || o.r * 3) * s * 1.8, 20);
           else if (o.kind === 'repulsor') { p += circ(cx, cy, ox, oy, o.r * s * 1.5, 20); p += circ(cx, cy, ox, oy, o.r * s * 3.3, 1.5); }
           else if (o.kind === 'wormhole') p += circ(cx, cy, ox, oy, o.r * s * 1.5 + 2, 30);
+          else if (o.kind === 'nebula') p += ringCross(cx, cy, ox, oy, o.r * s);     // a label may sit in a cloud, not on its edge
+          else if (o.kind === 'pulsar') p += circ(cx, cy, ox, oy, o.r * s * 1.8 + 3, 20);
           else p += circ(cx, cy, ox, oy, o.r * s + 3, 20);
         }
         p += circ(cx, cy, tg.x * s, tg.y * s, tr, 30) + circ(cx, cy, lv.probe.x * s, lv.probe.y * s, pr, 15);
@@ -1675,14 +1761,116 @@ var Render = (function () {
     }
   }
 
+  // ---------------------------------------------------------------- nebulae (v4)
+  // A cloud of dust engraved as stipple: fine paper dots at low alpha, denser toward the centre and on the lit (upper-left)
+  // side, gathered in irregular clumps with darker lanes, a few wisps of curved hatching, an irregular soft edge that never
+  // crosses r, and the true boundary (where the drag begins) as a fine dotted hairline at exactly r. No occluder: the
+  // cloud is translucent, so the star field and the grid read through it. Pre-rendered (static layer or one sprite).
+  var NEB_A = [0.2, 0.33, 0.48, 0.68];
+  function isNebula(b) { return b && b.kind === 'nebula'; }
+  function nebulaEdge(R, seed) {
+    var r = rng(seed * 3121 + 77), p = [r() * TAU, r() * TAU, r() * TAU, r() * TAU];
+    return function (th) { return R * (0.95 + 0.04 * Math.sin(3 * th + p[0]) + 0.04 * Math.sin(5 * th + p[1]) + 0.022 * Math.sin(9 * th + p[2]) + 0.012 * Math.sin(14 * th + p[3])); };
+  }
+  function drawNebula(g, x, y, R, seed) {
+    var r = rng(seed * 7717 + 401), i, k, edge = nebulaEdge(R, seed);
+    // clumps: a handful of soft lumps (dense) and lanes (sparse) placed inside the cloud
+    var NL = 7, LX_ = [], LY_ = [], LR = [], LW = [];
+    for (k = 0; k < NL; k++) {
+      var la = r() * TAU, lr = R * Math.sqrt(r()) * 0.7;
+      LX_.push(Math.cos(la) * lr); LY_.push(Math.sin(la) * lr); LR.push(R * (0.18 + 0.22 * r())); LW.push(k < 4 ? 0.9 + 0.5 * r() : -(0.55 + 0.3 * r()));
+    }
+    var b4 = [[], [], [], []], area = Math.PI * R * R, N = Math.min(16000, Math.round(area * 0.95));
+    for (i = 0; i < N; i++) {
+      var u = r() * 2 - 1, v = r() * 2 - 1, d2 = u * u + v * v; if (d2 > 1) continue;
+      var px = u * R, py = v * R, d = Math.sqrt(d2) * R, th = Math.atan2(py, px), e = edge(th);
+      if (d > R - 0.8) continue;
+      var rho = d / e, base = rho < 1 ? Math.pow(1 - rho * rho, 0.95) : 0.18 * Math.max(0, 1 - (rho - 1) / 0.1);
+      if (base <= 0) continue;
+      var cl = 0;
+      for (k = 0; k < NL; k++) { var qx = px - LX_[k], qy = py - LY_[k], q2 = (qx * qx + qy * qy) / (LR[k] * LR[k]); if (q2 < 4) cl += LW[k] * Math.exp(-q2 * 1.4); }
+      var lit = d > 0 ? (px * LX + py * LY) / d * Math.min(1, rho) : 0;   // + toward the light
+      var w = base * (0.7 + 0.38 * cl) * (1 + 0.3 * lit);
+      if (w <= 0 || r() > w * 0.85) continue;
+      var t = w + (r() - 0.5) * 0.5, bk = t < 0.32 ? 0 : t < 0.58 ? 1 : t < 0.85 ? 2 : 3, sz = bk > 2 ? 0.85 : bk > 0 ? 0.7 : 0.6;
+      b4[bk].push(x + px - sz / 2, y + py - sz / 2, sz);
+    }
+    g.fillStyle = PAL.paper;
+    for (k = 0; k < 4; k++) {
+      var a = b4[k]; if (!a.length) continue;
+      g.globalAlpha = NEB_A[k]; g.beginPath();
+      for (i = 0; i < a.length; i += 3) g.rect(a[i], a[i + 1], a[i + 2], a[i + 2]);
+      g.fill();
+    }
+    // wisps: short bundles of curved hatching that follow the cloud round, brighter on the lit side
+    g.strokeStyle = PAL.paper; g.lineCap = 'round'; g.lineWidth = Math.max(0.35, Math.min(0.5, R * 0.006));
+    var NW = 4 + Math.round(R / 40);
+    for (k = 0; k < NW; k++) {
+      var a0 = r() * TAU, span = 0.7 + r() * 0.9, rr = 0.38 + r() * 0.42, dr = (r() - 0.5) * 0.3, nl = 3 + (r() * 3 | 0), sp = 1.5 + r() * 0.8;
+      var litw = 0.5 + 0.5 * Math.cos(a0 + span / 2 - LIGHT_A);
+      for (var l = 0; l < nl; l++) {
+        g.globalAlpha = (0.2 + 0.22 * litw) * (1 - Math.abs(l - (nl - 1) / 2) / nl);
+        g.beginPath();
+        for (var q = 0; q <= 14; q++) {
+          var f = q / 14, ang = a0 + span * f, rad = Math.min(edge(ang) * 0.94, (rr + dr * f) * edge(ang) + (l - (nl - 1) / 2) * sp) * (1 - 0.06 * Math.sin(f * Math.PI));
+          var wx = x + rad * Math.cos(ang), wy = y + rad * Math.sin(ang);
+          if (q) g.lineTo(wx, wy); else g.moveTo(wx, wy);
+        }
+        g.stroke();
+      }
+    }
+    nebulaRing(g, x, y, R);
+    g.globalAlpha = 1; g.lineCap = 'butt';
+  }
+  // the true boundary: a fine dotted hairline at exactly r, with eight small inward ticks like a graduated bezel
+  function nebulaRing(g, x, y, R) {
+    var n = Math.max(24, Math.round(TAU * R / 2.7)), i, a;
+    g.fillStyle = PAL.paper; g.globalAlpha = 0.6; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.36, y + R * Math.sin(a) - 0.36, 0.72, 0.72); }
+    g.fill();
+    g.strokeStyle = PAL.paper; g.globalAlpha = 0.45; g.lineWidth = 0.5; g.beginPath();
+    for (i = 0; i < 8; i++) { a = i * Math.PI / 4 + Math.PI / 8; g.moveTo(x + (R - 0.6) * Math.cos(a), y + (R - 0.6) * Math.sin(a)); g.lineTo(x + (R - 3.2) * Math.cos(a), y + (R - 3.2) * Math.sin(a)); }
+    g.stroke(); g.globalAlpha = 1;
+  }
+
+  // ---------------------------------------------------------------- pulsars (v4)
+  // A small dense hatched sphere (tighter hatching than a planet), a bright paper core ring knocked out of it and a pin-point
+  // centre, and two tiny bearing ticks on the limb. The beams themselves are animated (drawBeams).
+  function drawPulsar(g, x, y, R) {
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, R * 1.7 + 1, 0, TAU); g.fill();
+    hatchSphere(g, x, y, R, { sp: Math.max(0.85, Math.min(1.1, R * 0.17)), lw: 0.42, bands: 0, bf: 0, bp: 0, rot: 0.2 });
+    var cr = Math.max(1.5, R * 0.42);
+    g.strokeStyle = PAL.ink; g.lineWidth = 2.2; g.beginPath(); g.arc(x, y, cr, 0, TAU); g.stroke();
+    g.strokeStyle = PAL.paper; g.globalAlpha = 1; g.lineWidth = 1.05; g.beginPath(); g.arc(x, y, cr, 0, TAU); g.stroke();
+    g.fillStyle = PAL.paper; g.beginPath(); g.arc(x, y, 0.75, 0, TAU); g.fill();
+    // a fine outer hairline ring, the star's "field"
+    g.globalAlpha = 0.5; g.lineWidth = 0.45; g.beginPath(); g.arc(x, y, R * 1.45 + 1, 0, TAU); g.stroke();
+    g.globalAlpha = 1;
+  }
+  // how far the beams carry: a faint dotted graphite circle at reach (paper at a whisper on top so it reads on the ink)
+  function beamReach(g, x, y, R) {
+    var n = Math.max(30, Math.round(TAU * R / 3.6)), i, a;
+    g.fillStyle = PAL.graphite; g.globalAlpha = 1; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.6, y + R * Math.sin(a) - 0.6, 1.2, 1.2); }
+    g.fill();
+    g.fillStyle = PAL.paper; g.globalAlpha = 0.16; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.35, y + R * Math.sin(a) - 0.35, 0.7, 0.7); }
+    g.fill(); g.globalAlpha = 1;
+  }
+
   function drawBodyArt(g, b, bi, x, y, s, seed) {
     var R = b.r * s;
     if (b.kind === 'blackhole') drawBlackHole(g, x, y, R, (b.capture || b.r * 3) * s);
     else if (b.kind === 'repulsor') drawRepulsor(g, x, y, R);
     else if (b.kind === 'wormhole') drawMouth(g, x, y, R, mouthPN[bi] | 0);
+    else if (b.kind === 'nebula') drawNebula(g, x, y, R, (seed | 0) + bi * 53 + 7);
+    else if (b.kind === 'pulsar') drawPulsar(g, x, y, R);
     else hatchSphere(g, x, y, R, sphereOpts(R, b.kind !== 'moon', (seed | 0) + bi * 31));
   }
-  function bodyExtent(b) { return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.kind === 'wormhole' ? b.r * 1.4 : b.r + 2; }
+  function bodyExtent(b) {
+    return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.kind === 'wormhole' ? b.r * 1.4 :
+      b.kind === 'nebula' ? b.r + 1 : b.kind === 'pulsar' ? b.r * 1.75 + 2 : b.r + 2;
+  }
   function makeSprite(radCss, fn) {
     var d = layout.dpr, size = Math.ceil((radCss * 2 + 4) * d), c = mk(size, size), g = c.getContext('2d');
     g.setTransform(d, 0, 0, d, 0, 0);
@@ -1807,7 +1995,7 @@ var Render = (function () {
   // ---------------------------------------------------------------- contour wells (marching squares)
   function paintContours(g, lv) {
     var bs = lv.bodies, fixed = [], i, j;
-    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) fixed.push(bs[i]);
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i])) fixed.push(bs[i]);    // a cloud has no well and erases nothing
     var anyAttr = false; for (i = 0; i < fixed.length; i++) if (fixed[i].mu > 0) anyAttr = true;
     if (!anyAttr) return;
     var d = layout.dpr, Pl = layout.plate, s = layout.scale;
@@ -1879,8 +2067,14 @@ var Render = (function () {
   function paintLevel(g, lv) {
     var d = layout.dpr, Pl = layout.plate, s = layout.scale, bs = lv.bodies, i, j;
     prepMouths(lv);
+    sweptByCloud(lv);
+    // fixed nebulae first: under the wells, the orbits and every body
+    g.setTransform(d, 0, 0, d, 0, 0);
+    for (i = 0; i < bs.length; i++) if (isNebula(bs[i]) && !bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
     paintContours(g, lv);
     g.setTransform(d, 0, 0, d, 0, 0);
+    // how far each fixed pulsar's beams carry (a pulsar on rails gets its circle per frame)
+    for (i = 0; i < bs.length; i++) if (bs[i].kind === 'pulsar' && bs[i].beam && !bs[i].orbit) beamReach(g, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, bs[i].beam.reach * s);
     // orbit paths (dotted) and barycentre crosses
     var seen = [];
     for (i = 0; i < bs.length; i++) {
@@ -1903,7 +2097,7 @@ var Render = (function () {
       g.lineWidth = 0.45; g.beginPath(); g.arc(bx, by, 1.4, 0, TAU); g.stroke();
     }
     // fixed bodies (baked)
-    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i]) && !overIdx[i]) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
     for (i = 0; i < wm.length; i++) if (!wm[i].moving) drawMouthLabel(g, Pl.x + wm[i].b.x * s + wm[i].lx, Pl.y + wm[i].b.y * s + wm[i].ly, wm[i].letter, wm[i].turn);
     // launch station: a small surveyor's benchmark at the probe start
     var px = Pl.x + lv.probe.x * s, py = Pl.y + lv.probe.y * s;
@@ -1944,9 +2138,24 @@ var Render = (function () {
     g.setTransform(d, 0, 0, d, 0, 0);
     g.textBaseline = 'alphabetic';
   }
+  // Fixed bodies that a nebula on rails can drift over are drawn as sprites on the animated layer, after the cloud, so a
+  // cloud always lies under every body. overIdx[i] = 1 for those (empty when no nebula moves).
+  var overIdx = [];
+  function sweptByCloud(lv) {
+    var bs = lv.bodies, i, j; overIdx.length = 0;
+    for (i = 0; i < bs.length; i++) overIdx.push(0);
+    for (j = 0; j < bs.length; j++) {
+      var nb = bs[j], o = nb.orbit; if (!isNebula(nb) || !o) continue;
+      for (i = 0; i < bs.length; i++) {
+        var b = bs[i]; if (b.orbit || isNebula(b)) continue;
+        var dx = b.x - o.cx, dy = b.y - o.cy, dd = Math.sqrt(dx * dx + dy * dy), e = bodyExtent(b);
+        if (dd < o.rad + nb.r + e && dd > o.rad - nb.r - e) overIdx[i] = 1;
+      }
+    }
+  }
   function isOrbitCentreEmpty(lv, o) {
     var bs = lv.bodies;
-    for (var i = 0; i < bs.length; i++) if (!bs[i].orbit && Math.abs(bs[i].x - o.cx) < 2 && Math.abs(bs[i].y - o.cy) < 2) return false;
+    for (var i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i]) && Math.abs(bs[i].x - o.cx) < 2 && Math.abs(bs[i].y - o.cy) < 2) return false;
     return true;
   }
   // top band anchors: the plate edges, or the safe screen edges when the plate is narrow (landscape)
@@ -1971,14 +2180,19 @@ var Render = (function () {
     g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(Lplate, 0, 0);
     paintLevel(g, lv);
     // sprites for bodies on rails; fixed repulsors keep animated rings
-    moving.length = 0; repulsors.length = 0;
+    moving.length = 0; repulsors.length = 0; pulsars.length = 0;
+    var nNeb = 0;
     for (i = 0; i < lv.bodies.length; i++) {
       var b = lv.bodies[i];
-      if (b.orbit) {
+      if (b.orbit || overIdx[i]) {
         (function (b, i) {
-          moving.push({ b: b, spr: makeSprite(bodyExtent(b) * s, function (sg, c) { drawBodyArt(sg, b, i, c, c, s, lv.seed); }) });
+          var m = { b: b, spr: makeSprite(bodyExtent(b) * s, function (sg, c) { drawBodyArt(sg, b, i, c, c, s, lv.seed); }) };
+          if (isNebula(b)) moving.splice(nNeb++, 0, m);          // clouds on rails first: under everything else on the animated layer
+          else moving.push(m);
         })(b, i);
-      } else if (b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
+      }
+      if (!b.orbit && b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
+      if (b.kind === 'pulsar' && b.beam && b.beam.reach > 0) pulsars.push(b);
     }
     buildMouthSprites(lv);
     // target bezel sprite (rotated each frame)
@@ -2193,8 +2407,93 @@ var Render = (function () {
     }
     warpsLive = true;
   }
+  // Nebula entry: a soft puff of stipple dots that drift outward (and a little along the heading of nothing: just out) and fade
+  // in ~500 ms. Pulsar beam catch: a brief paper flash ring and a fan of sparks thrown straight away from the pulsar, ~250 ms.
+  var FOG_MS = 520, FOGN = 3, FOGD = 28, fogs = [], fogIdx = 0, fogsLive = false;
+  for (var fi = 0; fi < FOGN; fi++) fogs.push({ on: false, t0: -1, x: 0, y: 0, d: new Float32Array(FOGD * 4) });
+  var FLASH_MS = 260, FLN = 3, FLS = 7, flashes = [], flashIdx = 0, flashLive = false;
+  for (var fj = 0; fj < FLN; fj++) flashes.push({ on: false, t0: -1, x: 0, y: 0, ux: 0, uy: -1, sp: new Float32Array(FLS * 2) });
+  function fog(x, y) {
+    if (!level || !(x === x && y === y)) return;
+    var f = fogs[fogIdx]; fogIdx = (fogIdx + 1) % FOGN;
+    var r = rng(crashSeed++ * 4243 + 29);
+    f.on = true; f.t0 = -1; f.x = x; f.y = y;
+    for (var i = 0; i < FOGD; i++) {
+      var a = r() * TAU, d0 = 3 + r() * 8;
+      f.d[4 * i] = a; f.d[4 * i + 1] = d0; f.d[4 * i + 2] = 10 + r() * 18; f.d[4 * i + 3] = 0.8 + r() * 0.9;   // angle, start, drift (CSS px), size
+    }
+    fogsLive = true;
+  }
+  function pulsarNear(x, y) {
+    var best = null, bd = 1e18, bs = level ? level.bodies : [];
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i]; if (b.kind !== 'pulsar') continue;
+      Physics.bodyPos(b, lastT, P);
+      var dx = x - P.x, dy = y - P.y, dd = dx * dx + dy * dy, lim = (b.beam ? b.beam.reach : 300) + 40;
+      if (dd < lim * lim && dd < bd) { bd = dd; best = b; }
+    }
+    return best;
+  }
+  function beam(x, y) {
+    if (!level || !(x === x && y === y)) return;
+    var f = flashes[flashIdx]; flashIdx = (flashIdx + 1) % FLN;
+    var r = rng(crashSeed++ * 5113 + 41), b = pulsarNear(x, y), base = -Math.PI / 2;
+    if (b) { Physics.bodyPos(b, lastT, P); base = Math.atan2(y - P.y, x - P.x); }
+    f.on = true; f.t0 = -1; f.x = x; f.y = y; f.ux = Math.cos(base); f.uy = Math.sin(base);
+    for (var i = 0; i < FLS; i++) {
+      var spread = b ? 0.95 : Math.PI;                      // a fan away from the pulsar (or all round when no pulsar is near)
+      f.sp[2 * i] = base + (((i + 0.5) / FLS) * 2 - 1) * spread + (r() - 0.5) * 0.2; f.sp[2 * i + 1] = 6 + r() * 9 + (Math.abs(i - (FLS - 1) / 2) < 1 ? 5 : 0);
+    }
+    flashLive = true;
+  }
+  function drawFogs(now, u) {
+    var live = false;
+    ctx.fillStyle = PAL.paper;
+    for (var k = 0; k < FOGN; k++) {
+      var f = fogs[k]; if (!f.on) continue;
+      if (f.t0 < 0) f.t0 = now;
+      var p = (now - f.t0) / FOG_MS; if (p >= 1) { f.on = false; continue; }
+      live = true;
+      var e = easeOutCubic(p), a = (1 - p) * (1 - p) * Math.min(1, p * 10);
+      for (var band = 0; band < 2; band++) {
+        ctx.globalAlpha = a * (band ? 0.95 : 0.6); ctx.beginPath();
+        for (var i = band; i < FOGD; i += 2) {
+          var an = f.d[4 * i], rr = (f.d[4 * i + 1] + f.d[4 * i + 2] * e) * u, sz = f.d[4 * i + 3] * (1 + 0.5 * e) * u;
+          var qx = f.x + Math.cos(an) * rr, qy = f.y + Math.sin(an) * rr; ctx.moveTo(qx + sz / 2, qy); ctx.arc(qx, qy, sz / 2, 0, TAU);
+        }
+        ctx.fill();
+      }
+      // a faint stippled ring breathing out
+      ctx.globalAlpha = a * 0.55; ctx.beginPath();
+      var R = (6 + 26 * e) * u, n = 22;
+      for (var j = 0; j < n; j++) { var aj = j * TAU / n + p; ctx.rect(f.x + Math.cos(aj) * R - 0.45 * u, f.y + Math.sin(aj) * R - 0.45 * u, 0.9 * u, 0.9 * u); }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1; fogsLive = live;
+  }
+  function drawFlashes(now, u, t) {
+    var live = false;
+    ctx.lineCap = 'round';
+    for (var k = 0; k < FLN; k++) {
+      var f = flashes[k]; if (!f.on) continue;
+      if (f.t0 < 0) f.t0 = now;
+      var p = (now - f.t0) / FLASH_MS; if (p >= 1) { f.on = false; continue; }
+      live = true;
+      var e = easeOutCubic(p), a = 1 - p;
+      ctx.strokeStyle = PAL.paper; ctx.globalAlpha = 0.9 * a; ctx.lineWidth = (1.1 - 0.6 * p) * u;
+      ctx.beginPath(); ctx.arc(f.x, f.y, (2 + 9 * e) * u, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = a; ctx.lineWidth = 0.7 * u; ctx.beginPath();
+      for (var i = 0; i < FLS; i++) {
+        var an = f.sp[2 * i], len = f.sp[2 * i + 1], r0 = (3 + 8 * e) * u, r1 = r0 + len * (1 - 0.5 * e) * u, ca = Math.cos(an), sa = Math.sin(an);
+        ctx.moveTo(f.x + ca * r0, f.y + sa * r0); ctx.lineTo(f.x + ca * r1, f.y + sa * r1);
+      }
+      ctx.stroke();
+      ctx.fillStyle = PAL.paper; ctx.globalAlpha = a * (1 - e); ctx.beginPath(); ctx.arc(f.x, f.y, 2.2 * u, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1; flashLive = live;
+  }
   var fx = {
-    warp: warp,
+    warp: warp, fog: fog, beam: beam,
     crash: function (x, y) {
       var c = crashes[crashIdx]; crashIdx = (crashIdx + 1) % CR;
       var r = rng(crashSeed++ * 7717 + 3), i;
@@ -2216,7 +2515,9 @@ var Render = (function () {
       for (var i = 0; i < CR; i++) crashes[i].on = false;
       shakePending = false; shakeT0 = -2; succ.on = false; succ.seal = null; succ.n = 0;
       for (i = 0; i < WN; i++) warps[i].on = false;
-      warpsLive = false;
+      for (i = 0; i < FOGN; i++) fogs[i].on = false;
+      for (i = 0; i < FLN; i++) flashes[i].on = false;
+      warpsLive = fogsLive = flashLive = false;
       for (i = 0; i < wm.length; i++) wm[i].kPend = false;
       for (i = 0; i < 8; i++) { popT[i] = -1; prevCol[i] = 0; }
     }
@@ -2407,9 +2708,12 @@ var Render = (function () {
       ctx.lineCap = 'round';
     }
 
+    if (pulsars.length) drawBeams(t, u, d, s, ox, oy);
     drawFrags(state, now, u);
     if (state.spotlight) drawSpotlight(state.spotlight, now, u);
     if (warpsLive) drawWarps(now, u, t);
+    if (fogsLive) drawFogs(now, u);
+    if (flashLive) drawFlashes(now, u, t);
     drawGhosts(state, u);
     var showTrail = state.phase === 'flight' || state.phase === 'result';
     if (showTrail) drawTrail(state.trail, u, succ.on ? 0.45 : 1);
@@ -2530,6 +2834,55 @@ var Render = (function () {
       }
     }
     ctx.globalAlpha = 1; warpsLive = live;
+  }
+
+  // Pulsar beams at the physics time t (= state.step * K.DT, as for the moons): axis a = phase + omega * t and the opposite
+  // direction, each a wedge of half-angle `half` out to `reach`. Drawn in the beam's own frame (one transform per pulsar, no
+  // trig per stroke): two paper hairlines per wedge, the leading edge a touch heavier, and sparse alternate-slant hatching
+  // between them, every line fading in four alpha bands toward the tip. One path per band per pulsar.
+  var BEAM_A = [0.62, 0.42, 0.26, 0.13], BEAM_H = [0.3, 0.22, 0.14, 0.07];
+  function drawBeams(t, u, d, s, ox, oy) {
+    var i, k, sg, e;
+    ctx.save();
+    ctx.strokeStyle = PAL.paper; ctx.lineCap = 'round';
+    for (i = 0; i < pulsars.length; i++) {
+      var b = pulsars[i], bm = b.beam, a = bm.phase + bm.omega * t, ca = Math.cos(a), sa = Math.sin(a), x = b.x, y = b.y;
+      if (b.orbit) { Physics.bodyPos(b, t, P); x = P.x; y = P.y; }
+      ctx.setTransform(d * s * ca, d * s * sa, -d * s * sa, d * s * ca, d * (ox + x * s), d * (oy + y * s));
+      if (b.orbit) { ctx.setTransform(d * s, 0, 0, d * s, d * (ox + x * s), d * (oy + y * s)); beamReachLive(bm.reach, u); ctx.setTransform(d * s * ca, d * s * sa, -d * s * sa, d * s * ca, d * (ox + x * s), d * (oy + y * s)); }
+      var R = bm.reach, th = Math.tan(bm.half), r0 = b.r * 1.7 + 1.5 * u, L = R - r0, lead = bm.omega >= 0 ? 1 : -1;
+      var hs = 7 * u, nh = Math.max(2, Math.floor(L / hs));
+      for (k = 0; k < 4; k++) {
+        var x0 = r0 + L * k / 4, x1 = r0 + L * (k + 1) / 4;
+        // edges: trailing (thin) then leading (heavier)
+        for (var lw = 0; lw < 2; lw++) {
+          ctx.globalAlpha = BEAM_A[k] * (lw ? 1 : 0.7); ctx.lineWidth = (lw ? 0.8 : 0.5) * u; ctx.beginPath();
+          for (sg = -1; sg <= 1; sg += 2) {
+            e = (lw ? lead : -lead) * sg;                  // the leading edge of the beam pointing along sg
+            ctx.moveTo(sg * x0, e * x0 * th); ctx.lineTo(sg * x1, e * x1 * th);
+          }
+          ctx.stroke();
+        }
+        // cross-hatching: two families of straight strokes at +-42 degrees to the rungs, clipped to the wedge (inset), offset by
+        // half a period so they form an open diamond lattice
+        ctx.globalAlpha = BEAM_H[k]; ctx.lineWidth = 0.45 * u; ctx.beginPath();
+        var j0 = Math.ceil(nh * k / 4), j1 = Math.ceil(nh * (k + 1) / 4), ti = th * 0.86;
+        for (var j = j0; j < j1; j++) {
+          var hx = r0 + (j + 0.5) * hs, m = (j & 1) ? 0.9 : -0.9;
+          if (hx * ti < 1.2 * u) continue;
+          var yT = ti * hx / (1 - ti * m), yB = -ti * hx / (1 + ti * m);
+          for (sg = -1; sg <= 1; sg += 2) { ctx.moveTo(sg * (hx + m * yB), yB); ctx.lineTo(sg * (hx + m * yT), yT); }
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  function beamReachLive(R, u) {
+    ctx.fillStyle = PAL.graphite; ctx.globalAlpha = 1; ctx.beginPath();
+    var n = Math.max(30, Math.round(TAU * R / (3.6 * u))), r = 0.6 * u;
+    for (var i = 0; i < n; i++) { var a = i * TAU / n; ctx.rect(R * Math.cos(a) - r, R * Math.sin(a) - r, 2 * r, 2 * r); }
+    ctx.fill();
   }
 
   function drawGhosts(state, u) {
@@ -3040,6 +3393,31 @@ var Render = (function () {
     c.globalAlpha = 1; c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, Math.min(0.9, R * 0.22), 0, TAU); c.fill();
     c.lineCap = 'butt';
   }
+  // A nebula in miniature: a dotted circle at r with a sprinkle of stipple inside (denser toward the centre).
+  function thumbNebula(c, x, y, R, seed) {
+    var r = rng(seed * 977 + 5), n = Math.max(14, Math.round(TAU * R / 2.2)), i, a;
+    c.fillStyle = PAL.paper; c.globalAlpha = 0.55; c.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; c.rect(x + R * Math.cos(a) - 0.3, y + R * Math.sin(a) - 0.3, 0.6, 0.6); }
+    c.fill();
+    var m = Math.min(70, Math.round(R * R * 0.5));
+    c.globalAlpha = 0.4; c.beginPath();
+    for (i = 0; i < m; i++) { a = r() * TAU; var d = R * 0.9 * r() * Math.sqrt(r()); c.rect(x + d * Math.cos(a) - 0.3, y + d * Math.sin(a) - 0.3, 0.6, 0.6); }
+    c.fill(); c.globalAlpha = 1;
+  }
+  // A pulsar in miniature: a dot with a core ring and its two beams as short strokes at the t = 0 angle.
+  function thumbPulsar(c, x, y, b, s) {
+    var R = Math.max(1.6, b.r * s), bm = b.beam;
+    if (bm) {
+      var a = bm.phase, ca = Math.cos(a), sa = Math.sin(a), L = Math.max(R * 3, Math.min(bm.reach * s * 0.45, R + 12));
+      c.strokeStyle = PAL.paper; c.globalAlpha = 0.7; c.lineWidth = 0.5; c.lineCap = 'round'; c.beginPath();
+      c.moveTo(x + ca * R * 1.6, y + sa * R * 1.6); c.lineTo(x + ca * L, y + sa * L);
+      c.moveTo(x - ca * R * 1.6, y - sa * R * 1.6); c.lineTo(x - ca * L, y - sa * L);
+      c.stroke(); c.lineCap = 'butt';
+    }
+    c.globalAlpha = 1; c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, R, 0, TAU); c.fill();
+    c.fillStyle = PAL.ink; c.beginPath(); c.arc(x, y, R * 0.55, 0, TAU); c.fill();
+    c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, Math.min(0.6, R * 0.25), 0, TAU); c.fill();
+  }
   var TH_DIRS = [0, Math.PI, -Math.PI / 2, Math.PI / 2, -Math.PI / 4, -3 * Math.PI / 4, Math.PI / 4, 3 * Math.PI / 4];
   function thumbLetters(c, lv, ox, oy, s, pw, ph) {
     var bs = lv.bodies, no = pairNumbers(lv), tg = lv.target, i, k;
@@ -3087,8 +3465,14 @@ var Render = (function () {
     for (i = 0; i < bs.length; i++) { o = bs[i].orbit; if (!o) continue; c.moveTo(ox + (o.cx + o.rad) * s, oy + o.cy * s); c.arc(ox + o.cx * s, oy + o.cy * s, o.rad * s, 0, TAU); }
     c.stroke(); c.setLineDash(DASH_NONE);
     var nw = 0;
+    for (i = 0; i < bs.length; i++) {                     // clouds first: under everything
+      if (!isNebula(bs[i])) continue;
+      Physics.bodyPos(bs[i], 0, P); thumbNebula(c, ox + P.x * s, oy + P.y * s, Math.max(3, bs[i].r * s), (lv.seed | 0) + i);
+    }
     for (i = 0; i < bs.length; i++) {
+      if (isNebula(bs[i])) continue;
       Physics.bodyPos(bs[i], 0, P);
+      if (bs[i].kind === 'pulsar') { thumbPulsar(c, ox + P.x * s, oy + P.y * s, bs[i], s); continue; }
       if (bs[i].kind === 'wormhole') { thumbMouth(c, ox + P.x * s, oy + P.y * s, Math.max(2.6, bs[i].r * s), i); nw++; continue; }
       drawBodyArt(c, bs[i], i, ox + P.x * s, oy + P.y * s, s, lv.seed);
     }
@@ -3109,7 +3493,7 @@ var Render = (function () {
     c.restore();
   }
 
-  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx, warp: warp,
+  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx, warp: warp, fog: fog, beam: beam,
            worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; }, get caption() { return capInfo; } };
 })();
 
@@ -3369,6 +3753,48 @@ var Sound = (function () {
     } catch (e) {}
   }
 
+  // ---- fog: entering a nebula (~0.5 s). A low-passed hush of noise whose filter closes as the probe bleeds speed;
+  //      quieter than warp, slow attack and an exponential tail so there are no clicks. Re-entries closer than 0.15 s are folded. ----
+  var fogLast = -1;
+  function fog() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.01, D = 0.5;
+      if (fogLast >= 0 && t - fogLast < 0.15) return;
+      fogLast = t;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5;
+      lp.frequency.setValueAtTime(1300, t);
+      lp.frequency.exponentialRampToValueAtTime(320, t + D);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.06, t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      src.connect(lp); lp.connect(g); g.connect(master);
+      src.start(t, Math.random() * 0.9); src.stop(t + D + 0.03);
+    } catch (e) {}
+  }
+
+  // ---- beam: a pulsar beam catches the probe (~0.12 s). A bright, distant click: a high sine with a faint inharmonic partial,
+  //      3 ms attack and a quick exponential decay. Catches closer than 60 ms are folded. ----
+  var beamLast = -1;
+  function beam() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.005, D = 0.12;
+      if (beamLast >= 0 && t - beamLast < 0.06) return;
+      beamLast = t;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(2350, t); o.frequency.exponentialRampToValueAtTime(1900, t + D);
+      env(g, t, 0.075, 0.003, D);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + D + 0.03);
+      var o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o2.type = 'sine'; o2.frequency.setValueAtTime(2350 * 2.76, t);
+      env(g2, t, 0.025, 0.002, D * 0.5);
+      o2.connect(g2); g2.connect(master); o2.start(t); o2.stop(t + D * 0.5 + 0.03);
+    } catch (e) {}
+  }
+
   // ---- launch: soft whoosh, bandpassed noise sweep ----
   function launch(power) {
     if (!ready()) return;
@@ -3389,18 +3815,18 @@ var Sound = (function () {
   return {
     unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
     droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
-    chime: chime, ach: ach, warp: warp, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    chime: chime, ach: ach, warp: warp, fog: fog, beam: beam, thump: thump, pluck: pluck, tick: tick, launch: launch,
     get state() { return ctx ? ctx.state : 'none'; }
   };
 })();
 
 // ===================== MODULE: 50-save.js =====================
 /* PERIHELION — save.
-   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: plates (60 at first, 90 with Volume III; shorter saved arrays are padded with zeros), `seen` flags for the
+   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: plates (60 at first, 90 with Volume III, 150 with Volumes IV and V; shorter saved arrays are padded with zeros), `seen` flags for the
    popup cards, the Daily Plate record, lifetime `stats` and unlocked achievements. Every storage access is wrapped in
    try/catch; if storage is unavailable (private mode, sandboxed iframe, quota) the game keeps working from memory. */
 var Save = (function () {
-  var KEY = 'perihelion.v1', N = 90, VERSION = 2;
+  var KEY = 'perihelion.v1', N = 150, VERSION = 2;
   var persistent = false;
   var DAY = 86400000;
 
@@ -3566,7 +3992,13 @@ var Save = (function () {
    - Volume ranges come from Levels.VOLUMES (Volumes I and II fall back to 0-29 / 30-59 if Levels is missing); a volume that
      does not exist never unlocks its honour. Plate counts come from Save.N. Honours are only ever added, never revoked.
    - Wormholes: flightEnd counts sim.warps (stat 'warps') and remembers whether the winning flight warped; plateSealed uses
-     that for the gate honours (stat 'gateSeals' counts sealed flights that warped). */
+     that for the gate honours (stat 'gateSeals' counts sealed flights that warped).
+   - Nebulae and pulsars (CONTRACT-v4 §6) work the same way: flightEnd counts sim.fog (stat 'fog', steps inside nebulae)
+     and sim.beams (stat 'beams', beam catches) on every flight, and plateSealed judges the veil/beam honours on the
+     sealing flight only.
+   - Nothing assumes a plate count. The campaign size is Levels.CAMPAIGN.length (Save.N without Levels); the later
+     cartographers ask for every plate up to the end of their volume (cartographer_90 = Volume III's last plate + 1, so
+     still ninety plates) and, like the volume honours, never unlock while that volume's plates do not exist. */
 var Log = (function () {
   var ROM_VOL = [{ from: 0, to: 29 }, { from: 30, to: 59 }];
 
@@ -3588,10 +4020,27 @@ var Log = (function () {
     for (var i = 0; i < b.length; i++) if (b[i] && b[i].kind !== 'wormhole' && b[i].pair !== undefined && b[i].pair !== null) return true;
     return false;
   }
-  function vol(i) { var v; try { v = Levels.VOLUMES[i]; } catch (e) {} return v || ROM_VOL[i] || null; }
-  function volDone(c, i, min) { var v = vol(i); return !!v && v.to >= v.from && sealedAll(c, v.from, v.to, min); }
+  function vol(i) {
+    var v = null, have = false;
+    try { have = Levels.VOLUMES && typeof Levels.VOLUMES.length === 'number'; if (have) v = Levels.VOLUMES[i]; } catch (e) {}
+    if (!have) v = ROM_VOL[i];
+    if (!v || typeof v !== 'object') return null;
+    var from = Math.floor(Number(v.from)), to = Math.floor(Number(v.to));
+    return isFinite(from) && isFinite(to) && from >= 0 && to >= from ? { from: from, to: to } : null;
+  }
+  // plates that exist now: the campaign as loaded (it may still be shorter than the save), never more than the save holds
+  function platesNow() {
+    var n = 0; try { n = Save.N | 0; } catch (e) {}
+    try { if (Levels.CAMPAIGN && typeof Levels.CAMPAIGN.length === 'number') n = n > 0 ? Math.min(n, Levels.CAMPAIGN.length) : Levels.CAMPAIGN.length; } catch (e) {}
+    return n;
+  }
+  function volDone(c, i, min) { var v = vol(i); return !!v && v.to < platesNow() && sealedAll(c, v.from, v.to, min); }
+  // seal as many plates as there are up to the end of volume i (and those plates exist)
+  function volCount(c, i) { var v = vol(i); return !!v && v.to < platesNow() && c.totals.sealed >= v.to + 1; }
   function sealedNow(c) { return c.ev === 'plateSealed'; }
   function oneShot(c) { return sealedNow(c) && c.data.launches === 1; }
+  // physics steps in two seconds (240 at the 120 Hz step)
+  var FOG_LONG = 240; try { if (K.DT > 0) FOG_LONG = Math.round(2 / K.DT); } catch (e) {}
 
   var LIST = [
     { id: 'first_light', name: 'First Light', blurb: 'Seal any plate.',
@@ -3615,14 +4064,22 @@ var Log = (function () {
       test: function (c) { return c.totals.sealed >= 30; } },
     { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal sixty plates of the Atlas.',
       test: function (c) { return c.totals.sealed >= 60; } },
-    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal all ninety plates of the Atlas.',
-      test: function (c) { return c.totals.sealed >= 90; } },
+    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal ninety plates of the Atlas.',
+      test: function (c) { return volCount(c, 2); } },
+    { id: 'cartographer_120', name: 'Cartographer of the Fourth Volume', blurb: 'Seal one hundred and twenty plates of the Atlas.',
+      test: function (c) { return volCount(c, 3); } },
+    { id: 'cartographer_150', name: 'Cartographer of the Fifth Volume', blurb: 'Seal one hundred and fifty plates of the Atlas.',
+      test: function (c) { return volCount(c, 4); } },
     { id: 'volume_one', name: 'Volume I, Complete', blurb: 'Seal every plate of Volume I.',
       test: function (c) { return volDone(c, 0, 1); } },
     { id: 'volume_two', name: 'Volume II, Complete', blurb: 'Seal every plate of Volume II.',
       test: function (c) { return volDone(c, 1, 1); } },
     { id: 'volume_three', name: 'Volume III, Complete', blurb: 'Seal every plate of Volume III.',
       test: function (c) { return volDone(c, 2, 1); } },
+    { id: 'volume_four', name: 'Volume IV, Complete', blurb: 'Seal every plate of Volume IV.',
+      test: function (c) { return volDone(c, 3, 1); } },
+    { id: 'volume_five', name: 'Volume V, Complete', blurb: 'Seal every plate of Volume V.',
+      test: function (c) { return volDone(c, 4, 1); } },
     { id: 'perfectionist', name: 'The Perfectionist', blurb: 'Three stars on every plate of Volume I.',
       test: function (c) { return volDone(c, 0, 3); } },
     { id: 'event_horizon', name: 'Event Horizon', blurb: 'Seal a plate holding a black hole with a single launch.',
@@ -3637,6 +4094,14 @@ var Log = (function () {
       test: function (c) { return sealedNow(c) && c.warps >= 2; } },
     { id: 'gate_keeper', name: 'Keeper of the Gates', blurb: 'Seal ten flights that passed a wormhole.',
       test: function (c) { return c.stat('gateSeals') >= 10; } },
+    { id: 'into_the_veil', name: 'Into the Veil', blurb: 'Seal a plate with a flight that passed through a nebula.',
+      test: function (c) { return sealedNow(c) && c.fog > 0; } },
+    { id: 'becalmed', name: 'Becalmed', blurb: 'Seal a plate with one flight that spent two seconds in nebulae.',
+      test: function (c) { return sealedNow(c) && c.fog >= FOG_LONG; } },
+    { id: 'lighthouse', name: 'By the Lighthouse', blurb: 'Seal a plate with a flight that a pulsar’s beam pushed.',
+      test: function (c) { return sealedNow(c) && c.beams > 0; } },
+    { id: 'beam_rider', name: 'Riding the Beam', blurb: 'Seal a plate with one flight caught twice by pulsar beams.',
+      test: function (c) { return sealedNow(c) && c.beams >= 2; } },
     { id: 'persistence', name: 'Persistence of Vision', blurb: 'Seal a plate on your third and final launch.',
       test: function (c) { return sealedNow(c) && c.data.launches === 3; } },
     { id: 'long_way_round', name: 'The Long Way Round', blurb: 'Win with a flight of 960 steps or more.',
@@ -3665,7 +4130,7 @@ var Log = (function () {
 
   // ---- helpers -------------------------------------------------------------------------------------------------------
   var STAT_NAMES = ['launches', 'wins', 'losses', 'crashes', 'lost', 'distance', 'frags', 'hints', 'nearMiss', 'threads',
-    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps'];
+    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps', 'fog', 'beams'];
 
   function num(x, dflt) { x = Number(x); return isFinite(x) ? x : dflt; }
   function stat(n) { try { return Save.stat(n) || 0; } catch (e) { return 0; } }
@@ -3701,7 +4166,8 @@ var Log = (function () {
   function starsNow(pending) {
     var a = [], i, src = null;
     try { src = Save.data.stars; } catch (e) {}
-    var n = 90; try { n = Save.N || 90; } catch (e) {}
+    var n = 0; try { n = Save.N | 0; } catch (e) {}
+    if (!(n > 0)) n = src && src.length ? src.length : 0;
     for (i = 0; i < n; i++) a.push(src && src[i] ? src[i] : 0);
     if (pending && pending.idx >= 0 && pending.idx < n) a[pending.idx] = Math.max(a[pending.idx], pending.stars > 0 ? pending.stars : 1);
     return a;
@@ -3729,7 +4195,7 @@ var Log = (function () {
     var full = {
       ev: c.ev, data: c.data || {}, level: c.level || null, win: !!c.win,
       minGap: c.minGap === undefined ? Infinity : c.minGap, minDist: c.minDist === undefined ? Infinity : c.minDist,
-      steps: c.steps || 0, warps: c.warps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
+      steps: c.steps || 0, warps: c.warps || 0, fog: c.fog || 0, beams: c.beams || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
       endlessRound: c.endlessRound || 0,
       stars: stars, totals: c.totals || totalsOf(stars), stat: stat, dailyBest: 0
     };
@@ -3758,7 +4224,9 @@ var Log = (function () {
   // ---- events --------------------------------------------------------------------------------------------------------
   function isWin(status) { return status === 'hit'; }
 
-  var last = { lv: null, w: 0 };      // the latest flightEnd: its plate and (if it hit) how many times it warped
+  // the latest flightEnd: its plate and (if it hit) how many times it warped, its steps in nebulae and its beam catches
+  var last = { lv: null, w: 0, f: 0, b: 0 };
+  function count(x) { return Math.max(0, Math.floor(num(x, 0))); }
   var handlers = {
     launch: function (d) {
       bump('launches');
@@ -3778,9 +4246,11 @@ var Log = (function () {
       if (win && gap <= 12) bump('threads');
       var fd = fragDelta(d.level, d.fragsThisAttempt);
       if (fd > 0) bump('frags', fd);
-      var wp = Math.max(0, Math.floor(num(sim.warps, 0)));
+      var wp = count(sim.warps), fg = count(sim.fog), bm = count(sim.beams);
       if (wp > 0) bump('warps', wp);
-      last = { lv: d.level, w: win ? wp : 0 };
+      if (fg > 0) bump('fog', fg);
+      if (bm > 0) bump('beams', bm);
+      last = { lv: d.level, w: win ? wp : 0, f: win ? fg : 0, b: win ? bm : 0 };
       return { ev: 'flightEnd', data: d, level: d.level, win: win, minGap: gap, minDist: num(sim.minDist, Infinity),
         steps: num(sim.step, 0), aimOff: win ? aimOffset(sim, d.level) : Infinity };
     },
@@ -3791,13 +4261,14 @@ var Log = (function () {
       if (fd > 0) bump('frags', fd);
       var idx = num(d.plateIndex, -1);
       if (idx >= 0 && !d.hintUsed) bump('platesNoHint');
-      var wp = (last.lv || null) === level ? last.w : 0;
-      last = { lv: null, w: 0 };
+      var same = (last.lv || null) === level;
+      var wp = same ? last.w : 0, fg = same ? last.f : 0, bm = same ? last.b : 0;
+      last = { lv: null, w: 0, f: 0, b: 0 };
       if (wp > 0) bump('gateSeals');
       var stars = starsNow({ idx: idx, stars: num(d.stars, 1) });
       var plateFrags = level && level.frags ? level.frags.length : num(d.fragsTotal, 0);
       return { ev: 'plateSealed', data: d, level: level, stars: stars, totals: totalsOf(stars),
-        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp };
+        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp, fog: fg, beams: bm };
     },
 
     hint: function (d) {
@@ -4021,6 +4492,20 @@ var LogUI = (function () {
     return (n < 0 ? '-' : '') + s + out;
   }
 
+  // physics steps -> seconds: one decimal under a minute, whole seconds after
+  function secs(steps) {
+    var dt = 1 / 120; try { if (K.DT > 0) dt = K.DT; } catch (e) {}
+    var v = Math.max(0, Number(steps) || 0) * dt;
+    return v < 60 ? (Math.round(v * 10) / 10).toFixed(1) : fmt(v);
+  }
+  // plates in the Atlas as it stands (the campaign may still be shorter than the save)
+  function plates() {
+    var n = 0;
+    try { if (Levels.CAMPAIGN && Levels.CAMPAIGN.length > 0) n = Levels.CAMPAIGN.length; } catch (e) {}
+    if (!n) { try { n = Save.N | 0; } catch (e) {} }
+    return n;
+  }
+
   function injectCss() {
     if (!doc || doc.getElementById('logui-css')) return;
     var st = doc.createElement('style');
@@ -4060,7 +4545,7 @@ var LogUI = (function () {
 
   function render(snap) {
     var t = snap.totals || {}, st = snap.stats || {}, dl = snap.daily || {}, ach = snap.achievements || [];
-    var N = 90; try { N = Save.N || 90; } catch (e) {}
+    var N = plates();
     var got = 0, i;
     for (i = 0; i < ach.length; i++) if (ach[i].unlocked) got++;
     var hit = st.launches > 0 ? Math.round(100 * (st.hitRate || 0)) + '<i>%</i>' : '&mdash;';
@@ -4078,7 +4563,9 @@ var LogUI = (function () {
       row('Distance flown', fmt(st.distance || 0), 'u') +
       row('Near misses', fmt(st.nearMiss || 0)) +
       row('Needles threaded', fmt(st.threads || 0)) +
-      row('Gates passed', fmt(st.warps || 0)) + '</ul>';
+      row('Gates passed', fmt(st.warps || 0)) +
+      row('Time in nebulae', secs(st.fog), 's') +
+      row('Beam catches', fmt(st.beams || 0)) + '</ul>';
     if (!(st.launches > 0)) h += '<p class="lg-note">Nothing observed as yet. The log fills as you fly.</p>';
     h += '</section>';
 
@@ -4261,8 +4748,8 @@ var LogUI = (function () {
     step: 0,
     frozen: false,                    // the astronomer holds the heavens: step does not advance while aiming
     hint: { on: false, used: false, pts: new Float32Array(K.HINT_MAX * 2), n: 0, t0: 0 },
-    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole card is open
-    card: null,                       // null | 'intro' | 'fragments' | 'wormholes': a popup card is open (aim blocked, clock held)
+    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole / nebula / pulsar card is open
+    card: null,                       // null | 'intro' | 'fragments' | 'wormholes' | 'nebulae' | 'pulsars': a popup card is open (aim blocked, clock held)
     phase: 'aim',
     aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
     predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
@@ -4290,7 +4777,11 @@ var LogUI = (function () {
 
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
-  function hasWormhole(lv) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].kind === 'wormhole') return true; return false; }
+  function hasKind(lv, kind) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i] && lv.bodies[i].kind === kind) return true; return false; }
+  function hasWormhole(lv) { return hasKind(lv, 'wormhole'); }
+  // popup cards that point at bodies of one kind (shown once, the first time a plate holds one), in queue order
+  var BODY_CARDS = { wormholes: 'wormhole', nebulae: 'nebula', pulsars: 'pulsar' };
+  var POP_NAMES = ['intro', 'fragments', 'wormholes', 'nebulae', 'pulsars'];
   // every wormhole mouth names a twin that is a different mouth naming it back (Physics.stepSim would throw otherwise)
   function wormholesMutual(lv) {
     var bs = lv.bodies;
@@ -4302,7 +4793,8 @@ var LogUI = (function () {
     }
     return true;
   }
-  function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
+  // anything that changes with time: bodies on rails, and pulsar beams (they turn even though the star stands still)
+  function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit || lv.bodies[i].beam) return true; return false; }
 
   // ------------------------------------------------------------------ timers (in physics steps)
   function logEvent(name, data) { if (state.custom) return; try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
@@ -4413,6 +4905,17 @@ var LogUI = (function () {
     try { if (typeof Sound !== 'undefined' && typeof Sound.warp === 'function') Sound.warp(); } catch (e) {}
     vibrate(14);
   }
+  // Entering a nebula: a puff of dust where the probe went in and a soft hush. A pulsar beam catch: a flash and a click, a short buzz.
+  // Both mark the probe's position (the event is pushed by the step that ends there). Every call is guarded.
+  function onFog(ev, s) {
+    try { if (typeof Render !== 'undefined' && typeof Render.fog === 'function') Render.fog(s.x, s.y); } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.fog === 'function') Sound.fog(); } catch (e) {}
+  }
+  function onBeam(ev, s) {
+    try { if (typeof Render !== 'undefined' && typeof Render.beam === 'function') Render.beam(s.x, s.y); } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.beam === 'function') Sound.beam(); } catch (e) {}
+    vibrate([6, 40, 6]);                                     // a double pulse, like the star
+  }
 
   function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
 
@@ -4488,6 +4991,8 @@ var LogUI = (function () {
           var ev = s.events[i];
           if (ev.type === 'frag') onFrag(ev.i);
           else if (ev.type === 'warp') onWarp(ev, s);
+          else if (ev.type === 'fog') onFog(ev, s);
+          else if (ev.type === 'beam') onBeam(ev, s);
         }
         s.events.length = 0;
       }
@@ -4725,7 +5230,14 @@ var LogUI = (function () {
     }
     var rest = [];
     for (i = 0; i < CAMP.length; i++) if (!used[i]) rest.push(i);
-    if (rest.length) { html += '<div class="vol-rule"></div><div class="grid">'; for (i = 0; i < rest.length; i++) html += plateHtml(rest[i]); html += '</div>'; }
+    // plates no volume names (a campaign longer than Levels.VOLUMES): thirty to a volume, numbered by position
+    for (i = 0; i < rest.length;) {
+      var g = Math.floor(rest[i] / 30), grp = [];
+      while (i < rest.length && Math.floor(rest[i] / 30) === g) grp.push(rest[i++]);
+      html += volHead({ name: 'Volume ' + toRoman(g + 1) }, grp[0], grp[grp.length - 1]) + '<div class="grid">';
+      for (var gi = 0; gi < grp.length; gi++) html += plateHtml(grp[gi]);
+      html += '</div>';
+    }
     elGrid.innerHTML = html;
     cards = [];
     var bs = elGrid.querySelectorAll('.plate');
@@ -4817,13 +5329,13 @@ var LogUI = (function () {
     else elNote.classList.remove('on');
   }
 
-  // ---- popup cards (To Observe / Comet Fragments / Wormholes): atlas plates that hold the clock while open
+  // ---- popup cards (To Observe / Comet Fragments / Wormholes / Nebulae / Pulsars): atlas plates that hold the clock while open
   function levelFrags() { return (state.level && state.level.frags && state.level.frags.length) || 0; }
   function popupSafe() { return state.screen === 'play' && state.phase !== 'flight' && !cardVisible(); }
   function autoNext() {
     if (!Save.seen('intro')) return 'intro';
     if (levelFrags() && !Save.seen('fragments')) return 'fragments';
-    if (hasWormhole(state.level) && !Save.seen('wormholes')) return 'wormholes';
+    for (var k in BODY_CARDS) if (hasKind(state.level, BODY_CARDS[k]) && !Save.seen(k)) return k;
     return null;
   }
   function autoCards() { var n = autoNext(); if (n) requestPopup(n); }
@@ -4833,7 +5345,7 @@ var LogUI = (function () {
     if (n) showPopup(n, false);
   }
   function requestPopup(name) {
-    if (name !== 'intro' && name !== 'fragments' && name !== 'wormholes') return null;
+    if (POP_NAMES.indexOf(name) < 0) return null;
     if (state.card || !popupSafe()) {
       if (state.card !== name && popQueue.indexOf(name) < 0) popQueue.push(name);
       return 'queued';
@@ -4856,31 +5368,42 @@ var LogUI = (function () {
         '<p class="pop-text">Wormholes come in pairs, marked with the same Greek letter. Fly into one and you leave by its twin at the same speed. A mark such as <span class="m">\u21bb 90\u00b0</span> means your heading turns that far as you pass through. They pull on nothing and do no harm.</p>' +
         '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
     }
+    if (name === 'nebulae') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Nebulae</h3><div class="rule"></div>' +
+        '<p class="pop-text">Nebulae are clouds of dust and gas. They pull on nothing and do no harm, but while you are inside one you lose speed, and a slower probe bends more sharply round everything else.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
+    if (name === 'pulsars') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Pulsars</h3><div class="rule"></div>' +
+        '<p class="pop-text">A pulsar is a spinning neutron star. It pulls like a small planet and is just as solid. Two beams sweep round it, and a beam that catches the probe pushes it straight away from the star, so when you launch matters as much as where.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
     return '<p class="kicker">Notice</p><h3 class="c-title">Comet Fragments</h3><div class="rule"></div>' +
       '<p class="pop-text">Small brass comets drift on this plate. Fly through one to collect it. They are optional, but a course that gathers them is a harder one. Fragments you collect stay collected across your launches on this plate.</p>' +
       '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
   }
-  // world points a card rings while it is open; wormhole mouths carry their ring radius (mouth.r + 14) and follow their rails
+  // world points a card rings while it is open; bodies carry their ring radius (mouth.r + 14, nebula.r + 10, 60 round a pulsar) and follow their rails
   var _mp = { x: 0, y: 0 };
   function spotlightFor(name) {
     var lv = state.level, out = [], i;
     if (name === 'fragments') {
       var f = lv && lv.frags;
       if (f && f.length) for (i = 0; i < f.length; i++) out.push({ x: f[i].x, y: f[i].y });
-    } else if (name === 'wormholes' && lv) {
+    } else if (BODY_CARDS[name] && lv) {
+      var kind = BODY_CARDS[name];
       for (i = 0; i < lv.bodies.length; i++) {
         var b = lv.bodies[i];
-        if (b.kind !== 'wormhole') continue;
+        if (!b || b.kind !== kind) continue;
         Physics.bodyPos(b, state.step * K.DT, _mp);
-        out.push({ x: _mp.x, y: _mp.y, r: b.r + 14, body: i });
+        out.push({ x: _mp.x, y: _mp.y, r: kind === 'wormhole' ? b.r + 14 : kind === 'nebula' ? b.r + 10 : 60, body: i });
       }
     }
     return out.length ? out : null;
   }
-  // mouths on rails move with state.step (held while a card is open, but keep the rings honest anyway)
+  // mouths and clouds on rails move with state.step (held while a card is open, but keep the rings honest anyway)
   function refreshSpotlight() {
     var sp = state.spotlight, lv = state.level;
-    if (state.card !== 'wormholes' || !sp || !lv) return;
+    if (!BODY_CARDS[state.card] || !sp || !lv) return;
     for (var i = 0; i < sp.length; i++) {
       var b = lv.bodies[sp[i].body];
       if (!b || !b.orbit) continue;
@@ -5067,19 +5590,22 @@ var LogUI = (function () {
     if (!canHint()) return false;
     var lv = state.level, sol = hintSol(lv), t0 = sol.t0Step | 0, h = state.hint;
     // Fly the course once, noting the step at which the last fragment is gathered.
-    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, i;
+    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, beams = 0, lastBeam = 0, i;
     while (sim.status === 'flying' && sim.step < K.MAX_STEPS) {
       Physics.stepSim(sim, lv);
       hintBuf[2 * total] = sim.x; hintBuf[2 * total + 1] = sim.y; total++;      // a wormhole passage is one long jump between two consecutive points
       var c = 0; for (i = 0; i < sim.collected.length; i++) c += sim.collected[i];
       if (c > got) { got = c; lastFrag = total; }
       if (sim.warps > warps) { warps = sim.warps; lastWarp = total; }
+      if (sim.beams > beams) { beams = sim.beams; lastBeam = total; }       // undefined on an older physics: never true
     }
     // The line is the first 55% of the course; on a full-clear course it runs on to just past the last fragment, and on a course through
-    // wormholes to just past the last passage, so the exit's heading is shown (never the final approach: at most 92%).
+    // wormholes (or pushed by pulsar beams) to just past the last passage / catch, so the new heading is shown (never the final approach:
+    // at most 92%). Nebulae and beams never jump, so their paths need nothing else; sim.events piles up here unread and is dropped.
     var n = Math.floor(0.55 * total);
     if (got) n = Math.max(n, Math.min(lastFrag + 24, Math.floor(0.92 * total)));
     if (warps) n = Math.max(n, Math.min(lastWarp + 24, Math.floor(0.92 * total)));
+    if (beams) n = Math.max(n, Math.min(lastBeam + 24, Math.floor(0.92 * total)));
     n = Math.min(K.HINT_MAX, n);
     h.pts.set(hintBuf.subarray(0, 2 * n));
     h.n = n; h.on = true; h.used = true; h.t0 = nowMs();
@@ -5096,6 +5622,8 @@ var LogUI = (function () {
     $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : (state.mode === 'daily' ? 'Return to the Title' : 'Return to the Atlas');
     var ok = canHint(), hb = $('sheet-hint'), why = $('sheet-hint-why'), wt = ok ? '' : hintWhy();
     var wb = $('sheet-worm'); if (wb) wb.hidden = !hasWormhole(state.level);       // "About wormholes" only on plates that have one
+    var nb = $('sheet-neb'); if (nb) nb.hidden = !hasKind(state.level, 'nebula');   // likewise "About nebulae" / "About pulsars"
+    var pb = $('sheet-pul'); if (pb) pb.hidden = !hasKind(state.level, 'pulsar');
     hb.setAttribute('aria-disabled', String(!ok));
     why.textContent = wt; why.hidden = !wt;
     refreshSoundButtons();
@@ -5149,7 +5677,7 @@ var LogUI = (function () {
         break;
       case 'howto': if (state.paused) showPopup('intro', true); break;
       case 'fragments': if (state.paused) showPopup('fragments', true); break;
-      case 'wormholes': if (state.paused) showPopup('wormholes', true); break;
+      case 'wormholes': case 'nebulae': case 'pulsars': if (state.paused) showPopup(name, true); break;
       case 'pop-ok': closePopup(); break;
       case 'atlas': setScreen(state.mode === 'campaign' ? 'select' : 'title'); break;
       case 'next':
@@ -5409,10 +5937,10 @@ var LogUI = (function () {
     } else {
       left = safe.left + (W - safe.left - safe.right - cw) / 2;
       top = (minTop + maxBottom - ch) / 2;
-      var c = (state.card === 'fragments' || state.card === 'wormholes') ? fragCentroid() : null;
+      var c = (state.card === 'fragments' || BODY_CARDS[state.card]) ? fragCentroid() : null;
       if (c) {
         var mid = (minTop + maxBottom) / 2;
-        if (state.card === 'wormholes') top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths can sit anywhere: the clearest band, away from them
+        if (BODY_CARDS[state.card]) top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths, clouds and pulsars can sit anywhere: the clearest band, away from them
         else if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);     // comets above: card in the lower half
         else top = Math.min(mid - ch, minTop + (mid - minTop - ch) / 2);               // comets below: card in the upper half
       }
@@ -5447,7 +5975,7 @@ var LogUI = (function () {
         else { nudgeIdle = 0; setNudge(false); }
       }
     } else acc = 0;
-    if (state.card === 'wormholes') refreshSpotlight();
+    if (BODY_CARDS[state.card]) refreshSpotlight();
     try { Render.frame(state, t); }
     catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
   }

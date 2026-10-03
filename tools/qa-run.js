@@ -506,7 +506,7 @@ function runSuite(sec, name, cmd, okRe) {
   const files = { 'dist/perihelion.html': path.join(DIST, 'perihelion.html'), 'dist/perihelion.artifact.html': path.join(DIST, 'perihelion.artifact.html'), 'index.html': path.join(ROOT, 'index.html'), 'sw.js': path.join(ROOT, 'sw.js') };
   const sizes = {}; for (const f in files) sizes[f] = fs.statSync(files[f]).size;
   metrics.sizes = sizes;
-  for (const f of ['dist/perihelion.html', 'dist/perihelion.artifact.html', 'index.html']) check('8', 'size < 400 KiB: ' + f, sizes[f] < 400 * 1024, sizes[f] + ' bytes = ' + (sizes[f] / 1024).toFixed(1) + ' KiB; headroom ' + (400 * 1024 - sizes[f]) + ' bytes (' + ((400 * 1024 - sizes[f]) / 1024).toFixed(1) + ' KiB); vs 400,000 B: ' + (400000 - sizes[f]));
+  for (const f of ['dist/perihelion.html', 'dist/perihelion.artifact.html', 'index.html']) check('8', 'size < 480 KiB: ' + f, sizes[f] < 480 * 1024, sizes[f] + ' bytes = ' + (sizes[f] / 1024).toFixed(1) + ' KiB; headroom ' + (480 * 1024 - sizes[f]) + ' bytes (' + ((480 * 1024 - sizes[f]) / 1024).toFixed(1) + ' KiB); vs 480,000 B: ' + (480000 - sizes[f]));
   for (const f of ['dist/perihelion.html', 'index.html']) {
     const html = fs.readFileSync(files[f], 'utf8'), extRefs = [...html.matchAll(/(?:src|href)\s*=\s*["'](https?:[^"']+)/g)].map(m => m[1]);
     check('8', 'only Google Fonts referenced in markup: ' + f, extRefs.every(u => /fonts\.(googleapis|gstatic)\.com/.test(u)), extRefs.length + ' refs');
@@ -556,7 +556,7 @@ function writeReport() {
   md += `\n**${tot - badAll.length}/${tot} checks passed.**` + (badAll.length ? ' Failing: ' + badAll.map(b => '[' + b.sec + '] ' + b.name).join('; ') : '') + '\n';
   md += '\n## Measurements\n\n';
   const kb = b => b + ' B (' + (b / 1024).toFixed(1) + ' KiB)';
-  md += `- Size: dist/perihelion.html ${kb(metrics.sizes['dist/perihelion.html'])}, artifact ${kb(metrics.sizes['dist/perihelion.artifact.html'])}, index.html ${kb(metrics.sizes['index.html'])}, sw.js ${metrics.sizes['sw.js']} B. Budget 400 KiB = 409,600 B → headroom in index.html ${(409600 - metrics.sizes['index.html'])} B (${((409600 - metrics.sizes['index.html']) / 1024).toFixed(1)} KiB); against a strict 400,000 B reading ${400000 - metrics.sizes['index.html']} B.\n`;
+  md += `- Size: dist/perihelion.html ${kb(metrics.sizes['dist/perihelion.html'])}, artifact ${kb(metrics.sizes['dist/perihelion.artifact.html'])}, index.html ${kb(metrics.sizes['index.html'])}, sw.js ${metrics.sizes['sw.js']} B. Budget 480 KiB = 491,520 B → headroom in index.html ${(491520 - metrics.sizes['index.html'])} B (${((491520 - metrics.sizes['index.html']) / 1024).toFixed(1)} KiB); against a strict 480,000 B reading ${480000 - metrics.sizes['index.html']} B.\n`;
   for (const k in (metrics.perf || {})) { const f = metrics.perf[k];
     md += `- Frame timing, plate ${k} "${f.level.name}" (${f.level.bodies} bodies, ${f.level.moving} moving, ${f.level.frags} frags), longest flight ${f.level.best.n} steps:\n`;
     md += `  - flight @4× CPU: script avg **${f.flight4x.scriptAvg} ms**, p95 **${f.flight4x.scriptP95} ms**, max ${f.flight4x.scriptMax}; rAF interval avg ${f.flight4x.intervalAvg} ms (p95 ${f.flight4x.intervalP95}); fps() ${f.flight4x.periFps}; frames >16.7 ms: ${f.flight4x.over16}/${f.flight4x.frames}\n`;

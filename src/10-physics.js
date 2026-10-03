@@ -5,8 +5,12 @@
    body collisions (per body: blackhole capture, then crash) -> target -> bounds -> timeout (K.MAX_STEPS).
    Gravity is softened Newtonian: a = mu*d / (|d|^2 + EPS2)^1.5 (mu < 0 = repulsor).
    DETERMINISM RULE: numeric behaviour is FROZEN (baked levels + solutions depend on it; see
-   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3) are a pure addition: a separate branch that never runs for
-   the older kinds, so every older flight is bit-identical. Time is ALWAYS abs*DT from an integer step counter, never accumulated.
+   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3), nebulae (kind 'nebula') and pulsars (kind 'pulsar', both v4)
+   are pure additions: separate branches that never run for the older kinds, so every older flight is bit-identical.
+   Nebula: inert to gravity (mu 0) and harmless; while the probe centre is inside (start-of-step positions, like gravity) the velocity
+   just updated by gravity is multiplied by (1 - drag*DT) before the position update: a dust cloud that bleeds speed.
+   Pulsar: a crashable body with ordinary gravity plus two opposite beams at angle beam.phase + beam.omega*t; a probe within beam.reach
+   of the centre and inside a beam (half-width beam.half radians) is pushed straight outward by beam.push (units/s^2), in accel(). Time is ALWAYS abs*DT from an integer step counter, never accumulated.
    predict/simulate and the live flight run the very same createSim + stepSim, so a predicted point is
    bit-identical (===) to the live probe at that step. Never reorder float ops here; `node tools/physics-test.js`
    must stay green. Guards for bad input (NaN/Infinity) only change results for non-finite values. */
@@ -26,6 +30,15 @@ var Physics = (function () {
     return out;
   }
 
+  // Pulsar beams: is the offset (dx, dy) from the pulsar centre inside one of its two opposite beams at time t? No atan2: the beam axis
+  // u = (cos, sin)(phase + omega*t); inside when |d x u| < |d . u| * tan(half) and |d| < reach.
+  function inBeam(bm, dx, dy, t) {
+    var d2 = dx * dx + dy * dy;
+    if (!(d2 < bm.reach * bm.reach) || d2 < 1e-9) return false;
+    var a = bm.phase + bm.omega * t, ux = cos(a), uy = sin(a), al = dx * ux + dy * uy, pe = dx * uy - dy * ux;
+    return (pe < 0 ? -pe : pe) < (al < 0 ? -al : al) * Math.tan(bm.half);
+  }
+
   var _p = { x: 0, y: 0 };
   // Softened Newtonian gravity: a = mu * d / (|d|^2 + eps^2)^(3/2). Negative mu = repulsor, mu = 0 = inert.
   function accel(level, x, y, t, out) {
@@ -37,6 +50,7 @@ var Physics = (function () {
       var d2 = dx * dx + dy * dy + e2;
       var inv = b.mu / (d2 * sqrt(d2));
       ax += dx * inv; ay += dy * inv;
+      if (b.beam && inBeam(b.beam, -dx, -dy, t)) { var bl = sqrt(dx * dx + dy * dy), bp = b.beam.push / bl; ax -= dx * bp; ay -= dy * bp; }
     }
     out.x = ax; out.y = ay;
     return out;
@@ -53,6 +67,11 @@ var Physics = (function () {
     return { cancel: false, vx: dx * s, vy: dy * s, power: power };
   }
 
+  function hasFx(level) {
+    for (var i = 0, bs = level.bodies; i < bs.length; i++) if (bs[i].kind === 'nebula' || bs[i].beam) return true;
+    return false;
+  }
+
   function createSim(level, vx, vy, t0Step) {
     return {
       x: level.probe.x, y: level.probe.y, vx: vx, vy: vy,
@@ -63,8 +82,13 @@ var Physics = (function () {
       minDist: Infinity,                // closest approach to target centre
       dist: 0,                          // path length travelled so far, in units
       warps: 0,                         // wormhole passages so far
+      fog: 0,                           // steps spent inside a nebula
+      beams: 0,                         // pulsar beam crossings (entries) so far
+      inFog: -1, inBeam: -1,            // body index of the nebula / pulsar beam the probe is in now (-1 = none)
+      fx: hasFx(level),                 // the level has a nebula or a pulsar beam (else stepSim skips that loop entirely)
       minGap: Infinity,                 // closest approach to any non-repulsor body SURFACE (within 60 u), for 'near miss' stats
-      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} pushed as they happen; consumer may clear
+      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} / {type:'fog', i, step} / {type:'beam', i, step}
+                                        // pushed as they happen (fog/beam on entering); consumer may clear
     };
   }
 
@@ -74,10 +98,26 @@ var Physics = (function () {
     if (sim.status !== 'flying') return sim.status;
     accel(level, sim.x, sim.y, sim.abs * DT, _a);
     sim.vx += _a.x * DT; sim.vy += _a.y * DT;
+    // v4: nebula drag and beam bookkeeping (start-of-step positions, like gravity). Only nebulae and pulsars do anything here.
+    var bs0 = level.bodies, fog = -1, beam = -1, t0 = sim.abs * DT;
+    if (sim.fx) for (var k = 0; k < bs0.length; k++) {
+      var c = bs0[k];
+      if (c.kind === 'nebula') {
+        bodyPos(c, t0, _q);
+        var nx = sim.x - _q.x, ny = sim.y - _q.y;
+        if (nx * nx + ny * ny < c.r * c.r) { var f = 1 - c.drag * DT; sim.vx *= f; sim.vy *= f; if (fog < 0) fog = k; }
+      } else if (c.beam && beam < 0) {
+        bodyPos(c, t0, _q);
+        if (inBeam(c.beam, sim.x - _q.x, sim.y - _q.y, t0)) beam = k;
+      }
+    }
     sim.x += sim.vx * DT; sim.y += sim.vy * DT;
     sim.abs++; sim.step++;
     sim.dist += sqrt(sim.vx * sim.vx + sim.vy * sim.vy) * DT;
     var t = sim.abs * DT, x = sim.x, y = sim.y, i, dx, dy, pr = C.PROBE_R, fr2 = C.FRAG_R * C.FRAG_R;
+    if (fog >= 0) { sim.fog++; if (sim.inFog < 0) sim.events.push({ type: 'fog', i: fog, step: sim.step }); }
+    if (beam >= 0 && sim.inBeam < 0) { sim.beams++; sim.events.push({ type: 'beam', i: beam, step: sim.step }); }
+    sim.inFog = fog; sim.inBeam = beam;
 
     var fr = level.frags, got = sim.collected;
     if (fr) for (i = 0; i < fr.length; i++) {
@@ -92,6 +132,7 @@ var Physics = (function () {
       bodyPos(b, t, _q);
       dx = _q.x - x; dy = _q.y - y;
       var d2 = dx * dx + dy * dy;
+      if (b.kind === 'nebula') continue;   // a dust cloud: no surface, no harm, not a near miss
       if (b.kind === 'wormhole') {
         // Mouth: inert to gravity (mu 0) and harmless. Entering it (centre within r) leaves by the twin b.pair, speed kept, velocity
         // turned by b.turn (radians), placed just outside the twin's mouth along the new heading so it cannot re-enter at once.
@@ -198,7 +239,7 @@ var Physics = (function () {
     });
     chk('fragment events once', function () {
       var l = L(1450, [], fr3), s = createSim(l, 0, -100), e = [];
-      while (stepSim(s, l) === 'flying' && s.step < 900) { e = e.concat(s.events); s.events.length = 0; }
+      while (stepSim(s, l) === 'flying') { e = e.concat(s.events); s.events.length = 0; }
       return e.length === 3 && e[0].i === 0 && e[1].i === 1 && e[2].i === 2 && s.collected.join() === '1,1,1' || 'ev ' + e.length;
     });
     chk('rails + integrator order', function () {
@@ -236,6 +277,41 @@ var Physics = (function () {
       if (q.warps !== 1 || Math.abs(Math.hypot(q.x - g.x, q.y - g.y) - (30 + C.WARP_GAP)) > 1e-9) return 'moving mouth exit';
       var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withW = L(1420, [B(330, 780, 70, 2.4e7), W(100, 100, 30, 2), W(800, 100, 30, 1)]);
       return same(S(plain, 90, -400), S(withW, 90, -400)) || 'an unrelated wormhole pair changed a flight';
+    });
+    function Nb(x, y, r, drag, orb) { return { kind: 'nebula', x: x, y: y, r: r, mu: 0, orbit: orb || null, drag: drag }; }
+    function Pu(x, y, r, mu, om, ph, half, reach, push) { return { kind: 'pulsar', x: x, y: y, r: r, mu: mu, orbit: null, beam: { omega: om, phase: ph, half: half, reach: reach, push: push } }; }
+    chk('nebula: drag factor inside only, harmless, fog count + one event, predict === simulate, far nebula inert', function () {
+      var l = L(1400, [Nb(450, 1000, 120, 0.5)]), s = createSim(l, 0, -300, 0), was = 0, ev = [];
+      while (stepSim(s, l) === 'flying') {
+        var sp = speed(s); ev = ev.concat(s.events); s.events.length = 0;
+        if (s.inFog >= 0 && was && Math.abs(sp - was * (1 - 0.5 * DT)) > 1e-9) return 'factor @' + s.step;
+        if (s.inFog < 0 && was && Math.abs(sp - was) > 1e-9) return 'drag outside @' + s.step;
+        was = sp;
+      }
+      if (s.status !== 'hit' || s.minGap !== Infinity || s.hitBody !== -1) return 'status ' + s.status + ' ' + s.minGap;
+      if (ev.length !== 1 || ev[0].type !== 'fog' || ev[0].i !== 0 || s.fog < 50 || s.fog > 200) return 'fog ' + s.fog + ' ev ' + ev.length;
+      var pp = new Float64Array(2 * N), f2 = new Float32Array(2 * Q), a2 = S(l, 0, -300, 0, N, pp), b2 = predict(l, 0, -300, 0, f2);
+      for (var i = 0; i < b2.n; i++) if (f2[2 * i] !== Math.fround(pp[2 * i])) return 'pred@' + i;
+      var mv = L(1400, [Nb(450, 1000, 90, 0.6, { cx: 450, cy: 1000, rad: 60, omega: 1, phase: 0 })]), m2 = S(mv, 0, -300, 0);
+      if (m2.fog < 1 || m2.status !== 'hit') return 'moving nebula';
+      var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withN = L(1420, [B(330, 780, 70, 2.4e7), Nb(800, 100, 60, 3)]);
+      return same(S(plain, 90, -400), S(withN, 90, -400)) || 'a far nebula changed a flight';
+    });
+    chk('pulsar: gravity like a planet, beams push outward, crash on contact, beam events, predict === simulate', function () {
+      var pl = L(1420, [B(330, 780, 14, 2e7)]), pu = L(1420, [Pu(330, 780, 14, 2e7, 1, 0, 0.15, 500, 0)]);
+      if (!same(S(pl, 90, -400, 3), S(pu, 90, -400, 3))) return 'push 0 is not a planet';
+      // a beam fixed along +y (phase pi/2, omega 0) under the probe's straight path from (450,1400) up: pushed along -y? no: the probe flies
+      // up the beam axis away from the pulsar at (450,1500) -> it speeds up while inside the beam, then coasts
+      var up = L(1400, [Pu(450, 1560, 10, 0, 0, Math.PI / 2, 0.2, 400, 900)]), q = createSim(up, 0, -200, 0);
+      stepSim(q, up); if (!(q.vy < -200) || q.beams !== 1 || q.events[0].type !== 'beam') return 'push ' + q.vy + ' beams ' + q.beams;
+      while (stepSim(q, up) === 'flying' && q.inBeam >= 0);
+      var v1 = q.vy; stepSim(q, up); if (q.vy !== v1 || q.beams !== 1) return 'outside the reach ' + q.vy;
+      var side = L(1400, [Pu(450, 1560, 10, 0, 0, 0, 0.2, 400, 900)]), r = S(side, 0, -200, 0); if (r.beams !== 0) return 'beam off-axis';
+      var sw = L(1400, [Pu(700, 1000, 12, 1e6, 2.5, 0, 0.12, 600, 1200)]), p1 = new Float64Array(2 * N), f1 = new Float32Array(2 * Q), a1 = S(sw, 20, -350, 77, N, p1), b1 = predict(sw, 20, -350, 77, f1);
+      for (var i = 0; i < b1.n; i++) if (f1[2 * i] !== Math.fround(p1[2 * i])) return 'pred@' + i;
+      if (a1.beams < 1) return 'no sweep crossing';
+      var hitP = S(L(1400, [Pu(450, 1000, 20, 1e6, 0, 0, 0.1, 300, 500)]), 0, -300, 0);
+      return hitP.status === 'crash' && hitP.hitBody === 0 && hitP.minGap < C.PROBE_R || 'crash ' + hitP.status;
     });
     for (var i = 0, ok = true; i < cks.length; i++) ok = ok && cks[i].ok;
     return { ok: ok, checks: cks };

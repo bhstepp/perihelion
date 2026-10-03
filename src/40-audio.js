@@ -253,6 +253,48 @@ var Sound = (function () {
     } catch (e) {}
   }
 
+  // ---- fog: entering a nebula (~0.5 s). A low-passed hush of noise whose filter closes as the probe bleeds speed;
+  //      quieter than warp, slow attack and an exponential tail so there are no clicks. Re-entries closer than 0.15 s are folded. ----
+  var fogLast = -1;
+  function fog() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.01, D = 0.5;
+      if (fogLast >= 0 && t - fogLast < 0.15) return;
+      fogLast = t;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5;
+      lp.frequency.setValueAtTime(1300, t);
+      lp.frequency.exponentialRampToValueAtTime(320, t + D);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.06, t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      src.connect(lp); lp.connect(g); g.connect(master);
+      src.start(t, Math.random() * 0.9); src.stop(t + D + 0.03);
+    } catch (e) {}
+  }
+
+  // ---- beam: a pulsar beam catches the probe (~0.12 s). A bright, distant click: a high sine with a faint inharmonic partial,
+  //      3 ms attack and a quick exponential decay. Catches closer than 60 ms are folded. ----
+  var beamLast = -1;
+  function beam() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.005, D = 0.12;
+      if (beamLast >= 0 && t - beamLast < 0.06) return;
+      beamLast = t;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(2350, t); o.frequency.exponentialRampToValueAtTime(1900, t + D);
+      env(g, t, 0.075, 0.003, D);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + D + 0.03);
+      var o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o2.type = 'sine'; o2.frequency.setValueAtTime(2350 * 2.76, t);
+      env(g2, t, 0.025, 0.002, D * 0.5);
+      o2.connect(g2); g2.connect(master); o2.start(t); o2.stop(t + D * 0.5 + 0.03);
+    } catch (e) {}
+  }
+
   // ---- launch: soft whoosh, bandpassed noise sweep ----
   function launch(power) {
     if (!ready()) return;
@@ -273,7 +315,7 @@ var Sound = (function () {
   return {
     unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
     droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
-    chime: chime, ach: ach, warp: warp, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    chime: chime, ach: ach, warp: warp, fog: fog, beam: beam, thump: thump, pluck: pluck, tick: tick, launch: launch,
     get state() { return ctx ? ctx.state : 'none'; }
   };
 })();

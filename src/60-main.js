@@ -34,8 +34,8 @@
     step: 0,
     frozen: false,                    // the astronomer holds the heavens: step does not advance while aiming
     hint: { on: false, used: false, pts: new Float32Array(K.HINT_MAX * 2), n: 0, t0: 0 },
-    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole card is open
-    card: null,                       // null | 'intro' | 'fragments' | 'wormholes': a popup card is open (aim blocked, clock held)
+    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole / nebula / pulsar card is open
+    card: null,                       // null | 'intro' | 'fragments' | 'wormholes' | 'nebulae' | 'pulsars': a popup card is open (aim blocked, clock held)
     phase: 'aim',
     aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
     predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
@@ -63,7 +63,11 @@
 
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
-  function hasWormhole(lv) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].kind === 'wormhole') return true; return false; }
+  function hasKind(lv, kind) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i] && lv.bodies[i].kind === kind) return true; return false; }
+  function hasWormhole(lv) { return hasKind(lv, 'wormhole'); }
+  // popup cards that point at bodies of one kind (shown once, the first time a plate holds one), in queue order
+  var BODY_CARDS = { wormholes: 'wormhole', nebulae: 'nebula', pulsars: 'pulsar' };
+  var POP_NAMES = ['intro', 'fragments', 'wormholes', 'nebulae', 'pulsars'];
   // every wormhole mouth names a twin that is a different mouth naming it back (Physics.stepSim would throw otherwise)
   function wormholesMutual(lv) {
     var bs = lv.bodies;
@@ -75,7 +79,8 @@
     }
     return true;
   }
-  function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
+  // anything that changes with time: bodies on rails, and pulsar beams (they turn even though the star stands still)
+  function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit || lv.bodies[i].beam) return true; return false; }
 
   // ------------------------------------------------------------------ timers (in physics steps)
   function logEvent(name, data) { if (state.custom) return; try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
@@ -186,6 +191,17 @@
     try { if (typeof Sound !== 'undefined' && typeof Sound.warp === 'function') Sound.warp(); } catch (e) {}
     vibrate(14);
   }
+  // Entering a nebula: a puff of dust where the probe went in and a soft hush. A pulsar beam catch: a flash and a click, a short buzz.
+  // Both mark the probe's position (the event is pushed by the step that ends there). Every call is guarded.
+  function onFog(ev, s) {
+    try { if (typeof Render !== 'undefined' && typeof Render.fog === 'function') Render.fog(s.x, s.y); } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.fog === 'function') Sound.fog(); } catch (e) {}
+  }
+  function onBeam(ev, s) {
+    try { if (typeof Render !== 'undefined' && typeof Render.beam === 'function') Render.beam(s.x, s.y); } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.beam === 'function') Sound.beam(); } catch (e) {}
+    vibrate([6, 40, 6]);                                     // a double pulse, like the star
+  }
 
   function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
 
@@ -261,6 +277,8 @@
           var ev = s.events[i];
           if (ev.type === 'frag') onFrag(ev.i);
           else if (ev.type === 'warp') onWarp(ev, s);
+          else if (ev.type === 'fog') onFog(ev, s);
+          else if (ev.type === 'beam') onBeam(ev, s);
         }
         s.events.length = 0;
       }
@@ -498,7 +516,14 @@
     }
     var rest = [];
     for (i = 0; i < CAMP.length; i++) if (!used[i]) rest.push(i);
-    if (rest.length) { html += '<div class="vol-rule"></div><div class="grid">'; for (i = 0; i < rest.length; i++) html += plateHtml(rest[i]); html += '</div>'; }
+    // plates no volume names (a campaign longer than Levels.VOLUMES): thirty to a volume, numbered by position
+    for (i = 0; i < rest.length;) {
+      var g = Math.floor(rest[i] / 30), grp = [];
+      while (i < rest.length && Math.floor(rest[i] / 30) === g) grp.push(rest[i++]);
+      html += volHead({ name: 'Volume ' + toRoman(g + 1) }, grp[0], grp[grp.length - 1]) + '<div class="grid">';
+      for (var gi = 0; gi < grp.length; gi++) html += plateHtml(grp[gi]);
+      html += '</div>';
+    }
     elGrid.innerHTML = html;
     cards = [];
     var bs = elGrid.querySelectorAll('.plate');
@@ -590,13 +615,13 @@
     else elNote.classList.remove('on');
   }
 
-  // ---- popup cards (To Observe / Comet Fragments / Wormholes): atlas plates that hold the clock while open
+  // ---- popup cards (To Observe / Comet Fragments / Wormholes / Nebulae / Pulsars): atlas plates that hold the clock while open
   function levelFrags() { return (state.level && state.level.frags && state.level.frags.length) || 0; }
   function popupSafe() { return state.screen === 'play' && state.phase !== 'flight' && !cardVisible(); }
   function autoNext() {
     if (!Save.seen('intro')) return 'intro';
     if (levelFrags() && !Save.seen('fragments')) return 'fragments';
-    if (hasWormhole(state.level) && !Save.seen('wormholes')) return 'wormholes';
+    for (var k in BODY_CARDS) if (hasKind(state.level, BODY_CARDS[k]) && !Save.seen(k)) return k;
     return null;
   }
   function autoCards() { var n = autoNext(); if (n) requestPopup(n); }
@@ -606,7 +631,7 @@
     if (n) showPopup(n, false);
   }
   function requestPopup(name) {
-    if (name !== 'intro' && name !== 'fragments' && name !== 'wormholes') return null;
+    if (POP_NAMES.indexOf(name) < 0) return null;
     if (state.card || !popupSafe()) {
       if (state.card !== name && popQueue.indexOf(name) < 0) popQueue.push(name);
       return 'queued';
@@ -629,31 +654,42 @@
         '<p class="pop-text">Wormholes come in pairs, marked with the same Greek letter. Fly into one and you leave by its twin at the same speed. A mark such as <span class="m">\u21bb 90\u00b0</span> means your heading turns that far as you pass through. They pull on nothing and do no harm.</p>' +
         '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
     }
+    if (name === 'nebulae') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Nebulae</h3><div class="rule"></div>' +
+        '<p class="pop-text">Nebulae are clouds of dust and gas. They pull on nothing and do no harm, but while you are inside one you lose speed, and a slower probe bends more sharply round everything else.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
+    if (name === 'pulsars') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Pulsars</h3><div class="rule"></div>' +
+        '<p class="pop-text">A pulsar is a spinning neutron star. It pulls like a small planet and is just as solid. Two beams sweep round it, and a beam that catches the probe pushes it straight away from the star, so when you launch matters as much as where.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
     return '<p class="kicker">Notice</p><h3 class="c-title">Comet Fragments</h3><div class="rule"></div>' +
       '<p class="pop-text">Small brass comets drift on this plate. Fly through one to collect it. They are optional, but a course that gathers them is a harder one. Fragments you collect stay collected across your launches on this plate.</p>' +
       '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
   }
-  // world points a card rings while it is open; wormhole mouths carry their ring radius (mouth.r + 14) and follow their rails
+  // world points a card rings while it is open; bodies carry their ring radius (mouth.r + 14, nebula.r + 10, 60 round a pulsar) and follow their rails
   var _mp = { x: 0, y: 0 };
   function spotlightFor(name) {
     var lv = state.level, out = [], i;
     if (name === 'fragments') {
       var f = lv && lv.frags;
       if (f && f.length) for (i = 0; i < f.length; i++) out.push({ x: f[i].x, y: f[i].y });
-    } else if (name === 'wormholes' && lv) {
+    } else if (BODY_CARDS[name] && lv) {
+      var kind = BODY_CARDS[name];
       for (i = 0; i < lv.bodies.length; i++) {
         var b = lv.bodies[i];
-        if (b.kind !== 'wormhole') continue;
+        if (!b || b.kind !== kind) continue;
         Physics.bodyPos(b, state.step * K.DT, _mp);
-        out.push({ x: _mp.x, y: _mp.y, r: b.r + 14, body: i });
+        out.push({ x: _mp.x, y: _mp.y, r: kind === 'wormhole' ? b.r + 14 : kind === 'nebula' ? b.r + 10 : 60, body: i });
       }
     }
     return out.length ? out : null;
   }
-  // mouths on rails move with state.step (held while a card is open, but keep the rings honest anyway)
+  // mouths and clouds on rails move with state.step (held while a card is open, but keep the rings honest anyway)
   function refreshSpotlight() {
     var sp = state.spotlight, lv = state.level;
-    if (state.card !== 'wormholes' || !sp || !lv) return;
+    if (!BODY_CARDS[state.card] || !sp || !lv) return;
     for (var i = 0; i < sp.length; i++) {
       var b = lv.bodies[sp[i].body];
       if (!b || !b.orbit) continue;
@@ -840,19 +876,22 @@
     if (!canHint()) return false;
     var lv = state.level, sol = hintSol(lv), t0 = sol.t0Step | 0, h = state.hint;
     // Fly the course once, noting the step at which the last fragment is gathered.
-    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, i;
+    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, beams = 0, lastBeam = 0, i;
     while (sim.status === 'flying' && sim.step < K.MAX_STEPS) {
       Physics.stepSim(sim, lv);
       hintBuf[2 * total] = sim.x; hintBuf[2 * total + 1] = sim.y; total++;      // a wormhole passage is one long jump between two consecutive points
       var c = 0; for (i = 0; i < sim.collected.length; i++) c += sim.collected[i];
       if (c > got) { got = c; lastFrag = total; }
       if (sim.warps > warps) { warps = sim.warps; lastWarp = total; }
+      if (sim.beams > beams) { beams = sim.beams; lastBeam = total; }       // undefined on an older physics: never true
     }
     // The line is the first 55% of the course; on a full-clear course it runs on to just past the last fragment, and on a course through
-    // wormholes to just past the last passage, so the exit's heading is shown (never the final approach: at most 92%).
+    // wormholes (or pushed by pulsar beams) to just past the last passage / catch, so the new heading is shown (never the final approach:
+    // at most 92%). Nebulae and beams never jump, so their paths need nothing else; sim.events piles up here unread and is dropped.
     var n = Math.floor(0.55 * total);
     if (got) n = Math.max(n, Math.min(lastFrag + 24, Math.floor(0.92 * total)));
     if (warps) n = Math.max(n, Math.min(lastWarp + 24, Math.floor(0.92 * total)));
+    if (beams) n = Math.max(n, Math.min(lastBeam + 24, Math.floor(0.92 * total)));
     n = Math.min(K.HINT_MAX, n);
     h.pts.set(hintBuf.subarray(0, 2 * n));
     h.n = n; h.on = true; h.used = true; h.t0 = nowMs();
@@ -869,6 +908,8 @@
     $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : (state.mode === 'daily' ? 'Return to the Title' : 'Return to the Atlas');
     var ok = canHint(), hb = $('sheet-hint'), why = $('sheet-hint-why'), wt = ok ? '' : hintWhy();
     var wb = $('sheet-worm'); if (wb) wb.hidden = !hasWormhole(state.level);       // "About wormholes" only on plates that have one
+    var nb = $('sheet-neb'); if (nb) nb.hidden = !hasKind(state.level, 'nebula');   // likewise "About nebulae" / "About pulsars"
+    var pb = $('sheet-pul'); if (pb) pb.hidden = !hasKind(state.level, 'pulsar');
     hb.setAttribute('aria-disabled', String(!ok));
     why.textContent = wt; why.hidden = !wt;
     refreshSoundButtons();
@@ -922,7 +963,7 @@
         break;
       case 'howto': if (state.paused) showPopup('intro', true); break;
       case 'fragments': if (state.paused) showPopup('fragments', true); break;
-      case 'wormholes': if (state.paused) showPopup('wormholes', true); break;
+      case 'wormholes': case 'nebulae': case 'pulsars': if (state.paused) showPopup(name, true); break;
       case 'pop-ok': closePopup(); break;
       case 'atlas': setScreen(state.mode === 'campaign' ? 'select' : 'title'); break;
       case 'next':
@@ -1182,10 +1223,10 @@
     } else {
       left = safe.left + (W - safe.left - safe.right - cw) / 2;
       top = (minTop + maxBottom - ch) / 2;
-      var c = (state.card === 'fragments' || state.card === 'wormholes') ? fragCentroid() : null;
+      var c = (state.card === 'fragments' || BODY_CARDS[state.card]) ? fragCentroid() : null;
       if (c) {
         var mid = (minTop + maxBottom) / 2;
-        if (state.card === 'wormholes') top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths can sit anywhere: the clearest band, away from them
+        if (BODY_CARDS[state.card]) top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths, clouds and pulsars can sit anywhere: the clearest band, away from them
         else if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);     // comets above: card in the lower half
         else top = Math.min(mid - ch, minTop + (mid - minTop - ch) / 2);               // comets below: card in the upper half
       }
@@ -1220,7 +1261,7 @@
         else { nudgeIdle = 0; setNudge(false); }
       }
     } else acc = 0;
-    if (state.card === 'wormholes') refreshSpotlight();
+    if (BODY_CARDS[state.card]) refreshSpotlight();
     try { Render.frame(state, t); }
     catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
   }

@@ -10,13 +10,14 @@ fs.mkdirSync(QA, { recursive: true });
 const S = f => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
 const SCENES = process.argv.slice(2);           // optional filter: scene names
 const FW = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures-wormhole.json'), 'utf8'));   // wormhole plates (v3)
+const FV = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures-v4.json'), 'utf8'));         // nebula / pulsar plates (v4)
 
 const HARNESS = `
 window.H = (function () {
   var cv = document.getElementById('game'), NOW = 5000;
   Render.init(cv);
   Render.resize(390, 844, 2, { top: 47, bottom: 34, left: 0, right: 0 });
-  var FW = window.FW;
+  var FW = window.FW, FV = window.FV;
   function lv(i) { return Levels.CAMPAIGN[i]; }
   function mkState(level) {
     return { screen: 'play', paused: false, mode: 'campaign', level: level, levelIndex: level.index, step: 0, phase: 'aim',
@@ -47,7 +48,7 @@ window.H = (function () {
   function draw(st, now) { Render.frame(st, now === undefined ? NOW : now); }
   function scene(name, opt) {
     opt = opt || {};
-    var level = opt.level || (opt.fw !== undefined ? FW[opt.fw] : lv(opt.i || 0)), st = mkState(level);
+    var level = opt.level || (opt.fv !== undefined ? FV[opt.fv] : opt.fw !== undefined ? FW[opt.fw] : lv(opt.i || 0)), st = mkState(level);
     if (opt.caption) { level = Object.assign({}, level, { caption: opt.caption }); st.level = level; }
     if (opt.pull) pullFor(st, opt.pull[0], opt.pull[1]);
     if (opt.pullDir) pullDir(st, opt.pullDir[0], opt.pullDir[1]);
@@ -60,6 +61,8 @@ window.H = (function () {
     st.step = opt.step || 0;
     if (opt.solPull) pullFor(st, level.solution.vx, level.solution.vy);
     if (opt.hintSol) { st.step = level.solution.t0Step || 0; setHint(st, true, opt.hintT0); }
+    if (opt.spotNeb) st.spotlight = level.bodies.filter(function (b) { return b.kind === 'nebula'; }).map(function (b) { var q = {}; Physics.bodyPos(b, st.step * K.DT, q); return { x: q.x, y: q.y, r: b.r + 10 }; });
+    if (opt.spotPulsar) st.spotlight = level.bodies.filter(function (b) { return b.kind === 'pulsar'; }).map(function (b) { return { x: b.x, y: b.y, r: 60 }; });
     if (opt.spotMouths) st.spotlight = level.bodies.filter(function (b) { return b.kind === 'wormhole'; }).map(function (b) { var q = {}; Physics.bodyPos(b, st.step * K.DT, q); return { x: q.x, y: q.y, r: b.r + 14 }; });
     Render.setLevel(level);
     draw(st); draw(st, NOW + 16);
@@ -83,9 +86,38 @@ window.H = (function () {
     draw(st, now); draw(st, now + (dtMs || 120));
     return st;
   }
+  // v4: a live flight through a fixture; every event is fed to Render as the game does (warp / fog / beam); the scene stops
+  // "extra" steps after the first event of type evType (or after "atStep" steps), then draws dtMs later
+  function v4Flight(fv, evType, extra, dtMs, atStep, launch) {
+    var level = FV[fv], st = mkState(level), sol = launch || level.solution;
+    Render.setLevel(level);
+    st.phase = 'flight'; st.launches = 1; st.sim = Physics.createSim(level, sol.vx, sol.vy, sol.t0Step || 0); st.step = sol.t0Step || 0;
+    var tr = st.trail, cap = tr.pts.length >> 1, px, py, done = atStep || -1, now = NOW, log = [];
+    for (var k = 0; k < 1200 && st.sim.status === 'flying'; k++) {
+      px = st.sim.x; py = st.sim.y;
+      Physics.stepSim(st.sim, level); st.step++;
+      tr.pts[2 * tr.head] = st.sim.x; tr.pts[2 * tr.head + 1] = st.sim.y; tr.head = (tr.head + 1) % cap; tr.n = Math.min(cap, tr.n + 1);
+      st.hud.speed = Physics.speed(st.sim);
+      var ev = st.sim.events;
+      for (var e = 0; e < ev.length; e++) {
+        var E = ev[e]; log.push(E.type + '@' + k);
+        if (E.type === 'frag') st.collected[E.i] = 1;
+        else if (E.type === 'warp') { var qa = {}, qb = {}; Physics.bodyPos(level.bodies[E.from], st.sim.abs * K.DT, qa); Physics.bodyPos(level.bodies[E.to], st.sim.abs * K.DT, qb); Render.warp(qa.x, qa.y, qb.x, qb.y); }
+        else if (E.type === 'fog') Render.fog(st.sim.x, st.sim.y);
+        else if (E.type === 'beam') Render.beam(st.sim.x, st.sim.y);
+        if (E.type === evType && done < 0) done = k + extra;
+      }
+      ev.length = 0;
+      if (k % 2 === 0) { draw(st, now); now += 16.7; }
+      if (k === done) break;
+    }
+    draw(st, now); draw(st, now + (dtMs || 120));
+    st.log = log;
+    return st;
+  }
   // the replay after a hit (the brass re-inking is over unless dtMs is small)
-  function resultScene(fw, dtMs) {
-    var level = FW[fw], st = mkState(level), sol = level.solution, buf = new Float32Array(K.MAX_STEPS * 2 + 4);
+  function resultScene(fw, dtMs, set) {
+    var level = (set || FW)[fw], st = mkState(level), sol = level.solution, buf = new Float32Array(K.MAX_STEPS * 2 + 4);
     var sim = Physics.simulate(level, sol.vx, sol.vy, sol.t0Step || 0, K.MAX_STEPS, buf);
     Render.setLevel(level);
     st.phase = 'result'; st.launches = 1; st.step = sim.step + (sol.t0Step || 0);
@@ -117,7 +149,7 @@ window.H = (function () {
   function clearOverlay() { var ov = document.getElementById('ov'); if (ov) ov.remove(); }
   // 300 frames with prediction + hint + spotlight all on, moving bodies advancing 2 steps per frame
   function timeFrames(opt) {
-    var level = opt.fw !== undefined ? FW[opt.fw] : lv(opt.i), st = mkState(level);
+    var level = opt.fv !== undefined ? FV[opt.fv] : opt.fw !== undefined ? FW[opt.fw] : lv(opt.i), st = mkState(level);
     pullFor(st, level.solution.vx, level.solution.vy); setHint(st, true);
     st.spotlight = (level.frags || []).map(function (f) { return { x: f.x, y: f.y }; });
     st.frozen = !!opt.frozen; st.level = level;
@@ -139,7 +171,13 @@ window.H = (function () {
         var tr = st.trail, cap = tr.pts.length >> 1;
         tr.pts[2 * tr.head] = st.sim.x; tr.pts[2 * tr.head + 1] = st.sim.y; tr.head = (tr.head + 1) % cap; tr.n = Math.min(cap, tr.n + 1);
         st.step = st.sim.step;
-        if (st.sim.events.length) { st.sim.events.length = 0; if (opt.fw !== undefined) Render.warp(st.sim.x - 20, st.sim.y, st.sim.x, st.sim.y); }
+        for (var e = 0; e < st.sim.events.length; e++) {
+          var E = st.sim.events[e];
+          if (E.type === 'warp') Render.warp(st.sim.x - 20, st.sim.y, st.sim.x, st.sim.y);
+          else if (E.type === 'fog') Render.fog(st.sim.x, st.sim.y);
+          else if (E.type === 'beam') Render.beam(st.sim.x, st.sim.y);
+        }
+        st.sim.events.length = 0;
         if (st.sim.status !== 'flying') { st.sim = Physics.createSim(level, level.solution.vx, level.solution.vy, 0); tr.n = 0; }
       } else st.step += 2;
     }
@@ -148,13 +186,15 @@ window.H = (function () {
     return { avg: sum / ts.length, p95: ts[Math.floor(ts.length * 0.95)], max: ts[ts.length - 1] };
   }
   // thumbnails: 90 plates (the campaign cycled; with wormhole plates mixed in when mixWorm)
-  function thumbTime(w, h, dpr, mixWorm) {
-    var list = Levels.CAMPAIGN.slice(), cs = [];
-    if (mixWorm) for (var q = 0; q < list.length; q++) if (q % 3 === 0) list[q] = FW[(q / 3) % FW.length | 0];
-    for (var i = 0; i < 90; i++) { var c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr; cs.push(c); }
+  function thumbTime(w, h, dpr, mixWorm, N) {
+    N = N || 90;
+    var list = [], cs = [];
+    for (var q = 0; q < N; q++) list.push(Levels.CAMPAIGN[q % Levels.CAMPAIGN.length]);
+    if (mixWorm) for (q = 0; q < list.length; q++) if (q % 3 === 0) list[q] = q >= 90 ? FV[(q / 3) % FV.length | 0] : FW[(q / 3) % FW.length | 0];
+    for (var i = 0; i < N; i++) { var c = document.createElement('canvas'); c.width = w * dpr; c.height = h * dpr; cs.push(c); }
     function run() {
       var t = performance.now();
-      for (var i = 0; i < 90; i++) { var g = cs[i].getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); Render.drawThumbnail(g, list[i % list.length], w, h); }
+      for (var i = 0; i < N; i++) { var g = cs[i].getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); Render.drawThumbnail(g, list[i % list.length], w, h); }
       return performance.now() - t;
     }
     var first = run(), best = 1e9; for (var r = 0; r < 3; r++) best = Math.min(best, run());
@@ -179,9 +219,24 @@ window.H = (function () {
     var d = Render.caption;
     return { tested: n, twoRows: twoRows, squeezed: squeezed, worst: worst, daily: { text: d.text, size: d.size, two: d.two, squeeze: d.squeeze } };
   }
-  return { scene: scene, flightScene: flightScene, resultScene: resultScene, thumbGrid: thumbGrid, clearOverlay: clearOverlay, crowd: crowd, FW: FW, timeFrames: timeFrames, thumbTime: thumbTime, captions: captions, draw: draw, mkState: mkState, lv: lv };
+  return { scene: scene, flightScene: flightScene, v4Flight: v4Flight, FV: FV, resultScene: resultScene, thumbGrid: thumbGrid, clearOverlay: clearOverlay, crowd: crowd, FW: FW, timeFrames: timeFrames, thumbTime: thumbTime, captions: captions, draw: draw, mkState: mkState, lv: lv };
 })();
 `;
+
+// The installed Playwright may expect a newer browser build than the one preinstalled: fall back to any headless shell /
+// Chromium found under PLAYWRIGHT_BROWSERS_PATH (never run `playwright install`).
+function launchOpts() {
+  try { if (fs.existsSync(chromium.executablePath())) return {}; } catch (e) {}
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH, cands = [];
+  try {
+    for (const d of fs.readdirSync(base).sort().reverse()) {
+      if (/^chromium_headless_shell-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'headless_shell'), path.join(base, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+      else if (/^chromium-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'chrome'), path.join(base, d, 'chrome-linux64', 'chrome'));
+    }
+  } catch (e) {}
+  for (const c of cands) if (fs.existsSync(c)) return { executablePath: c };
+  return {};
+}
 
 function buildPage() {
   const html = `<!doctype html><html><head><meta charset="utf-8">
@@ -193,6 +248,7 @@ function buildPage() {
 "use strict";
 ${['00-const.js', '10-physics.js', '20-levels.js', '30-render.js'].map(S).join('\n')}
 window.FW = ${JSON.stringify(FW)};
+window.FV = ${JSON.stringify(FV)};
 ${HARNESS}
 </script></body></html>`;
   const f = path.join(QA, 'render-harness.html');
@@ -272,9 +328,39 @@ const WLIST = [
   ['wh-thumbs-big',    'H.thumbGrid(H.FW, 120, 213, 3, 3)', null],
 ];
 
+// nebula / pulsar scenes (v4): fixtures fn1, fn2, fp1, fp2 = indices 0..3
+const VLIST = [
+  ['v4-idle-fn1',      'H.scene("x", { fv: 0 })', null],
+  ['v4-aim-fn1',       'H.scene("x", { fv: 0, solPull: true })', null],
+  ['v4-hint-fn1',      'H.scene("x", { fv: 0, hintSol: true, frozen: true })', null],
+  ['v4-aim-fn2',       'H.scene("x", { fv: 1, solPull: true })', null],
+  ['v4-fn2-t300',      'H.scene("x", { fv: 1, step: 300 })', null],
+  ['v4-fn2-t700',      'H.scene("x", { fv: 1, step: 700 })', null],
+  ['v4-aim-fp1',       'H.scene("x", { fv: 2, solPull: true })', null],
+  ['v4-fp1-t200',      'H.scene("x", { fv: 2, step: 200 })', null],
+  ['v4-aim-fp2',       'H.scene("x", { fv: 3, solPull: true })', null],
+  ['v4-hint-fp2',      'H.scene("x", { fv: 3, hintSol: true, frozen: true })', null],
+  ['v4-spot-fn1',      'H.scene("x", { fv: 0, spotNeb: true })', null],
+  ['v4-spot-fp1',      'H.scene("x", { fv: 2, spotPulsar: true })', null],
+  ['v4-flight-fog',    'H.v4Flight(0, "fog", 6, 90)', null],
+  ['v4-flight-fog-in', 'H.v4Flight(0, "fog", 40, 400)', null],
+  ['v4-flight-fn2',    'H.v4Flight(1, "fog", 8, 120)', null],
+  ['v4-flight-beam',   'H.v4Flight(2, "beam", 3, 60)', null],
+  ['v4-flight-beam2',  'H.v4Flight(2, "beam", 14, 150)', null],
+  ['v4-flight-fp2',    'H.v4Flight(3, "beam", 4, 70)', null],
+  ['v4-result-fp2',    'H.resultScene(3, 2500, H.FV)', null],
+  ['v4-zoom-fn1',      'H.scene("x", { fv: 0 })', { x: 40, y: 400, width: 200, height: 200 }],
+  ['v4-zoom-fp1',      'H.scene("x", { fv: 2, step: 200 })', { x: 95, y: 320, width: 200, height: 200 }],
+  ['v4-zoom-fog',      'H.v4Flight(0, "fog", 4, 70)', { x: 40, y: 400, width: 200, height: 200 }],
+  ['v4-zoom-beam',     'H.v4Flight(2, "beam", 2, 40)', { x: 95, y: 120, width: 200, height: 360 }],
+  ['v4-over',          'H.scene("x", { level: Object.assign({}, H.FV[1], { bodies: [H.FV[1].bodies[0], Object.assign({}, H.FV[1].bodies[1], { orbit: { cx: 520, cy: 820, rad: 90, omega: 0.6, phase: 1 } }), { kind: "pulsar", r: 12, mu: 1.4e7, x: 600, y: 1150, orbit: null, beam: { omega: 0.5, phase: 1, half: 0.14, reach: 300, push: 1000 } }] }), step: 0 })', { x: 120, y: 260, width: 260, height: 360 }],
+  ['v4-thumbs',        'H.thumbGrid(H.FV.concat(H.FW, [H.lv(0), H.lv(20), H.lv(40), H.lv(70), H.lv(89)]), 72, 128, 3, 5)', null],
+  ['v4-thumbs-big',    'H.thumbGrid(H.FV, 120, 213, 3, 3)', null],
+];
+
 (async () => {
   const file = buildPage();
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOpts());
   const ctx = await browser.newContext(IPHONE);
   const page = await ctx.newPage();
   await page.route(/fonts\.(googleapis|gstatic)/, r => r.abort());      // no network in the sandbox: fail fast, use the fallback stack
@@ -308,6 +394,34 @@ const WLIST = [
     await page.screenshot(clip ? { path: out, clip } : { path: out });
     console.log('shot', out);
     await page.evaluate(() => H.clearOverlay());
+  }
+  for (const [name, expr, clip] of VLIST) {
+    if (SCENES.length && !SCENES.includes(name) && !SCENES.includes('v4')) continue;
+    await page.evaluate(e => { H.clearOverlay(); window.__st = eval(e); }, expr);
+    await page.waitForTimeout(60);
+    const out = path.join(QA, 'render-' + name + '.png');
+    await page.screenshot(clip ? { path: out, clip } : { path: out });
+    console.log('shot', out, await page.evaluate(() => (window.__st && window.__st.log) ? window.__st.log.join(' ') : ''));
+    await page.evaluate(() => H.clearOverlay());
+  }
+  if (SCENES.includes('perfv4')) {     // nebula / pulsar plates at 4x CPU throttle
+    const cdp = await ctx.newCDPSession(page);
+    const f = x => 'avg ' + x.avg.toFixed(3) + ' ms, p95 ' + x.p95.toFixed(3) + ', max ' + x.max.toFixed(3);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    for (const fv of [0, 1, 2, 3]) {
+      const a = await page.evaluate(n => H.timeFrames({ fv: n }), fv), fl = await page.evaluate(n => H.timeFrames({ fv: n, flight: true }), fv);
+      console.log('fv' + fv + ' aim+predict+hint : ' + f(a));
+      console.log('fv' + fv + ' flight (fx, trail): ' + f(fl));
+    }
+    const t1 = await page.evaluate(() => H.timeFrames({ i: 7 }));
+    console.log('plate 8 aim (reference)  : ' + f(t1));
+    const th = await page.evaluate(() => H.thumbTime(72, 128, 2, true, 150));
+    console.log('thumbnails x150 (72x128, dpr2, v3+v4 fixtures mixed): first ' + th.first.toFixed(1) + ' ms, warm ' + th.warm.toFixed(1));
+    const sb = await page.evaluate(() => { var t = performance.now(); for (var i = 0; i < 4; i++) { Render.setLevel(H.FV[i]); H.draw(H.mkState(H.FV[i])); } return performance.now() - t; });
+    console.log('setLevel+first frame x4 v4 fixtures: ' + sb.toFixed(1) + ' ms');
+    const sr = await page.evaluate(() => { var t = performance.now(); for (var i = 0; i < 4; i++) { var L = H.lv([7, 20, 40, 70][i]); Render.setLevel(L); H.draw(H.mkState(L)); } return performance.now() - t; });
+    console.log('setLevel+first frame x4 campaign plates (reference): ' + sr.toFixed(1) + ' ms');
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
   }
   if (SCENES.includes('perfw')) {      // repeat the warp flights at 4x to look for spikes
     const cdp = await ctx.newCDPSession(page);

@@ -11,7 +11,7 @@ and `sw.js` build byte-for-byte the same as before.
 | Where the game lives | Downloaded from GitHub Pages | Inside the app bundle. No network request is ever made, fonts included |
 | Haptics | None (iOS Safari has no `navigator.vibrate`) | Taptic Engine: launch, fragment, wormhole, crash, sealed plate, aim tick |
 | Progress | `localStorage` only | `localStorage`, copied to the app's UserDefaults and restored if iOS clears web storage |
-| Game Center | None | 3 leaderboards, 31 achievements (the honours), dashboard button in the Observer's Log |
+| Game Center | None | 3 leaderboards, 39 achievements (the honours), dashboard button in the Observer's Log |
 | Daily Plate | Result card | Result card with **Share** (the iOS share sheet, a spoiler-free line of text) |
 | System behaviour | Safari rules | No status bar, portrait only, first swipe up from the bottom edge does not leave the game |
 

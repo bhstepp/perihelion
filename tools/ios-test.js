@@ -95,8 +95,24 @@ async function seal(page) {
 
 (async () => {
   if (!fs.existsSync(path.join(WWW, 'index.html'))) { console.error('ios-www/index.html is missing: run node tools/build-ios.js first'); process.exit(2); }
+  // ================================================================ 0. the Game Center sheet matches the honours
+  {
+    const honours = require('./load.js').load(['55-log.js']).Log.ACHIEVEMENTS;
+    const sheetFile = path.join(ROOT, 'ios', 'game-center', 'SETUP.md');
+    const sheet = fs.existsSync(sheetFile) ? fs.readFileSync(sheetFile, 'utf8') : '';
+    const rows = sheet.split('\n').filter(l => /^\| [MDCLXVI]+ \| `perihelion\.ach\./.test(l));
+    const ids = rows.map(l => l.match(/`perihelion\.ach\.([A-Za-z0-9_]+)`/)[1]);
+    const pts = rows.map(l => +l.split('|')[5]);
+    const missing = honours.filter(h => !ids.includes(h.id)).map(h => h.id), extra = ids.filter(id => !honours.some(h => h.id === id));
+    check('Game Center sheet lists every honour exactly once (re-run tools/make-gamecenter.js after adding one)', rows.length === honours.length && !missing.length && !extra.length && new Set(ids).size === ids.length,
+      'honours ' + honours.length + ', rows ' + rows.length + (missing.length ? ', missing ' + missing.join(',') : '') + (extra.length ? ', extra ' + extra.join(',') : ''));
+    check('Game Center points within limits (<= 100 each, <= 1000 in all)', pts.every(p => p > 0 && p <= 100) && pts.reduce((a, b) => a + b, 0) <= 1000, 'total ' + pts.reduce((a, b) => a + b, 0));
+    const imgs = honours.filter(h => !fs.existsSync(path.join(ROOT, 'ios', 'game-center', 'achievements', h.id + '.png'))).map(h => h.id);
+    check('every honour has a Game Center image', imgs.length === 0, imgs.join(', '));
+  }
+
   const srv = await serve(), base = 'http://127.0.0.1:' + srv.address().port;
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOpts(chromium));
 
   // ================================================================ 1. the page on its own
   {
@@ -361,3 +377,19 @@ async function seal(page) {
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
+
+// The installed Playwright may expect a newer browser build than the one preinstalled: fall back to any headless shell /
+// Chromium found under PLAYWRIGHT_BROWSERS_PATH (never runs `playwright install`).
+function launchOpts(chromium) {
+  const fs = require('fs'), path = require('path');
+  try { if (fs.existsSync(chromium.executablePath())) return {}; } catch (e) {}
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH, cands = [];
+  try {
+    for (const d of fs.readdirSync(base).sort().reverse()) {
+      if (/^chromium_headless_shell-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'headless_shell'), path.join(base, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+      else if (/^chromium-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'chrome'), path.join(base, d, 'chrome-linux64', 'chrome'));
+    }
+  } catch (e) {}
+  for (const c of cands) if (fs.existsSync(c)) return { executablePath: c };
+  return {};
+}
