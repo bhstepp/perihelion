@@ -389,7 +389,7 @@ function layout(C, plan, idx, seed) {
       else if (mode === 'probe') { const d = r + R(75, 140), an = Math.atan2(uy, ux) + R(-0.5, 0.5); x = Pr.x + Math.cos(an) * d; y = Pr.y + Math.sin(an) * d; }   // the way out
       else if (mode === 'target') { const d = T.r + r + R(35, 110), an = Math.atan2(-uy, -ux) + R(-0.9, 0.9); x = T.x + Math.cos(an) * d; y = T.y + Math.sin(an) * d; }   // the way in
       else [x, y] = along(R(0.22, 0.78), sgn() * (r + R(-20, 160)));
-      if (nb.rails) { const rad = RI(50, 90), om = rnd3(sgn() * R(0.25, 0.55)), ph = rnd3(R(0, TAU)); q.orbit = { cx: ri(x), cy: ri(y), rad, omega: om, phase: ph }; q.x = ri(x + rad * Math.cos(ph)); q.y = ri(y + rad * Math.sin(ph)); }
+      if (nb.rails) { const rad = RI(32, 56), om = rnd3(sgn() * R(0.2, 0.45)), ph = rnd3(R(0, TAU)); q.orbit = { cx: ri(x), cy: ri(y), rad, omega: om, phase: ph }; q.x = ri(x + rad * Math.cos(ph)); q.y = ri(y + rad * Math.sin(ph)); }
       else { q.x = ri(x); q.y = ri(y); }
     };
     if (!place(b, 80, setPos)) return fail('nebula');
