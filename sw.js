@@ -4,7 +4,7 @@
    - Google Fonts (stylesheet + font files): stale-while-revalidate into a separate cache, so the real typefaces
      are also available offline once they have been fetched once. If they never load, the game falls back to
      system serif/monospace fonts and still works. */
-var VERSION = '299a24db8d';
+var VERSION = '749f910c6f';
 var APP = 'perihelion-app-' + VERSION;
 var FONTS = 'perihelion-fonts-v1';
 var PRECACHE = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
