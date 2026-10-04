@@ -452,7 +452,7 @@ function evaluate(C, idx, seed, log) {
   if (G0.ratio < m / BAND || G0.ratio > m * BAND) { rej.band++; return null; }
   if (G0.avoid / G0.hits > AVSHARE) { rej.avoid++; log.avShare = (log.avShare || 0) + 1; return null; }
   const cand = [];
-  for (let k = 0; k < NA; k++) for (let j = 3; j < NP; j++) if (G0.U[k * NP + j]) { const s = C.hood(G0.U, k, j); if (s >= 11) cand.push([s, k, j]); }
+  for (let k = 0; k < NA; k++) for (let j = 3; j < NP; j++) if (G0.U[k * NP + j]) { const s = C.hood(G0.U, k, j); if (s >= 9) cand.push([s, k, j]); }
   if (!cand.length) { rej.robust++; return null; }
   const j0 = 12 + Math.floor(C.G.Levels.mulberry32(seed ^ 0x51ed)() * 20);
   cand.sort((a, b) => b[0] - a[0] || Math.abs(a[2] - j0) - Math.abs(b[2] - j0));
