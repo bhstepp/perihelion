@@ -11,7 +11,7 @@
        every robust route meets (see the next rule), so a solution need not depend on one particular catch,
      - no strong shot avoids the mechanic (a hit that never touches it has fewer than AVLIM of 9 hit neighbours, and such hits are under
        AVSHARE of all hits), at t0 = 0 and, for time-dependent plates, at the solution's launch time and one more (AV_T0S),
-     - the straight shot misses at every launch time, the hit ratio sits in a band that falls through the volume,
+     - the straight shot misses at every launch time (Volume V: at t = 0 and >= 85% of launch times), the hit ratio sits in a band that falls through the volume,
      - time-dependent plates (anything on rails, every pulsar: its beams turn) keep the launch-time window rule of Volume III: a robust
        winning shot (any route: this rule is about playability) exists at >= 70% of the 0.5 s launch times over max(12 s, the longest
        period), no closed gap longer than 2.5 s,
@@ -312,7 +312,14 @@ function makeCtx(G) {
     const frac = open.filter(x => x).length / n;
     return { open, shots, n, frac, gap, ok: open.length === n && frac >= 0.7 && gap <= 2.5 };
   }
-  function straightAll(L) { const ts = [0]; if (timeDep(L)) for (let t = 0; t <= spanOf(L); t += 0.5) ts.push(Math.round(t * 120)); return ts.every(t0 => !g.straightHits(L, t0, PWRS)); }
+  // the straight shot at the target misses at every launch time; Volume V (beams turn): at t = 0 and at >= 85% of the 0.5 s launch times
+  function straightAll(L) {
+    const ts = []; if (timeDep(L)) for (let t = 0.5; t <= spanOf(L); t += 0.5) ts.push(Math.round(t * 120));
+    if (g.straightHits(L, 0, PWRS)) return false;
+    if (L._vol !== 5) return ts.every(t0 => !g.straightHits(L, t0, PWRS));
+    let bad = 0; for (const t0 of ts) if (g.straightHits(L, t0, PWRS) && ++bad > 0.15 * ts.length) return false;
+    return true;
+  }
   function twinDist(L, a) {
     const A = L.bodies[a], B = L.bodies[A.pair], moving = A.orbit || B.orbit; let m = 1e9;
     for (let t = 0; t < (moving ? 60 : 1); t += 0.05) { const pa = at(A, t), ax = pa.x, ay = pa.y, pb = at(B, t); m = Math.min(m, Math.hypot(ax - pb.x, ay - pb.y)); }
