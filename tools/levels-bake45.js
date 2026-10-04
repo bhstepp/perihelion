@@ -281,9 +281,10 @@ function makeCtx(G) {
     }
     return n;
   }
+  // half-degree grid (720 x 37): robust windows on beam plates can be narrower than a degree
   function scan1(L, t0) {
-    const H = new Uint8Array(360 * NP);
-    for (let m = 0; m < 360; m++) for (let j = 0; j < NP; j++) { const s = fly(L, m, PWR(j), t0); if (s.status === 'hit') H[m * NP + j] = 1; }
+    const H = new Uint8Array(NA * NP);
+    for (let m = 0; m < NA; m++) for (let j = 0; j < NP; j++) { const s = fly(L, m * 0.5, PWR(j), t0); if (s.status === 'hit') H[m * NP + j] = 1; }
     return H;
   }
   function openAt(L, t0, warm) {
@@ -293,12 +294,12 @@ function makeCtx(G) {
       if (robustH(L, a, p, t0) >= 8) return { a, p };
     }
     const H = scan1(L, t0), cand = [];
-    for (let m = 0; m < 360; m++) for (let j = 1; j < NP - 1; j++) if (H[m * NP + j]) {
-      let n = 0; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) n += H[((m + a + 360) % 360) * NP + j + b];
-      if (n >= 7) cand.push([n, m, j]);
+    for (let m = 0; m < NA; m++) for (let j = 1; j < NP; j++) if (H[m * NP + j]) {   // the top row (full power) included: many beam routes need it
+      let n = 0; for (let a = -2; a <= 2; a += 2) for (let b = -1; b <= 1; b++) n += H[((m + a + NA) % NA) * NP + Math.min(NP - 1, j + b)];
+      if (n >= 6) cand.push([n, m, j]);
     }
     cand.sort((x, y) => y[0] - x[0]);
-    for (let q = 0; q < Math.min(cand.length, 40); q++) { const a = cand[q][1], p = PWR(cand[q][2]); if (robustH(L, a, p, t0) >= 8) return { a, p }; }
+    for (let q = 0; q < Math.min(cand.length, 150); q++) { const a = cand[q][1] * 0.5, p = PWR(cand[q][2]); if (robustH(L, a, p, t0) >= 8) return { a, p }; }
     return null;
   }
   function timing(L, seed, bail) {
@@ -498,6 +499,11 @@ function evaluate(C, idx, seed, log) {
       sol = chosen; tInfo = (100 * tp.frac).toFixed(0) + '% gap ' + tp.gap + 's @' + chosen.t0;
     }
     L.solution = { vx: sol.vx, vy: sol.vy, t0Step: sol.t0 };
+    if (td) {   // the verifier's exact window check (seeded from the stored solution, no early exit)
+      const sa = Math.atan2(sol.vy, sol.vx) / DEG, sp = Math.hypot(sol.vx, sol.vy) / K.VMAX, tv = C.timing(L, [{ a: sa, p: sp }], false);
+      if (tv.frac < 0.7 || tv.gap > 2.5) { rej.timing++; continue; }
+      tInfo = (100 * tv.frac).toFixed(0) + '% gap ' + tv.gap + 's @' + sol.t0;
+    }
     // fragments on a different hit path, preferably one that also uses the mechanic (the full-clear search below insists that the most
     // forgiving full-clear launch uses it)
     const alts = [];
