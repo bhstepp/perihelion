@@ -75,7 +75,7 @@ const PLAN = [
   // CIX-CXIV: drifting clouds on rails
   { blk: 'P', tr: 30, neb: [{ mode: 'any', r: [90, 120], d: [0.7, 1.1], rails: 1 }], ex: ['P'], pf: [20, 50] },
   { blk: 'P', tr: 30, neb: [{ mode: 'any', r: [90, 120], d: [0.7, 1.1], rails: 1 }], ex: ['P'], pf: [20, 50] },
-  { blk: 'H', tr: 29, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }], ex: ['M'], pf: [24, 54] },
+  { blk: 'P', tr: 29, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }], ex: ['M'], pf: [24, 54] },
   { blk: 'P', tr: 29, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }, { mode: 'any', r: [70, 100], d: [0.6, 1.0] }], ex: ['P'], pf: [24, 54] },
   { blk: 'P', tr: 28, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }], ex: ['H', 'M'], pf: [24, 54] },
   { blk: 'P', tr: 28, neb: [{ mode: 'any', r: [80, 110], d: [0.9, 1.3], rails: 1 }], ex: ['P', 'M', 'R'], pf: [26, 58] },
@@ -97,7 +97,7 @@ const PLAN = [
   // CXXVII-CXXXII: faster beams and planets
   { blk: 'P', tr: 35, pul: [{ w: [0.5, 0.75], push: [900, 1300], reach: [340, 480] }], ex: ['P'], pf: [20, 46] },
   { blk: 'P', tr: 34, pul: [{ w: [0.5, 0.8], push: [900, 1300], reach: [320, 460] }], ex: ['P', 'P'], pf: [20, 46] },
-  { blk: 'P', tr: 34, pul: [{ w: [0.55, 0.85], push: [900, 1300], reach: [320, 460] }], ex: ['P'], pf: [20, 50] },
+  { blk: 'P', tr: 35, pul: [{ w: [0.4, 0.65], push: [900, 1300], reach: [320, 460] }], ex: ['P'], pf: [20, 50] },
   { blk: 'P', tr: 33, pul: [{ w: [0.55, 0.9], push: [1000, 1400], reach: [320, 460] }], ex: ['P', 'P'], pf: [20, 50] },
   { blk: 'P', tr: 33, pul: [{ w: [0.6, 0.95], push: [1000, 1400], reach: [300, 440] }], ex: ['P'], pf: [24, 54] },
   { blk: 'P', tr: 32, pul: [{ w: [0.6, 1.0], push: [1000, 1400], reach: [300, 440] }], ex: ['P', 'P'], pf: [24, 54] },
@@ -113,7 +113,7 @@ const PLAN = [
   { blk: 'P', tr: 30, pul: [{ w: [0.4, 0.7], push: [800, 1200], reach: [300, 420] }, { w: [0.4, 0.7], push: [800, 1200], reach: [280, 400] }], ex: [], pf: [20, 50] },
   { blk: 'P', tr: 29, pul: [{ w: [0.45, 0.75], push: [900, 1300], reach: [280, 400] }, { w: [0.45, 0.75], push: [900, 1300], reach: [280, 400] }], ex: ['P'], pf: [24, 54] },
   { blk: 'H', tr: 29, pul: [{ w: [0.45, 0.8], push: [900, 1300], reach: [280, 400] }, { w: [0.45, 0.8], push: [900, 1300], reach: [280, 400] }], ex: ['P'], pf: [24, 54] },
-  { blk: 'P', tr: 28, pul: [{ w: [0.5, 0.85], push: [1000, 1400], reach: [280, 400] }, { w: [0.5, 0.85], push: [1000, 1400], reach: [260, 380] }], ex: ['M'], pf: [24, 54] },
+  { blk: 'P', tr: 30, pul: [{ w: [0.5, 0.85], push: [1000, 1400], reach: [280, 400] }, { w: [0.5, 0.85], push: [1000, 1400], reach: [260, 380] }], ex: [], pf: [24, 54] },
   { blk: 'P', tr: 28, pul: [{ w: [0.5, 0.9], push: [1000, 1400], reach: [280, 400] }, { w: [0.5, 0.9], push: [1000, 1400], reach: [260, 380] }], ex: ['H'], pf: [26, 58] },
   // CXLV-CL: pulsars with nebulae and wormholes, small targets
   { blk: 'P', tr: 30, pul: [{ w: [0.45, 0.8], push: [900, 1300], reach: [300, 440] }], neb: [{ mode: 'side', r: [80, 120], d: [0.7, 1.1] }], ex: ['P'], pf: [24, 54] },
