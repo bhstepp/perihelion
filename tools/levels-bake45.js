@@ -74,7 +74,7 @@ const PLAN = [
   { blk: 'R', tr: 30, neb: [{ mode: 'wrap', r: [80, 120], d: [0.9, 1.3] }], ex: ['H', 'R'], pf: [24, 54] },
   // CIX-CXIV: drifting clouds on rails
   { blk: 'P', tr: 30, neb: [{ mode: 'any', r: [90, 120], d: [0.7, 1.1], rails: 1 }], ex: ['P'], pf: [20, 50] },
-  { blk: 'P', tr: 30, neb: [{ mode: 'any', r: [90, 120], d: [0.7, 1.1], rails: 1 }], ex: ['P'], pf: [20, 50] },
+  { blk: 'P', tr: 30, neb: [{ mode: 'any', r: [100, 130], d: [1.0, 1.4], rails: 1 }], ex: ['P'], pf: [20, 50] },
   { blk: 'P', tr: 29, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }], ex: ['M'], pf: [24, 54] },
   { blk: 'P', tr: 29, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }, { mode: 'any', r: [70, 100], d: [0.6, 1.0] }], ex: ['P'], pf: [24, 54] },
   { blk: 'P', tr: 28, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }], ex: ['H', 'M'], pf: [24, 54] },
@@ -85,7 +85,7 @@ const PLAN = [
   { blk: 'R', tr: 28, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2] }], ex: ['W', 'H'], pf: [24, 54] },
   { blk: 'H', tr: 28, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }], ex: ['W', 'P'], pf: [24, 54] },
   { blk: 'P', tr: 27, neb: [{ mode: 'any', r: [80, 110], d: [0.9, 1.3] }, { mode: 'any', r: [70, 100], d: [0.6, 1.0] }], ex: ['W', 'M'], pf: [26, 58] },
-  { blk: 'P', tr: 26, neb: [{ mode: 'wrap', r: [80, 110], d: [0.9, 1.3] }], ex: ['W', 'H', 'M'], pf: [26, 58] },
+  { blk: 'P', tr: 26, neb: [{ mode: 'wrap', r: [80, 110], d: [0.9, 1.3] }], ex: ['W', 'P'], pf: [26, 58] },
   // ---- Volume V: pulsars ----
   // CXXI-CXXVI: one slow pulsar (the lesson)
   { blk: 'P', tr: 38, pul: [{ w: [0.3, 0.42], push: [700, 1000], reach: [380, 520] }], ex: [], pf: [14, 30] },
