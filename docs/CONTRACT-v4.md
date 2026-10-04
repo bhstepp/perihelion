@@ -121,9 +121,14 @@ Do not commit; the lead commits.
 
 - 30 plates `c91`..`c120` (index 90..119, XCI..CXX) with at least one nebula each, and 30 plates `c121`..`c150` (index 120..149,
   CXXI..CL) with at least one pulsar each, appended after Volume III (whose lines are then pinned in `tools/levels-golden.json`).
-- Every stored solution uses its volume's mechanic (Volume IV: passes through a nebula; Volume V: is pushed by a beam), is robust
-  (8 of 9 neighbours), no robust shot avoids the mechanic, straight shots miss, and Volume V plates (beams turn) pass the launch-time
-  window rule of Volume III (>= 70% of 0.5 s launch times open, no closed gap longer than 2.5 s). 2-3 fragments with a full-clear course.
+- As baked (`tools/levels-bake45.js`, verified by `--verify`, which `npm test` runs): every stored solution hits and uses its volume's
+  mechanic (Volume IV: >= 0.1 s inside a nebula; Volume V: caught by a beam at least once), as do >= 6 of its 9 robust neighbours; it
+  is robust (8 of 9 neighbours hit); Volume IV solutions miss with the drag taken away; no strong shot (>= 7 of 9 neighbours hitting)
+  avoids the mechanic at t = 0 or at the solution's launch time (beams turn and clouds drift, so waiting for an opening is fair play);
+  straight shots miss (Volume V: at t = 0 and at >= 85% of launch times); time-dependent plates (rails, every pulsar) pass the Volume III
+  launch-time window rule with any robust winning shot (>= 70% of 0.5 s launch times open, no closed gap over 2.5 s); 2-3 fragments
+  with a full-clear course. Plates on the plate rows that resisted these rules were simplified (fewer moons, a planet instead of a
+  black hole, slower beams) rather than the rules loosened further.
 - Progression IV: one static cloud (the lesson) -> clouds that make a slingshot tighter -> clouds near black holes and repulsors ->
   drifting clouds on rails -> clouds with wormholes. V: one slow pulsar -> faster beams and planets -> pulsars with moons/black holes ->
   two pulsars -> pulsars with nebulae and wormholes, small targets.

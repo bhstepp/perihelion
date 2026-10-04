@@ -165,7 +165,7 @@ More detail is in [docs/CONTRACT.md](docs/CONTRACT.md) (the original module cont
 - It is designed for portrait. Landscape works, but the plate is small.
 - `navigator.vibrate` is used where available. iOS Safari does not support it, so there are no haptics on iPhone.
 - Wormholes, nebulae and pulsars appear only in the Atlas (Volumes III–V). Daily and Endless plates are generated on the phone and do not use them.
-- The page is about 354 KiB (362,520 bytes); the QA suite checks a 400 KiB limit. Every feature adds to it, mostly baked plate data.
+- The page is about 423 KiB (433,177 bytes); the QA suite checks a 480 KiB limit (raised from 400 KiB for Volumes IV and V). Every feature adds to it, mostly baked plate data.
 
 ## Background
 
