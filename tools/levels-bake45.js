@@ -135,9 +135,9 @@ const BAND = 2.0;
 const USE_NEED = 6;            // ... and at least this many of a robust solution's 9 neighbours use the mechanic too
 const FOG_MIN = 12;            // a Volume IV solution spends at least 0.2 s inside a nebula (and so does each robust neighbour)
 const AVLIM = 6, AVPRE = 5;    // reject a plate with a hit that avoids the mechanic and has >= AVLIM of 9 hit neighbours
-// time-dependent plates: the mechanic must also be unavoidable at these launch times. Volume V: only at the solution's own launch time
-// (and t = 0, always checked): beams turn, so waiting for a moment when they point elsewhere is a fair way to play a pulsar plate.
-const AV_T0S = (t0, vol) => vol === 5 ? (t0 ? [t0] : []) : [t0, t0 === 600 ? 900 : 600];
+// time-dependent plates: the mechanic must also be unavoidable at the solution's own launch time (t = 0 is always checked). Beams turn
+// and clouds drift, so waiting for a moment when the way round is open is a fair way to play such a plate.
+const AV_T0S = t0 => t0 ? [t0] : [];
 const AVSHARE = 0.8;           // ... or where such hits are more than this share of all hits
 
 function loadFast() {
