@@ -1,0 +1,238 @@
+[
+ {
+  "id": "fn1",
+  "index": 0,
+  "seed": 1,
+  "difficulty": 2.3,
+  "name": "Fixture: The Veil",
+  "plate": "FN1",
+  "probe": {
+   "x": 450,
+   "y": 1450
+  },
+  "target": {
+   "x": 450,
+   "y": 260,
+   "r": 38
+  },
+  "bodies": [
+   {
+    "kind": "planet",
+    "r": 70,
+    "mu": 26000000,
+    "x": 450,
+    "y": 760,
+    "orbit": null
+   },
+   {
+    "kind": "nebula",
+    "r": 130,
+    "mu": 0,
+    "x": 250,
+    "y": 1000,
+    "orbit": null,
+    "drag": 0.9
+   }
+  ],
+  "frags": [
+   {
+    "x": 230,
+    "y": 1060
+   },
+   {
+    "x": 300,
+    "y": 560
+   }
+  ],
+  "solution": {
+   "vx": -271.875,
+   "vy": -395.581,
+   "t0Step": 0
+  }
+ },
+ {
+  "id": "fn2",
+  "index": 0,
+  "seed": 1,
+  "difficulty": 2.3,
+  "name": "Fixture: Drifting Dust",
+  "plate": "FN2",
+  "probe": {
+   "x": 450,
+   "y": 1450
+  },
+  "target": {
+   "x": 450,
+   "y": 260,
+   "r": 38
+  },
+  "bodies": [
+   {
+    "kind": "planet",
+    "r": 60,
+    "mu": 18000000,
+    "x": 520,
+    "y": 820,
+    "orbit": null
+   },
+   {
+    "kind": "nebula",
+    "r": 100,
+    "mu": 0,
+    "x": 0,
+    "y": 0,
+    "orbit": {
+     "cx": 330,
+     "cy": 560,
+     "rad": 70,
+     "omega": 0.6,
+     "phase": 1
+    },
+    "drag": 0.7
+   },
+   {
+    "kind": "nebula",
+    "r": 90,
+    "mu": 0,
+    "x": 680,
+    "y": 1150,
+    "orbit": null,
+    "drag": 1.2
+   }
+  ],
+  "frags": [
+   {
+    "x": 600,
+    "y": 1020
+   }
+  ],
+  "solution": {
+   "vx": -165.57,
+   "vy": -254.956,
+   "t0Step": 0
+  }
+ },
+ {
+  "id": "fp1",
+  "index": 0,
+  "seed": 1,
+  "difficulty": 2.3,
+  "name": "Fixture: The Lighthouse",
+  "plate": "FP1",
+  "probe": {
+   "x": 450,
+   "y": 1450
+  },
+  "target": {
+   "x": 450,
+   "y": 260,
+   "r": 38
+  },
+  "bodies": [
+   {
+    "kind": "pulsar",
+    "r": 13,
+    "mu": 16000000,
+    "x": 450,
+    "y": 820,
+    "orbit": null,
+    "beam": {
+     "omega": 0.55,
+     "phase": 0.3,
+     "half": 0.1,
+     "reach": 460,
+     "push": 1100
+    }
+   }
+  ],
+  "frags": [
+   {
+    "x": 620,
+    "y": 1000
+   },
+   {
+    "x": 350,
+    "y": 560
+   }
+  ],
+  "solution": {
+   "vx": -140.736,
+   "vy": -357.28,
+   "t0Step": 0
+  }
+ },
+ {
+  "id": "fp2",
+  "index": 0,
+  "seed": 1,
+  "difficulty": 2.3,
+  "name": "Fixture: Beam and Veil",
+  "plate": "FP2",
+  "probe": {
+   "x": 450,
+   "y": 1450
+  },
+  "target": {
+   "x": 450,
+   "y": 260,
+   "r": 38
+  },
+  "bodies": [
+   {
+    "kind": "pulsar",
+    "r": 12,
+    "mu": 14000000,
+    "x": 560,
+    "y": 700,
+    "orbit": null,
+    "beam": {
+     "omega": -0.7,
+     "phase": 2,
+     "half": 0.09,
+     "reach": 420,
+     "push": 1200
+    }
+   },
+   {
+    "kind": "nebula",
+    "r": 110,
+    "mu": 0,
+    "x": 300,
+    "y": 1050,
+    "orbit": null,
+    "drag": 0.8
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 720,
+    "y": 1180,
+    "orbit": null,
+    "pair": 3,
+    "turn": 0
+   },
+   {
+    "kind": "wormhole",
+    "r": 32,
+    "mu": 0,
+    "x": 220,
+    "y": 520,
+    "orbit": null,
+    "pair": 2,
+    "turn": 0
+   }
+  ],
+  "frags": [
+   {
+    "x": 330,
+    "y": 1000
+   }
+  ],
+  "solution": {
+   "vx": -128.182,
+   "vy": -361.974,
+   "t0Step": 0
+  }
+ }
+]

@@ -29,6 +29,7 @@ var Render = (function () {
   var Lplate = null, Lplay = null, Ltitle = null, grainTile = null;
   var moving = [];                 // [{b, spr}] bodies on rails (sprites)
   var repulsors = [];              // fixed repulsors [{x,y,r}] (animated rings)
+  var pulsars = [];                // pulsar bodies with beams (animated wedges)
   var tgtSpr = null;
   var hudSpr = { launch: [null, null, null, null], star: [null, null, null], launchW: 70 };
   var titleSpr = [], titleMoonSpr = null;
@@ -334,6 +335,11 @@ var Render = (function () {
       var ex = Math.abs(cx - x) - hw, ey = Math.abs(cy - y) - hh; ex = ex > 0 ? ex : 0; ey = ey > 0 ? ey : 0;
       var ov = r - Math.sqrt(ex * ex + ey * ey); return ov > 0 ? w * (ov + 2) : 0;
     }
+    function ringCross(cx, cy, x, y, r) {             // small cost when the box straddles a nebula's dotted boundary
+      var ax = Math.abs(cx - x), ay = Math.abs(cy - y), ex = Math.max(0, ax - hw), ey = Math.max(0, ay - hh);
+      var near = Math.sqrt(ex * ex + ey * ey), fx = ax + hw, fy = ay + hh, far = Math.sqrt(fx * fx + fy * fy);
+      return near < r && far > r ? 3 : 0;
+    }
     for (c = 0; c < 32; c++) {
       var th = (c & 15) * Math.PI / 8, dx = Math.cos(th), dy = Math.sin(th), extra = c < 16 ? 0 : 10;
       var d = R * 1.26 + 4.5 + Math.abs(dx) * hw + Math.abs(dy) * hh + extra;
@@ -348,6 +354,8 @@ var Render = (function () {
           if (o.kind === 'blackhole') p += circ(cx, cy, ox, oy, (o.capture || o.r * 3) * s * 1.8, 20);
           else if (o.kind === 'repulsor') { p += circ(cx, cy, ox, oy, o.r * s * 1.5, 20); p += circ(cx, cy, ox, oy, o.r * s * 3.3, 1.5); }
           else if (o.kind === 'wormhole') p += circ(cx, cy, ox, oy, o.r * s * 1.5 + 2, 30);
+          else if (o.kind === 'nebula') p += ringCross(cx, cy, ox, oy, o.r * s);     // a label may sit in a cloud, not on its edge
+          else if (o.kind === 'pulsar') p += circ(cx, cy, ox, oy, o.r * s * 1.8 + 3, 20);
           else p += circ(cx, cy, ox, oy, o.r * s + 3, 20);
         }
         p += circ(cx, cy, tg.x * s, tg.y * s, tr, 30) + circ(cx, cy, lv.probe.x * s, lv.probe.y * s, pr, 15);
@@ -403,14 +411,116 @@ var Render = (function () {
     }
   }
 
+  // ---------------------------------------------------------------- nebulae (v4)
+  // A cloud of dust engraved as stipple: fine paper dots at low alpha, denser toward the centre and on the lit (upper-left)
+  // side, gathered in irregular clumps with darker lanes, a few wisps of curved hatching, an irregular soft edge that never
+  // crosses r, and the true boundary (where the drag begins) as a fine dotted hairline at exactly r. No occluder: the
+  // cloud is translucent, so the star field and the grid read through it. Pre-rendered (static layer or one sprite).
+  var NEB_A = [0.2, 0.33, 0.48, 0.68];
+  function isNebula(b) { return b && b.kind === 'nebula'; }
+  function nebulaEdge(R, seed) {
+    var r = rng(seed * 3121 + 77), p = [r() * TAU, r() * TAU, r() * TAU, r() * TAU];
+    return function (th) { return R * (0.95 + 0.04 * Math.sin(3 * th + p[0]) + 0.04 * Math.sin(5 * th + p[1]) + 0.022 * Math.sin(9 * th + p[2]) + 0.012 * Math.sin(14 * th + p[3])); };
+  }
+  function drawNebula(g, x, y, R, seed) {
+    var r = rng(seed * 7717 + 401), i, k, edge = nebulaEdge(R, seed);
+    // clumps: a handful of soft lumps (dense) and lanes (sparse) placed inside the cloud
+    var NL = 7, LX_ = [], LY_ = [], LR = [], LW = [];
+    for (k = 0; k < NL; k++) {
+      var la = r() * TAU, lr = R * Math.sqrt(r()) * 0.7;
+      LX_.push(Math.cos(la) * lr); LY_.push(Math.sin(la) * lr); LR.push(R * (0.18 + 0.22 * r())); LW.push(k < 4 ? 0.9 + 0.5 * r() : -(0.55 + 0.3 * r()));
+    }
+    var b4 = [[], [], [], []], area = Math.PI * R * R, N = Math.min(16000, Math.round(area * 0.95));
+    for (i = 0; i < N; i++) {
+      var u = r() * 2 - 1, v = r() * 2 - 1, d2 = u * u + v * v; if (d2 > 1) continue;
+      var px = u * R, py = v * R, d = Math.sqrt(d2) * R, th = Math.atan2(py, px), e = edge(th);
+      if (d > R - 0.8) continue;
+      var rho = d / e, base = rho < 1 ? Math.pow(1 - rho * rho, 0.95) : 0.18 * Math.max(0, 1 - (rho - 1) / 0.1);
+      if (base <= 0) continue;
+      var cl = 0;
+      for (k = 0; k < NL; k++) { var qx = px - LX_[k], qy = py - LY_[k], q2 = (qx * qx + qy * qy) / (LR[k] * LR[k]); if (q2 < 4) cl += LW[k] * Math.exp(-q2 * 1.4); }
+      var lit = d > 0 ? (px * LX + py * LY) / d * Math.min(1, rho) : 0;   // + toward the light
+      var w = base * (0.7 + 0.38 * cl) * (1 + 0.3 * lit);
+      if (w <= 0 || r() > w * 0.85) continue;
+      var t = w + (r() - 0.5) * 0.5, bk = t < 0.32 ? 0 : t < 0.58 ? 1 : t < 0.85 ? 2 : 3, sz = bk > 2 ? 0.85 : bk > 0 ? 0.7 : 0.6;
+      b4[bk].push(x + px - sz / 2, y + py - sz / 2, sz);
+    }
+    g.fillStyle = PAL.paper;
+    for (k = 0; k < 4; k++) {
+      var a = b4[k]; if (!a.length) continue;
+      g.globalAlpha = NEB_A[k]; g.beginPath();
+      for (i = 0; i < a.length; i += 3) g.rect(a[i], a[i + 1], a[i + 2], a[i + 2]);
+      g.fill();
+    }
+    // wisps: short bundles of curved hatching that follow the cloud round, brighter on the lit side
+    g.strokeStyle = PAL.paper; g.lineCap = 'round'; g.lineWidth = Math.max(0.35, Math.min(0.5, R * 0.006));
+    var NW = 4 + Math.round(R / 40);
+    for (k = 0; k < NW; k++) {
+      var a0 = r() * TAU, span = 0.7 + r() * 0.9, rr = 0.38 + r() * 0.42, dr = (r() - 0.5) * 0.3, nl = 3 + (r() * 3 | 0), sp = 1.5 + r() * 0.8;
+      var litw = 0.5 + 0.5 * Math.cos(a0 + span / 2 - LIGHT_A);
+      for (var l = 0; l < nl; l++) {
+        g.globalAlpha = (0.2 + 0.22 * litw) * (1 - Math.abs(l - (nl - 1) / 2) / nl);
+        g.beginPath();
+        for (var q = 0; q <= 14; q++) {
+          var f = q / 14, ang = a0 + span * f, rad = Math.min(edge(ang) * 0.94, (rr + dr * f) * edge(ang) + (l - (nl - 1) / 2) * sp) * (1 - 0.06 * Math.sin(f * Math.PI));
+          var wx = x + rad * Math.cos(ang), wy = y + rad * Math.sin(ang);
+          if (q) g.lineTo(wx, wy); else g.moveTo(wx, wy);
+        }
+        g.stroke();
+      }
+    }
+    nebulaRing(g, x, y, R);
+    g.globalAlpha = 1; g.lineCap = 'butt';
+  }
+  // the true boundary: a fine dotted hairline at exactly r, with eight small inward ticks like a graduated bezel
+  function nebulaRing(g, x, y, R) {
+    var n = Math.max(24, Math.round(TAU * R / 2.7)), i, a;
+    g.fillStyle = PAL.paper; g.globalAlpha = 0.6; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.36, y + R * Math.sin(a) - 0.36, 0.72, 0.72); }
+    g.fill();
+    g.strokeStyle = PAL.paper; g.globalAlpha = 0.45; g.lineWidth = 0.5; g.beginPath();
+    for (i = 0; i < 8; i++) { a = i * Math.PI / 4 + Math.PI / 8; g.moveTo(x + (R - 0.6) * Math.cos(a), y + (R - 0.6) * Math.sin(a)); g.lineTo(x + (R - 3.2) * Math.cos(a), y + (R - 3.2) * Math.sin(a)); }
+    g.stroke(); g.globalAlpha = 1;
+  }
+
+  // ---------------------------------------------------------------- pulsars (v4)
+  // A small dense hatched sphere (tighter hatching than a planet), a bright paper core ring knocked out of it and a pin-point
+  // centre, and two tiny bearing ticks on the limb. The beams themselves are animated (drawBeams).
+  function drawPulsar(g, x, y, R) {
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, R * 1.7 + 1, 0, TAU); g.fill();
+    hatchSphere(g, x, y, R, { sp: Math.max(0.85, Math.min(1.1, R * 0.17)), lw: 0.42, bands: 0, bf: 0, bp: 0, rot: 0.2 });
+    var cr = Math.max(1.5, R * 0.42);
+    g.strokeStyle = PAL.ink; g.lineWidth = 2.2; g.beginPath(); g.arc(x, y, cr, 0, TAU); g.stroke();
+    g.strokeStyle = PAL.paper; g.globalAlpha = 1; g.lineWidth = 1.05; g.beginPath(); g.arc(x, y, cr, 0, TAU); g.stroke();
+    g.fillStyle = PAL.paper; g.beginPath(); g.arc(x, y, 0.75, 0, TAU); g.fill();
+    // a fine outer hairline ring, the star's "field"
+    g.globalAlpha = 0.5; g.lineWidth = 0.45; g.beginPath(); g.arc(x, y, R * 1.45 + 1, 0, TAU); g.stroke();
+    g.globalAlpha = 1;
+  }
+  // how far the beams carry: a faint dotted graphite circle at reach (paper at a whisper on top so it reads on the ink)
+  function beamReach(g, x, y, R) {
+    var n = Math.max(30, Math.round(TAU * R / 3.6)), i, a;
+    g.fillStyle = PAL.graphite; g.globalAlpha = 1; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.6, y + R * Math.sin(a) - 0.6, 1.2, 1.2); }
+    g.fill();
+    g.fillStyle = PAL.paper; g.globalAlpha = 0.16; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.35, y + R * Math.sin(a) - 0.35, 0.7, 0.7); }
+    g.fill(); g.globalAlpha = 1;
+  }
+
   function drawBodyArt(g, b, bi, x, y, s, seed) {
     var R = b.r * s;
     if (b.kind === 'blackhole') drawBlackHole(g, x, y, R, (b.capture || b.r * 3) * s);
     else if (b.kind === 'repulsor') drawRepulsor(g, x, y, R);
     else if (b.kind === 'wormhole') drawMouth(g, x, y, R, mouthPN[bi] | 0);
+    else if (b.kind === 'nebula') drawNebula(g, x, y, R, (seed | 0) + bi * 53 + 7);
+    else if (b.kind === 'pulsar') drawPulsar(g, x, y, R);
     else hatchSphere(g, x, y, R, sphereOpts(R, b.kind !== 'moon', (seed | 0) + bi * 31));
   }
-  function bodyExtent(b) { return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.kind === 'wormhole' ? b.r * 1.4 : b.r + 2; }
+  function bodyExtent(b) {
+    return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.kind === 'wormhole' ? b.r * 1.4 :
+      b.kind === 'nebula' ? b.r + 1 : b.kind === 'pulsar' ? b.r * 1.75 + 2 : b.r + 2;
+  }
   function makeSprite(radCss, fn) {
     var d = layout.dpr, size = Math.ceil((radCss * 2 + 4) * d), c = mk(size, size), g = c.getContext('2d');
     g.setTransform(d, 0, 0, d, 0, 0);
@@ -535,7 +645,7 @@ var Render = (function () {
   // ---------------------------------------------------------------- contour wells (marching squares)
   function paintContours(g, lv) {
     var bs = lv.bodies, fixed = [], i, j;
-    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) fixed.push(bs[i]);
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i])) fixed.push(bs[i]);    // a cloud has no well and erases nothing
     var anyAttr = false; for (i = 0; i < fixed.length; i++) if (fixed[i].mu > 0) anyAttr = true;
     if (!anyAttr) return;
     var d = layout.dpr, Pl = layout.plate, s = layout.scale;
@@ -607,8 +717,14 @@ var Render = (function () {
   function paintLevel(g, lv) {
     var d = layout.dpr, Pl = layout.plate, s = layout.scale, bs = lv.bodies, i, j;
     prepMouths(lv);
+    sweptByCloud(lv);
+    // fixed nebulae first: under the wells, the orbits and every body
+    g.setTransform(d, 0, 0, d, 0, 0);
+    for (i = 0; i < bs.length; i++) if (isNebula(bs[i]) && !bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
     paintContours(g, lv);
     g.setTransform(d, 0, 0, d, 0, 0);
+    // how far each fixed pulsar's beams carry (a pulsar on rails gets its circle per frame)
+    for (i = 0; i < bs.length; i++) if (bs[i].kind === 'pulsar' && bs[i].beam && !bs[i].orbit) beamReach(g, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, bs[i].beam.reach * s);
     // orbit paths (dotted) and barycentre crosses
     var seen = [];
     for (i = 0; i < bs.length; i++) {
@@ -631,7 +747,7 @@ var Render = (function () {
       g.lineWidth = 0.45; g.beginPath(); g.arc(bx, by, 1.4, 0, TAU); g.stroke();
     }
     // fixed bodies (baked)
-    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i]) && !overIdx[i]) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
     for (i = 0; i < wm.length; i++) if (!wm[i].moving) drawMouthLabel(g, Pl.x + wm[i].b.x * s + wm[i].lx, Pl.y + wm[i].b.y * s + wm[i].ly, wm[i].letter, wm[i].turn);
     // launch station: a small surveyor's benchmark at the probe start
     var px = Pl.x + lv.probe.x * s, py = Pl.y + lv.probe.y * s;
@@ -672,9 +788,24 @@ var Render = (function () {
     g.setTransform(d, 0, 0, d, 0, 0);
     g.textBaseline = 'alphabetic';
   }
+  // Fixed bodies that a nebula on rails can drift over are drawn as sprites on the animated layer, after the cloud, so a
+  // cloud always lies under every body. overIdx[i] = 1 for those (empty when no nebula moves).
+  var overIdx = [];
+  function sweptByCloud(lv) {
+    var bs = lv.bodies, i, j; overIdx.length = 0;
+    for (i = 0; i < bs.length; i++) overIdx.push(0);
+    for (j = 0; j < bs.length; j++) {
+      var nb = bs[j], o = nb.orbit; if (!isNebula(nb) || !o) continue;
+      for (i = 0; i < bs.length; i++) {
+        var b = bs[i]; if (b.orbit || isNebula(b)) continue;
+        var dx = b.x - o.cx, dy = b.y - o.cy, dd = Math.sqrt(dx * dx + dy * dy), e = bodyExtent(b);
+        if (dd < o.rad + nb.r + e && dd > o.rad - nb.r - e) overIdx[i] = 1;
+      }
+    }
+  }
   function isOrbitCentreEmpty(lv, o) {
     var bs = lv.bodies;
-    for (var i = 0; i < bs.length; i++) if (!bs[i].orbit && Math.abs(bs[i].x - o.cx) < 2 && Math.abs(bs[i].y - o.cy) < 2) return false;
+    for (var i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i]) && Math.abs(bs[i].x - o.cx) < 2 && Math.abs(bs[i].y - o.cy) < 2) return false;
     return true;
   }
   // top band anchors: the plate edges, or the safe screen edges when the plate is narrow (landscape)
@@ -699,14 +830,19 @@ var Render = (function () {
     g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(Lplate, 0, 0);
     paintLevel(g, lv);
     // sprites for bodies on rails; fixed repulsors keep animated rings
-    moving.length = 0; repulsors.length = 0;
+    moving.length = 0; repulsors.length = 0; pulsars.length = 0;
+    var nNeb = 0;
     for (i = 0; i < lv.bodies.length; i++) {
       var b = lv.bodies[i];
-      if (b.orbit) {
+      if (b.orbit || overIdx[i]) {
         (function (b, i) {
-          moving.push({ b: b, spr: makeSprite(bodyExtent(b) * s, function (sg, c) { drawBodyArt(sg, b, i, c, c, s, lv.seed); }) });
+          var m = { b: b, spr: makeSprite(bodyExtent(b) * s, function (sg, c) { drawBodyArt(sg, b, i, c, c, s, lv.seed); }) };
+          if (isNebula(b)) moving.splice(nNeb++, 0, m);          // clouds on rails first: under everything else on the animated layer
+          else moving.push(m);
         })(b, i);
-      } else if (b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
+      }
+      if (!b.orbit && b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
+      if (b.kind === 'pulsar' && b.beam && b.beam.reach > 0) pulsars.push(b);
     }
     buildMouthSprites(lv);
     // target bezel sprite (rotated each frame)
@@ -921,8 +1057,93 @@ var Render = (function () {
     }
     warpsLive = true;
   }
+  // Nebula entry: a soft puff of stipple dots that drift outward (and a little along the heading of nothing: just out) and fade
+  // in ~500 ms. Pulsar beam catch: a brief paper flash ring and a fan of sparks thrown straight away from the pulsar, ~250 ms.
+  var FOG_MS = 520, FOGN = 3, FOGD = 28, fogs = [], fogIdx = 0, fogsLive = false;
+  for (var fi = 0; fi < FOGN; fi++) fogs.push({ on: false, t0: -1, x: 0, y: 0, d: new Float32Array(FOGD * 4) });
+  var FLASH_MS = 260, FLN = 3, FLS = 7, flashes = [], flashIdx = 0, flashLive = false;
+  for (var fj = 0; fj < FLN; fj++) flashes.push({ on: false, t0: -1, x: 0, y: 0, ux: 0, uy: -1, sp: new Float32Array(FLS * 2) });
+  function fog(x, y) {
+    if (!level || !(x === x && y === y)) return;
+    var f = fogs[fogIdx]; fogIdx = (fogIdx + 1) % FOGN;
+    var r = rng(crashSeed++ * 4243 + 29);
+    f.on = true; f.t0 = -1; f.x = x; f.y = y;
+    for (var i = 0; i < FOGD; i++) {
+      var a = r() * TAU, d0 = 3 + r() * 8;
+      f.d[4 * i] = a; f.d[4 * i + 1] = d0; f.d[4 * i + 2] = 10 + r() * 18; f.d[4 * i + 3] = 0.8 + r() * 0.9;   // angle, start, drift (CSS px), size
+    }
+    fogsLive = true;
+  }
+  function pulsarNear(x, y) {
+    var best = null, bd = 1e18, bs = level ? level.bodies : [];
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i]; if (b.kind !== 'pulsar') continue;
+      Physics.bodyPos(b, lastT, P);
+      var dx = x - P.x, dy = y - P.y, dd = dx * dx + dy * dy, lim = (b.beam ? b.beam.reach : 300) + 40;
+      if (dd < lim * lim && dd < bd) { bd = dd; best = b; }
+    }
+    return best;
+  }
+  function beam(x, y) {
+    if (!level || !(x === x && y === y)) return;
+    var f = flashes[flashIdx]; flashIdx = (flashIdx + 1) % FLN;
+    var r = rng(crashSeed++ * 5113 + 41), b = pulsarNear(x, y), base = -Math.PI / 2;
+    if (b) { Physics.bodyPos(b, lastT, P); base = Math.atan2(y - P.y, x - P.x); }
+    f.on = true; f.t0 = -1; f.x = x; f.y = y; f.ux = Math.cos(base); f.uy = Math.sin(base);
+    for (var i = 0; i < FLS; i++) {
+      var spread = b ? 0.95 : Math.PI;                      // a fan away from the pulsar (or all round when no pulsar is near)
+      f.sp[2 * i] = base + (((i + 0.5) / FLS) * 2 - 1) * spread + (r() - 0.5) * 0.2; f.sp[2 * i + 1] = 6 + r() * 9 + (Math.abs(i - (FLS - 1) / 2) < 1 ? 5 : 0);
+    }
+    flashLive = true;
+  }
+  function drawFogs(now, u) {
+    var live = false;
+    ctx.fillStyle = PAL.paper;
+    for (var k = 0; k < FOGN; k++) {
+      var f = fogs[k]; if (!f.on) continue;
+      if (f.t0 < 0) f.t0 = now;
+      var p = (now - f.t0) / FOG_MS; if (p >= 1) { f.on = false; continue; }
+      live = true;
+      var e = easeOutCubic(p), a = (1 - p) * (1 - p) * Math.min(1, p * 10);
+      for (var band = 0; band < 2; band++) {
+        ctx.globalAlpha = a * (band ? 0.95 : 0.6); ctx.beginPath();
+        for (var i = band; i < FOGD; i += 2) {
+          var an = f.d[4 * i], rr = (f.d[4 * i + 1] + f.d[4 * i + 2] * e) * u, sz = f.d[4 * i + 3] * (1 + 0.5 * e) * u;
+          var qx = f.x + Math.cos(an) * rr, qy = f.y + Math.sin(an) * rr; ctx.moveTo(qx + sz / 2, qy); ctx.arc(qx, qy, sz / 2, 0, TAU);
+        }
+        ctx.fill();
+      }
+      // a faint stippled ring breathing out
+      ctx.globalAlpha = a * 0.55; ctx.beginPath();
+      var R = (6 + 26 * e) * u, n = 22;
+      for (var j = 0; j < n; j++) { var aj = j * TAU / n + p; ctx.rect(f.x + Math.cos(aj) * R - 0.45 * u, f.y + Math.sin(aj) * R - 0.45 * u, 0.9 * u, 0.9 * u); }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1; fogsLive = live;
+  }
+  function drawFlashes(now, u, t) {
+    var live = false;
+    ctx.lineCap = 'round';
+    for (var k = 0; k < FLN; k++) {
+      var f = flashes[k]; if (!f.on) continue;
+      if (f.t0 < 0) f.t0 = now;
+      var p = (now - f.t0) / FLASH_MS; if (p >= 1) { f.on = false; continue; }
+      live = true;
+      var e = easeOutCubic(p), a = 1 - p;
+      ctx.strokeStyle = PAL.paper; ctx.globalAlpha = 0.9 * a; ctx.lineWidth = (1.1 - 0.6 * p) * u;
+      ctx.beginPath(); ctx.arc(f.x, f.y, (2 + 9 * e) * u, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = a; ctx.lineWidth = 0.7 * u; ctx.beginPath();
+      for (var i = 0; i < FLS; i++) {
+        var an = f.sp[2 * i], len = f.sp[2 * i + 1], r0 = (3 + 8 * e) * u, r1 = r0 + len * (1 - 0.5 * e) * u, ca = Math.cos(an), sa = Math.sin(an);
+        ctx.moveTo(f.x + ca * r0, f.y + sa * r0); ctx.lineTo(f.x + ca * r1, f.y + sa * r1);
+      }
+      ctx.stroke();
+      ctx.fillStyle = PAL.paper; ctx.globalAlpha = a * (1 - e); ctx.beginPath(); ctx.arc(f.x, f.y, 2.2 * u, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1; flashLive = live;
+  }
   var fx = {
-    warp: warp,
+    warp: warp, fog: fog, beam: beam,
     crash: function (x, y) {
       var c = crashes[crashIdx]; crashIdx = (crashIdx + 1) % CR;
       var r = rng(crashSeed++ * 7717 + 3), i;
@@ -944,7 +1165,9 @@ var Render = (function () {
       for (var i = 0; i < CR; i++) crashes[i].on = false;
       shakePending = false; shakeT0 = -2; succ.on = false; succ.seal = null; succ.n = 0;
       for (i = 0; i < WN; i++) warps[i].on = false;
-      warpsLive = false;
+      for (i = 0; i < FOGN; i++) fogs[i].on = false;
+      for (i = 0; i < FLN; i++) flashes[i].on = false;
+      warpsLive = fogsLive = flashLive = false;
       for (i = 0; i < wm.length; i++) wm[i].kPend = false;
       for (i = 0; i < 8; i++) { popT[i] = -1; prevCol[i] = 0; }
     }
@@ -1135,9 +1358,12 @@ var Render = (function () {
       ctx.lineCap = 'round';
     }
 
+    if (pulsars.length) drawBeams(t, u, d, s, ox, oy);
     drawFrags(state, now, u);
     if (state.spotlight) drawSpotlight(state.spotlight, now, u);
     if (warpsLive) drawWarps(now, u, t);
+    if (fogsLive) drawFogs(now, u);
+    if (flashLive) drawFlashes(now, u, t);
     drawGhosts(state, u);
     var showTrail = state.phase === 'flight' || state.phase === 'result';
     if (showTrail) drawTrail(state.trail, u, succ.on ? 0.45 : 1);
@@ -1258,6 +1484,55 @@ var Render = (function () {
       }
     }
     ctx.globalAlpha = 1; warpsLive = live;
+  }
+
+  // Pulsar beams at the physics time t (= state.step * K.DT, as for the moons): axis a = phase + omega * t and the opposite
+  // direction, each a wedge of half-angle `half` out to `reach`. Drawn in the beam's own frame (one transform per pulsar, no
+  // trig per stroke): two paper hairlines per wedge, the leading edge a touch heavier, and sparse alternate-slant hatching
+  // between them, every line fading in four alpha bands toward the tip. One path per band per pulsar.
+  var BEAM_A = [0.62, 0.42, 0.26, 0.13], BEAM_H = [0.3, 0.22, 0.14, 0.07];
+  function drawBeams(t, u, d, s, ox, oy) {
+    var i, k, sg, e;
+    ctx.save();
+    ctx.strokeStyle = PAL.paper; ctx.lineCap = 'round';
+    for (i = 0; i < pulsars.length; i++) {
+      var b = pulsars[i], bm = b.beam, a = bm.phase + bm.omega * t, ca = Math.cos(a), sa = Math.sin(a), x = b.x, y = b.y;
+      if (b.orbit) { Physics.bodyPos(b, t, P); x = P.x; y = P.y; }
+      ctx.setTransform(d * s * ca, d * s * sa, -d * s * sa, d * s * ca, d * (ox + x * s), d * (oy + y * s));
+      if (b.orbit) { ctx.setTransform(d * s, 0, 0, d * s, d * (ox + x * s), d * (oy + y * s)); beamReachLive(bm.reach, u); ctx.setTransform(d * s * ca, d * s * sa, -d * s * sa, d * s * ca, d * (ox + x * s), d * (oy + y * s)); }
+      var R = bm.reach, th = Math.tan(bm.half), r0 = b.r * 1.7 + 1.5 * u, L = R - r0, lead = bm.omega >= 0 ? 1 : -1;
+      var hs = 7 * u, nh = Math.max(2, Math.floor(L / hs));
+      for (k = 0; k < 4; k++) {
+        var x0 = r0 + L * k / 4, x1 = r0 + L * (k + 1) / 4;
+        // edges: trailing (thin) then leading (heavier)
+        for (var lw = 0; lw < 2; lw++) {
+          ctx.globalAlpha = BEAM_A[k] * (lw ? 1 : 0.7); ctx.lineWidth = (lw ? 0.8 : 0.5) * u; ctx.beginPath();
+          for (sg = -1; sg <= 1; sg += 2) {
+            e = (lw ? lead : -lead) * sg;                  // the leading edge of the beam pointing along sg
+            ctx.moveTo(sg * x0, e * x0 * th); ctx.lineTo(sg * x1, e * x1 * th);
+          }
+          ctx.stroke();
+        }
+        // cross-hatching: two families of straight strokes at +-42 degrees to the rungs, clipped to the wedge (inset), offset by
+        // half a period so they form an open diamond lattice
+        ctx.globalAlpha = BEAM_H[k]; ctx.lineWidth = 0.45 * u; ctx.beginPath();
+        var j0 = Math.ceil(nh * k / 4), j1 = Math.ceil(nh * (k + 1) / 4), ti = th * 0.86;
+        for (var j = j0; j < j1; j++) {
+          var hx = r0 + (j + 0.5) * hs, m = (j & 1) ? 0.9 : -0.9;
+          if (hx * ti < 1.2 * u) continue;
+          var yT = ti * hx / (1 - ti * m), yB = -ti * hx / (1 + ti * m);
+          for (sg = -1; sg <= 1; sg += 2) { ctx.moveTo(sg * (hx + m * yB), yB); ctx.lineTo(sg * (hx + m * yT), yT); }
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  function beamReachLive(R, u) {
+    ctx.fillStyle = PAL.graphite; ctx.globalAlpha = 1; ctx.beginPath();
+    var n = Math.max(30, Math.round(TAU * R / (3.6 * u))), r = 0.6 * u;
+    for (var i = 0; i < n; i++) { var a = i * TAU / n; ctx.rect(R * Math.cos(a) - r, R * Math.sin(a) - r, 2 * r, 2 * r); }
+    ctx.fill();
   }
 
   function drawGhosts(state, u) {
@@ -1768,6 +2043,31 @@ var Render = (function () {
     c.globalAlpha = 1; c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, Math.min(0.9, R * 0.22), 0, TAU); c.fill();
     c.lineCap = 'butt';
   }
+  // A nebula in miniature: a dotted circle at r with a sprinkle of stipple inside (denser toward the centre).
+  function thumbNebula(c, x, y, R, seed) {
+    var r = rng(seed * 977 + 5), n = Math.max(14, Math.round(TAU * R / 2.2)), i, a;
+    c.fillStyle = PAL.paper; c.globalAlpha = 0.55; c.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; c.rect(x + R * Math.cos(a) - 0.3, y + R * Math.sin(a) - 0.3, 0.6, 0.6); }
+    c.fill();
+    var m = Math.min(70, Math.round(R * R * 0.5));
+    c.globalAlpha = 0.4; c.beginPath();
+    for (i = 0; i < m; i++) { a = r() * TAU; var d = R * 0.9 * r() * Math.sqrt(r()); c.rect(x + d * Math.cos(a) - 0.3, y + d * Math.sin(a) - 0.3, 0.6, 0.6); }
+    c.fill(); c.globalAlpha = 1;
+  }
+  // A pulsar in miniature: a dot with a core ring and its two beams as short strokes at the t = 0 angle.
+  function thumbPulsar(c, x, y, b, s) {
+    var R = Math.max(1.6, b.r * s), bm = b.beam;
+    if (bm) {
+      var a = bm.phase, ca = Math.cos(a), sa = Math.sin(a), L = Math.max(R * 3, Math.min(bm.reach * s * 0.45, R + 12));
+      c.strokeStyle = PAL.paper; c.globalAlpha = 0.7; c.lineWidth = 0.5; c.lineCap = 'round'; c.beginPath();
+      c.moveTo(x + ca * R * 1.6, y + sa * R * 1.6); c.lineTo(x + ca * L, y + sa * L);
+      c.moveTo(x - ca * R * 1.6, y - sa * R * 1.6); c.lineTo(x - ca * L, y - sa * L);
+      c.stroke(); c.lineCap = 'butt';
+    }
+    c.globalAlpha = 1; c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, R, 0, TAU); c.fill();
+    c.fillStyle = PAL.ink; c.beginPath(); c.arc(x, y, R * 0.55, 0, TAU); c.fill();
+    c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, Math.min(0.6, R * 0.25), 0, TAU); c.fill();
+  }
   var TH_DIRS = [0, Math.PI, -Math.PI / 2, Math.PI / 2, -Math.PI / 4, -3 * Math.PI / 4, Math.PI / 4, 3 * Math.PI / 4];
   function thumbLetters(c, lv, ox, oy, s, pw, ph) {
     var bs = lv.bodies, no = pairNumbers(lv), tg = lv.target, i, k;
@@ -1815,8 +2115,14 @@ var Render = (function () {
     for (i = 0; i < bs.length; i++) { o = bs[i].orbit; if (!o) continue; c.moveTo(ox + (o.cx + o.rad) * s, oy + o.cy * s); c.arc(ox + o.cx * s, oy + o.cy * s, o.rad * s, 0, TAU); }
     c.stroke(); c.setLineDash(DASH_NONE);
     var nw = 0;
+    for (i = 0; i < bs.length; i++) {                     // clouds first: under everything
+      if (!isNebula(bs[i])) continue;
+      Physics.bodyPos(bs[i], 0, P); thumbNebula(c, ox + P.x * s, oy + P.y * s, Math.max(3, bs[i].r * s), (lv.seed | 0) + i);
+    }
     for (i = 0; i < bs.length; i++) {
+      if (isNebula(bs[i])) continue;
       Physics.bodyPos(bs[i], 0, P);
+      if (bs[i].kind === 'pulsar') { thumbPulsar(c, ox + P.x * s, oy + P.y * s, bs[i], s); continue; }
       if (bs[i].kind === 'wormhole') { thumbMouth(c, ox + P.x * s, oy + P.y * s, Math.max(2.6, bs[i].r * s), i); nw++; continue; }
       drawBodyArt(c, bs[i], i, ox + P.x * s, oy + P.y * s, s, lv.seed);
     }
@@ -1837,6 +2143,6 @@ var Render = (function () {
     c.restore();
   }
 
-  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx, warp: warp,
+  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx, warp: warp, fog: fog, beam: beam,
            worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; }, get caption() { return capInfo; } };
 })();

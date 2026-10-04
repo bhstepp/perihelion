@@ -16,7 +16,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm'), cp = require('child_process');
 const ROOT = path.join(__dirname, '..'), LEVELS = path.join(ROOT, 'src', '20-levels.js'), CACHE = path.join(__dirname, 'levels-cache');
 const GOLDEN = path.join(__dirname, 'levels-golden.json');
-const V2 = 30, V3 = 60, NTOTAL = 60, NALL = 90;   // NTOTAL: plates this tool bakes (Volumes I+II); NALL: the whole campaign (Volume III is baked by tools/levels-bake3.js)
+const V2 = 30, V3 = 60, NTOTAL = 60, NALL = 150;  // NTOTAL: plates this tool bakes (Volumes I+II); NALL: the whole campaign (Volume III: tools/levels-bake3.js, Volumes IV-V: tools/levels-bake45.js)
 // Volume II names: obsolete constellations and 19th-century observatory matters (none reused from Levels.NAMES).
 const NAMES2 = ['Argo Navis', 'Quadrans Muralis', 'Custos Messium', 'Honores Frederici', 'Globus Aerostaticus',
   'Brandenburg Sceptre', 'Mons Maenalus', 'Telescopium Herschelii', 'Officina Typographica', 'Machina Electrica',
@@ -178,7 +178,7 @@ function lit(v) {
 }
 
 const sha = t => require('crypto').createHash('sha256').update(t).digest('hex');
-const LINE_RE = /^    \{id:"c(\d\d)"/;
+const LINE_RE = /^    \{id:"c(\d{2,3})"/;
 // The CAMPAIGN literal lines currently in the module, by index (text exactly as stored).
 function campaignLines(src) {
   const a = src.indexOf('/*@CAMPAIGN*/'), b = src.indexOf('/*@END*/');
@@ -221,7 +221,7 @@ function verify() {
     else for (let i = V2; i < NTOTAL; i++) if (!lines[i] || sha(lines[i]) !== g2[i - V2]) { console.log('L' + (i + 1), 'FROZEN PLATE CHANGED (Volume II)'); ok = false; } }
   if (C.length !== NALL) { console.log('CAMPAIGN length', C.length, '(want ' + NALL + ')'); ok = false; }
   { const eh = require('./levels-endless-hash.js')(LEVELS), want = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')).endless.hash; if (eh !== want) { console.log('Endless generate() output changed vs golden'); ok = false; } }
-  const V = G.Levels.VOLUMES; if (!V || V.length !== 3 || V[0].from !== 0 || V[0].to !== 29 || V[1].from !== 30 || V[1].to !== 59 || V[2].from !== 60 || V[2].to !== 89 || V[0].name !== 'Volume I' || V[1].name !== 'Volume II' || V[2].name !== 'Volume III') { console.log('VOLUMES wrong'); ok = false; }
+  const V = G.Levels.VOLUMES; if (!V || V.length !== 5 || V[0].from !== 0 || V[0].to !== 29 || V[1].from !== 30 || V[1].to !== 59 || V[2].from !== 60 || V[2].to !== 89 || V[0].name !== 'Volume I' || V[1].name !== 'Volume II' || V[2].name !== 'Volume III') { console.log('VOLUMES wrong'); ok = false; }
   const rows = [], PW = []; for (let j = 0; j < NP; j++) PW.push(PWR(j));
   C.forEach((L, i) => {
     const s = L.solution, sim = G.Physics.simulate(L, s.vx, s.vy, s.t0Step, K.MAX_STEPS), vol2 = i >= V2 && i < NTOTAL, moving = L.bodies.some(b => b.orbit);
@@ -240,19 +240,20 @@ function verify() {
     if (g.robust(L, sa, sp, i >= NTOTAL ? s.t0Step | 0 : 0) < 8) probs.push('solution not robust');
     if (i >= 5) for (const t0 of moving ? [0, 90, 200, 333] : [0]) if (g.straightHits(L, t0, PW)) probs.push('straight shot hits at t0=' + t0);
     for (let a = 0; a < L.bodies.length; a++) {
+      if (L.bodies[a].kind === 'nebula') continue;   // a cloud, not a solid: tools/levels-bake45.js checks its own clearances
       if (g.pointGap(L.bodies[a], L.probe.x, L.probe.y) < 140) probs.push('probe clearance');
       if (g.pointGap(L.bodies[a], L.target.x, L.target.y) < 110) probs.push('target clearance');
-      for (let b = a + 1; b < L.bodies.length; b++) if (g.bodyGap(L.bodies[a], L.bodies[b]) < 30) probs.push('body overlap');
+      for (let b = a + 1; b < L.bodies.length; b++) if (L.bodies[b].kind !== 'nebula' && g.bodyGap(L.bodies[a], L.bodies[b]) < 30) probs.push('body overlap');
     }
     // time-sampled overlap check over 60 s (belt and braces for moving bodies)
     const pa = { x: 0, y: 0 }, pb = { x: 0, y: 0 };
     for (let t = 0; t < 60 && moving; t += 0.02)
       for (let a = 0; a < L.bodies.length; a++) {
-        const A = L.bodies[a]; G.Physics.bodyPos(A, t, pa);
+        const A = L.bodies[a]; if (A.kind === 'nebula') continue; G.Physics.bodyPos(A, t, pa);
         const ea = A.kind === 'blackhole' ? A.capture : A.r;
         if (pa.x - ea < 40 || pa.x + ea > 860 || pa.y - ea < 40 || pa.y + ea > 1560) { probs.push('out of world t=' + t.toFixed(2)); t = 99; break; }
         for (let b = a + 1; b < L.bodies.length; b++) {
-          const B = L.bodies[b]; G.Physics.bodyPos(B, t, pb);
+          const B = L.bodies[b]; if (B.kind === 'nebula') continue; G.Physics.bodyPos(B, t, pb);
           if (Math.hypot(pa.x - pb.x, pa.y - pb.y) < ea + (B.kind === 'blackhole' ? B.capture : B.r)) { probs.push('overlap t=' + t.toFixed(2)); t = 99; break; }
         }
       }
@@ -280,14 +281,15 @@ function verify() {
     if (probs.length) { ok = false; console.log('L' + (i + 1), L.name, probs.join('; ')); }
   });
   if (rows.length) { console.log('plate name                    bodies hit%   frags r  timing'); for (const r of rows) console.log(String(r[0]).padStart(5), String(r[1]).padEnd(24), String(r[2]).padStart(5), String(r[3]).padStart(7), String(r[4]).padStart(5), String(r[5]).padStart(3), ' ' + r[6]); }
-  console.log(ok ? 'verify: all ' + C.length + ' baked plates pass the common checks (Volume I and II text unchanged vs levels-golden.json; solutions hit & robust >= 8/9, straight shots miss from L6, fragment paths collect all, clearances hold, solutions collect no fragments; Volume II: 4-7 bodies, r 26-38, 2-3 frags, hit ratio in band, robust at >= 3 of 4 launch times; Volume III: see verify3 below)' : 'verify: FAILED');
+  console.log(ok ? 'verify: all ' + C.length + ' baked plates pass the common checks (Volume I and II text unchanged vs levels-golden.json; solutions hit & robust >= 8/9, straight shots miss from L6, fragment paths collect all, clearances hold, solutions collect no fragments; Volume II: 4-7 bodies, r 26-38, 2-3 frags, hit ratio in band, robust at >= 3 of 4 launch times; Volume III: see verify3, Volumes IV-V: see verify45 below)' : 'verify: FAILED');
   return ok;
 }
 
-// Volumes I-II here (sync), Volume III in tools/levels-bake3.js (2 worker processes, started first so they overlap with this run).
+// Volumes I-II here (sync), Volume III in tools/levels-bake3.js (2 worker processes, started first so they overlap with this run), then
+// Volumes IV-V in tools/levels-bake45.js.
 function verifyAll() {
   const p3 = require('./levels-bake3.js').verify3(2), ok = verify();
-  return p3.then(ok3 => ok && ok3);
+  return p3.then(ok3 => require('./levels-bake45.js').verify45(+(process.env.LEVELS_JOBS || 3)).then(ok45 => ok && ok3 && ok45));
 }
 
 /* ---------- main ---------- */

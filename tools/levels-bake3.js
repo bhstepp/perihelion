@@ -584,7 +584,7 @@ function lit(v) {
   return '{' + Object.keys(v).filter(k => v[k] !== undefined).map(k => k + ':' + lit(v[k])).join(',') + '}';
 }
 const sha = t => require('crypto').createHash('sha256').update(t).digest('hex');
-const LINE_RE = /^    \{id:"c(\d\d)"/;
+const LINE_RE = /^    \{id:"c(\d{2,3})"/;
 const GOLDEN = path.join(__dirname, 'levels-golden.json');
 function campaignLines(src) {
   const a = src.indexOf('/*@CAMPAIGN*/'), b = src.indexOf('/*@END*/');
@@ -606,6 +606,7 @@ function writeModule(v3levels) {
   const src = fs.readFileSync(LEVELS, 'utf8'), a = src.indexOf('/*@CAMPAIGN*/'), b = src.indexOf('/*@END*/'), gold = pins();
   const lines = campaignLines(src);
   if (lines.length < 60 || v3levels.length !== NALL - V3) throw new Error('need the 60 older lines + 30 new plates');
+  if (lines.length > NALL) throw new Error('Volumes IV-V follow Volume III; rewriting Volume III would drop them (and it is pinned): refusing');
   lines.slice(0, 30).forEach((l, i) => { if (sha(l) !== gold.lines[i]) throw new Error('Volume I plate ' + (i + 1) + ' differs from the pin; refusing to write'); });
   lines.slice(30, 60).forEach((l, i) => { if (sha(l) !== gold.lines2[i]) throw new Error('Volume II plate ' + (i + 31) + ' differs from the pin; refusing to write'); });
   const sec = src.slice(a, b).split('\n'); let n = 0, cut = -1;
@@ -716,13 +717,13 @@ function printRows(rows) {
 function verify3(nWorkers) {
   const G = loadFast(), C = makeCtx(G), CAMP = G.Levels.CAMPAIGN; let ok = true;
   const gold = JSON.parse(fs.readFileSync(GOLDEN, 'utf8')), lines = campaignLines(fs.readFileSync(LEVELS, 'utf8'));
-  if (lines.length !== NALL) { console.log('CAMPAIGN literal lines', lines.length, '(want 90)'); ok = false; }
-  if (CAMP.length !== NALL) { console.log('CAMPAIGN length', CAMP.length, '(want 90)'); ok = false; }
+  if (lines.length < NALL) { console.log('CAMPAIGN literal lines', lines.length, '(want >= 90)'); ok = false; }   // Volumes IV-V follow (levels-bake45.js)
+  if (CAMP.length < NALL) { console.log('CAMPAIGN length', CAMP.length, '(want >= 90)'); ok = false; }
   if (!gold.lines2 || gold.lines2.length !== 30) { console.log('tools/levels-golden.json has no lines2 pins'); ok = false; }
   else for (let i = 30; i < 60; i++) if (!lines[i] || sha(lines[i]) !== gold.lines2[i - 30]) { console.log('L' + (i + 1), 'FROZEN PLATE CHANGED (Volume II)'); ok = false; }
   const V = G.Levels.VOLUMES;
-  if (!V || V.length !== 3 || V[2].name !== 'Volume III' || V[2].from !== 60 || V[2].to !== 89 || V[0].to !== 29 || V[1].from !== 30 || V[1].to !== 59) { console.log('VOLUMES wrong'); ok = false; }
-  if (!ok || CAMP.length !== NALL) return Promise.resolve(false);
+  if (!V || V.length < 3 || V[2].name !== 'Volume III' || V[2].from !== 60 || V[2].to !== 89 || V[0].to !== 29 || V[1].from !== 30 || V[1].to !== 59) { console.log('VOLUMES wrong'); ok = false; }
+  if (!ok || CAMP.length < NALL) return Promise.resolve(false);
   const idx = Array.from({ length: 30 }, (_, q) => q + V3), nw = nWorkers || 2, groups = Array.from({ length: nw }, () => []);
   idx.forEach((i, q) => groups[q % nw].push(i));
   return Promise.all(groups.map(gr => new Promise((res, rej) => cp.execFile(process.execPath, [__filename, '--verify-worker', gr.join(',')], { maxBuffer: 1 << 26 }, (e, so, se) => e ? rej(new Error(se || e.message)) : res(JSON.parse(so)))))).then(rs => {

@@ -162,6 +162,20 @@ var LogUI = (function () {
     return (n < 0 ? '-' : '') + s + out;
   }
 
+  // physics steps -> seconds: one decimal under a minute, whole seconds after
+  function secs(steps) {
+    var dt = 1 / 120; try { if (K.DT > 0) dt = K.DT; } catch (e) {}
+    var v = Math.max(0, Number(steps) || 0) * dt;
+    return v < 60 ? (Math.round(v * 10) / 10).toFixed(1) : fmt(v);
+  }
+  // plates in the Atlas as it stands (the campaign may still be shorter than the save)
+  function plates() {
+    var n = 0;
+    try { if (Levels.CAMPAIGN && Levels.CAMPAIGN.length > 0) n = Levels.CAMPAIGN.length; } catch (e) {}
+    if (!n) { try { n = Save.N | 0; } catch (e) {} }
+    return n;
+  }
+
   function injectCss() {
     if (!doc || doc.getElementById('logui-css')) return;
     var st = doc.createElement('style');
@@ -201,7 +215,7 @@ var LogUI = (function () {
 
   function render(snap) {
     var t = snap.totals || {}, st = snap.stats || {}, dl = snap.daily || {}, ach = snap.achievements || [];
-    var N = 90; try { N = Save.N || 90; } catch (e) {}
+    var N = plates();
     var got = 0, i;
     for (i = 0; i < ach.length; i++) if (ach[i].unlocked) got++;
     var hit = st.launches > 0 ? Math.round(100 * (st.hitRate || 0)) + '<i>%</i>' : '&mdash;';
@@ -219,7 +233,9 @@ var LogUI = (function () {
       row('Distance flown', fmt(st.distance || 0), 'u') +
       row('Near misses', fmt(st.nearMiss || 0)) +
       row('Needles threaded', fmt(st.threads || 0)) +
-      row('Gates passed', fmt(st.warps || 0)) + '</ul>';
+      row('Gates passed', fmt(st.warps || 0)) +
+      row('Time in nebulae', secs(st.fog), 's') +
+      row('Beam catches', fmt(st.beams || 0)) + '</ul>';
     if (!(st.launches > 0)) h += '<p class="lg-note">Nothing observed as yet. The log fills as you fly.</p>';
     h += '</section>';
 

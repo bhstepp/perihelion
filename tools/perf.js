@@ -5,7 +5,7 @@
 const path = require('path');
 const { chromium } = require('playwright');
 (async () => {
-  const b = await chromium.launch();
+  const b = await chromium.launch(require('./qa-lib.js').launchOpts(chromium));
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   const p = await ctx.newPage();
   await p.goto('file://' + path.join(__dirname, '..', 'dist', 'perihelion.html'));

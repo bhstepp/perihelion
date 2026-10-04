@@ -333,6 +333,8 @@ svg.comet.off circle { fill: var(--paper-45); }
         <button class="btn" data-act="howto">How to play</button>
         <button class="btn" data-act="fragments">About comet fragments</button>
         <button class="btn" data-act="wormholes" id="sheet-worm" hidden>About wormholes</button>
+        <button class="btn" data-act="nebulae" id="sheet-neb" hidden>About nebulae</button>
+        <button class="btn" data-act="pulsars" id="sheet-pul" hidden>About pulsars</button>
         <button class="btn" data-act="restart">Restart plate</button>
         <button class="btn" data-act="atlas" id="sheet-exit">Return to the Atlas</button>
       </div>
@@ -405,8 +407,12 @@ function toRoman(n) {
    body collisions (per body: blackhole capture, then crash) -> target -> bounds -> timeout (K.MAX_STEPS).
    Gravity is softened Newtonian: a = mu*d / (|d|^2 + EPS2)^1.5 (mu < 0 = repulsor).
    DETERMINISM RULE: numeric behaviour is FROZEN (baked levels + solutions depend on it; see
-   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3) are a pure addition: a separate branch that never runs for
-   the older kinds, so every older flight is bit-identical. Time is ALWAYS abs*DT from an integer step counter, never accumulated.
+   tools/physics-golden.json). Wormholes (kind 'wormhole', added in v3), nebulae (kind 'nebula') and pulsars (kind 'pulsar', both v4)
+   are pure additions: separate branches that never run for the older kinds, so every older flight is bit-identical.
+   Nebula: inert to gravity (mu 0) and harmless; while the probe centre is inside (start-of-step positions, like gravity) the velocity
+   just updated by gravity is multiplied by (1 - drag*DT) before the position update: a dust cloud that bleeds speed.
+   Pulsar: a crashable body with ordinary gravity plus two opposite beams at angle beam.phase + beam.omega*t; a probe within beam.reach
+   of the centre and inside a beam (half-width beam.half radians) is pushed straight outward by beam.push (units/s^2), in accel(). Time is ALWAYS abs*DT from an integer step counter, never accumulated.
    predict/simulate and the live flight run the very same createSim + stepSim, so a predicted point is
    bit-identical (===) to the live probe at that step. Never reorder float ops here; `node tools/physics-test.js`
    must stay green. Guards for bad input (NaN/Infinity) only change results for non-finite values. */
@@ -426,6 +432,15 @@ var Physics = (function () {
     return out;
   }
 
+  // Pulsar beams: is the offset (dx, dy) from the pulsar centre inside one of its two opposite beams at time t? No atan2: the beam axis
+  // u = (cos, sin)(phase + omega*t); inside when |d x u| < |d . u| * tan(half) and |d| < reach.
+  function inBeam(bm, dx, dy, t) {
+    var d2 = dx * dx + dy * dy;
+    if (!(d2 < bm.reach * bm.reach) || d2 < 1e-9) return false;
+    var a = bm.phase + bm.omega * t, ux = cos(a), uy = sin(a), al = dx * ux + dy * uy, pe = dx * uy - dy * ux;
+    return (pe < 0 ? -pe : pe) < (al < 0 ? -al : al) * Math.tan(bm.half);
+  }
+
   var _p = { x: 0, y: 0 };
   // Softened Newtonian gravity: a = mu * d / (|d|^2 + eps^2)^(3/2). Negative mu = repulsor, mu = 0 = inert.
   function accel(level, x, y, t, out) {
@@ -437,6 +452,7 @@ var Physics = (function () {
       var d2 = dx * dx + dy * dy + e2;
       var inv = b.mu / (d2 * sqrt(d2));
       ax += dx * inv; ay += dy * inv;
+      if (b.beam && inBeam(b.beam, -dx, -dy, t)) { var bl = sqrt(dx * dx + dy * dy), bp = b.beam.push / bl; ax -= dx * bp; ay -= dy * bp; }
     }
     out.x = ax; out.y = ay;
     return out;
@@ -453,6 +469,11 @@ var Physics = (function () {
     return { cancel: false, vx: dx * s, vy: dy * s, power: power };
   }
 
+  function hasFx(level) {
+    for (var i = 0, bs = level.bodies; i < bs.length; i++) if (bs[i].kind === 'nebula' || bs[i].beam) return true;
+    return false;
+  }
+
   function createSim(level, vx, vy, t0Step) {
     return {
       x: level.probe.x, y: level.probe.y, vx: vx, vy: vy,
@@ -463,8 +484,13 @@ var Physics = (function () {
       minDist: Infinity,                // closest approach to target centre
       dist: 0,                          // path length travelled so far, in units
       warps: 0,                         // wormhole passages so far
+      fog: 0,                           // steps spent inside a nebula
+      beams: 0,                         // pulsar beam crossings (entries) so far
+      inFog: -1, inBeam: -1,            // body index of the nebula / pulsar beam the probe is in now (-1 = none)
+      fx: hasFx(level),                 // the level has a nebula or a pulsar beam (else stepSim skips that loop entirely)
       minGap: Infinity,                 // closest approach to any non-repulsor body SURFACE (within 60 u), for 'near miss' stats
-      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} pushed as they happen; consumer may clear
+      events: []                        // {type:'frag', i} / {type:'warp', from, to, step} / {type:'fog', i, step} / {type:'beam', i, step}
+                                        // pushed as they happen (fog/beam on entering); consumer may clear
     };
   }
 
@@ -474,10 +500,26 @@ var Physics = (function () {
     if (sim.status !== 'flying') return sim.status;
     accel(level, sim.x, sim.y, sim.abs * DT, _a);
     sim.vx += _a.x * DT; sim.vy += _a.y * DT;
+    // v4: nebula drag and beam bookkeeping (start-of-step positions, like gravity). Only nebulae and pulsars do anything here.
+    var bs0 = level.bodies, fog = -1, beam = -1, t0 = sim.abs * DT;
+    if (sim.fx) for (var k = 0; k < bs0.length; k++) {
+      var c = bs0[k];
+      if (c.kind === 'nebula') {
+        bodyPos(c, t0, _q);
+        var nx = sim.x - _q.x, ny = sim.y - _q.y;
+        if (nx * nx + ny * ny < c.r * c.r) { var f = 1 - c.drag * DT; sim.vx *= f; sim.vy *= f; if (fog < 0) fog = k; }
+      } else if (c.beam && beam < 0) {
+        bodyPos(c, t0, _q);
+        if (inBeam(c.beam, sim.x - _q.x, sim.y - _q.y, t0)) beam = k;
+      }
+    }
     sim.x += sim.vx * DT; sim.y += sim.vy * DT;
     sim.abs++; sim.step++;
     sim.dist += sqrt(sim.vx * sim.vx + sim.vy * sim.vy) * DT;
     var t = sim.abs * DT, x = sim.x, y = sim.y, i, dx, dy, pr = C.PROBE_R, fr2 = C.FRAG_R * C.FRAG_R;
+    if (fog >= 0) { sim.fog++; if (sim.inFog < 0) sim.events.push({ type: 'fog', i: fog, step: sim.step }); }
+    if (beam >= 0 && sim.inBeam < 0) { sim.beams++; sim.events.push({ type: 'beam', i: beam, step: sim.step }); }
+    sim.inFog = fog; sim.inBeam = beam;
 
     var fr = level.frags, got = sim.collected;
     if (fr) for (i = 0; i < fr.length; i++) {
@@ -492,6 +534,7 @@ var Physics = (function () {
       bodyPos(b, t, _q);
       dx = _q.x - x; dy = _q.y - y;
       var d2 = dx * dx + dy * dy;
+      if (b.kind === 'nebula') continue;   // a dust cloud: no surface, no harm, not a near miss
       if (b.kind === 'wormhole') {
         // Mouth: inert to gravity (mu 0) and harmless. Entering it (centre within r) leaves by the twin b.pair, speed kept, velocity
         // turned by b.turn (radians), placed just outside the twin's mouth along the new heading so it cannot re-enter at once.
@@ -598,7 +641,7 @@ var Physics = (function () {
     });
     chk('fragment events once', function () {
       var l = L(1450, [], fr3), s = createSim(l, 0, -100), e = [];
-      while (stepSim(s, l) === 'flying' && s.step < 900) { e = e.concat(s.events); s.events.length = 0; }
+      while (stepSim(s, l) === 'flying') { e = e.concat(s.events); s.events.length = 0; }
       return e.length === 3 && e[0].i === 0 && e[1].i === 1 && e[2].i === 2 && s.collected.join() === '1,1,1' || 'ev ' + e.length;
     });
     chk('rails + integrator order', function () {
@@ -636,6 +679,41 @@ var Physics = (function () {
       if (q.warps !== 1 || Math.abs(Math.hypot(q.x - g.x, q.y - g.y) - (30 + C.WARP_GAP)) > 1e-9) return 'moving mouth exit';
       var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withW = L(1420, [B(330, 780, 70, 2.4e7), W(100, 100, 30, 2), W(800, 100, 30, 1)]);
       return same(S(plain, 90, -400), S(withW, 90, -400)) || 'an unrelated wormhole pair changed a flight';
+    });
+    function Nb(x, y, r, drag, orb) { return { kind: 'nebula', x: x, y: y, r: r, mu: 0, orbit: orb || null, drag: drag }; }
+    function Pu(x, y, r, mu, om, ph, half, reach, push) { return { kind: 'pulsar', x: x, y: y, r: r, mu: mu, orbit: null, beam: { omega: om, phase: ph, half: half, reach: reach, push: push } }; }
+    chk('nebula: drag factor inside only, harmless, fog count + one event, predict === simulate, far nebula inert', function () {
+      var l = L(1400, [Nb(450, 1000, 120, 0.5)]), s = createSim(l, 0, -300, 0), was = 0, ev = [];
+      while (stepSim(s, l) === 'flying') {
+        var sp = speed(s); ev = ev.concat(s.events); s.events.length = 0;
+        if (s.inFog >= 0 && was && Math.abs(sp - was * (1 - 0.5 * DT)) > 1e-9) return 'factor @' + s.step;
+        if (s.inFog < 0 && was && Math.abs(sp - was) > 1e-9) return 'drag outside @' + s.step;
+        was = sp;
+      }
+      if (s.status !== 'hit' || s.minGap !== Infinity || s.hitBody !== -1) return 'status ' + s.status + ' ' + s.minGap;
+      if (ev.length !== 1 || ev[0].type !== 'fog' || ev[0].i !== 0 || s.fog < 50 || s.fog > 200) return 'fog ' + s.fog + ' ev ' + ev.length;
+      var pp = new Float64Array(2 * N), f2 = new Float32Array(2 * Q), a2 = S(l, 0, -300, 0, N, pp), b2 = predict(l, 0, -300, 0, f2);
+      for (var i = 0; i < b2.n; i++) if (f2[2 * i] !== Math.fround(pp[2 * i])) return 'pred@' + i;
+      var mv = L(1400, [Nb(450, 1000, 90, 0.6, { cx: 450, cy: 1000, rad: 60, omega: 1, phase: 0 })]), m2 = S(mv, 0, -300, 0);
+      if (m2.fog < 1 || m2.status !== 'hit') return 'moving nebula';
+      var plain = L(1420, [B(330, 780, 70, 2.4e7)]), withN = L(1420, [B(330, 780, 70, 2.4e7), Nb(800, 100, 60, 3)]);
+      return same(S(plain, 90, -400), S(withN, 90, -400)) || 'a far nebula changed a flight';
+    });
+    chk('pulsar: gravity like a planet, beams push outward, crash on contact, beam events, predict === simulate', function () {
+      var pl = L(1420, [B(330, 780, 14, 2e7)]), pu = L(1420, [Pu(330, 780, 14, 2e7, 1, 0, 0.15, 500, 0)]);
+      if (!same(S(pl, 90, -400, 3), S(pu, 90, -400, 3))) return 'push 0 is not a planet';
+      // a beam fixed along +y (phase pi/2, omega 0) under the probe's straight path from (450,1400) up: pushed along -y? no: the probe flies
+      // up the beam axis away from the pulsar at (450,1500) -> it speeds up while inside the beam, then coasts
+      var up = L(1400, [Pu(450, 1560, 10, 0, 0, Math.PI / 2, 0.2, 400, 900)]), q = createSim(up, 0, -200, 0);
+      stepSim(q, up); if (!(q.vy < -200) || q.beams !== 1 || q.events[0].type !== 'beam') return 'push ' + q.vy + ' beams ' + q.beams;
+      while (stepSim(q, up) === 'flying' && q.inBeam >= 0);
+      var v1 = q.vy; stepSim(q, up); if (q.vy !== v1 || q.beams !== 1) return 'outside the reach ' + q.vy;
+      var side = L(1400, [Pu(450, 1560, 10, 0, 0, 0, 0.2, 400, 900)]), r = S(side, 0, -200, 0); if (r.beams !== 0) return 'beam off-axis';
+      var sw = L(1400, [Pu(700, 1000, 12, 1e6, 2.5, 0, 0.12, 600, 1200)]), p1 = new Float64Array(2 * N), f1 = new Float32Array(2 * Q), a1 = S(sw, 20, -350, 77, N, p1), b1 = predict(sw, 20, -350, 77, f1);
+      for (var i = 0; i < b1.n; i++) if (f1[2 * i] !== Math.fround(p1[2 * i])) return 'pred@' + i;
+      if (a1.beams < 1) return 'no sweep crossing';
+      var hitP = S(L(1400, [Pu(450, 1000, 20, 1e6, 0, 0, 0.1, 300, 500)]), 0, -300, 0);
+      return hitP.status === 'crash' && hitP.hitBody === 0 && hitP.minGap < C.PROBE_R || 'crash ' + hitP.status;
     });
     for (var i = 0, ok = true; i < cks.length; i++) ok = ok && cks[i].ok;
     return { ok: ok, checks: cks };
@@ -1161,6 +1239,68 @@ var Levels = (function () {
     {id:"c88",index:87,seed:2315439,difficulty:2.16,name:"The Hall of Mirrors",plate:"LXXXVIII",probe:{x:735,y:1417},target:{x:242,y:299,r:27},bodies:[{kind:"planet",r:51,mu:7.61e6,x:535,y:978,orbit:null},{kind:"blackhole",r:12,capture:40,mu:3.64e7,x:341,y:871,orbit:null},{kind:"repulsor",r:24,mu:-1.14e7,x:615,y:1186,orbit:null},{kind:"moon",r:17,mu:295000,orbit:{cx:341,cy:871,rad:97,omega:-.61,phase:5.276}},{kind:"wormhole",r:25,mu:0,x:771,y:1080,orbit:null,pair:5,turn:.7853981633974483},{kind:"wormhole",r:25,mu:0,x:77,y:432,orbit:null,pair:4,turn:-.7853981633974483},{kind:"wormhole",r:29,mu:0,x:107,y:573,orbit:null,pair:7,turn:-1.5707963267948966},{kind:"wormhole",r:25,mu:0,x:463,y:1283,orbit:null,pair:6,turn:1.5707963267948966}],frags:[{x:737,y:1274},{x:750,y:1136},{x:122,y:394}],solution:{vx:-520.26,vy:-282.478,t0Step:200},fragSolution:{vx:-33.495,vy:-639.123,t0Step:0}},
     {id:"c89",index:88,seed:5786536,difficulty:2.18,name:"The Labyrinth",plate:"LXXXIX",probe:{x:364,y:1359},target:{x:604,y:358,r:26},bodies:[{kind:"repulsor",r:25,mu:-9.89e6,x:524,y:737,orbit:null},{kind:"blackhole",r:14,capture:42,mu:3.6e7,x:751,y:537,orbit:null},{kind:"repulsor",r:28,mu:-1.2e7,x:802,y:1008,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:751,cy:537,rad:92,omega:-1.381,phase:2.154}},{kind:"wormhole",r:29,mu:0,x:728,y:898,orbit:null,pair:5,turn:1.5707963267948966},{kind:"wormhole",r:26,mu:0,x:294,y:757,orbit:null,pair:4,turn:-1.5707963267948966},{kind:"wormhole",r:28,mu:0,x:418,y:970,orbit:{cx:457,cy:938,rad:50,omega:.578,phase:2.451},pair:7,turn:-.7853981633974483},{kind:"wormhole",r:27,mu:0,x:804,y:86,orbit:null,pair:6,turn:.7853981633974483}],frags:[{x:440,y:1172},{x:645,y:117}],solution:{vx:-16.052,vy:-367.65,t0Step:459},fragSolution:{vx:82.658,vy:-173.296,t0Step:0}},
     {id:"c90",index:89,seed:5562633,difficulty:2.2,name:"The Leviathan of Parsonstown",plate:"XC",probe:{x:178,y:1355},target:{x:517,y:676,r:26},bodies:[{kind:"repulsor",r:29,mu:-1.04e7,x:411,y:932,orbit:null},{kind:"blackhole",r:14,capture:44,mu:3.96e7,x:525,y:360,orbit:null},{kind:"repulsor",r:25,mu:-1.38e7,x:296,y:360,orbit:null},{kind:"moon",r:22,mu:639000,orbit:{cx:525,cy:360,rad:100,omega:.848,phase:3.085}},{kind:"wormhole",r:26,mu:0,x:483,y:1193,orbit:{cx:399,cy:1150,rad:94,omega:.651,phase:.477},pair:5,turn:-.7853981633974483},{kind:"wormhole",r:24,mu:0,x:196,y:740,orbit:null,pair:4,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:627,y:945,orbit:null,pair:7,turn:1.5707963267948966},{kind:"wormhole",r:30,mu:0,x:333,y:470,orbit:null,pair:6,turn:-1.5707963267948966}],frags:[{x:309,y:1291},{x:264,y:600},{x:582,y:886}],solution:{vx:406.831,vy:-451.832,t0Step:1211},fragSolution:{vx:233.15,vy:-140.09,t0Step:0}}
+  ]).concat([
+    {id:"c91",index:90,seed:118730,difficulty:2.22,name:"The Veil",plate:"XCI",probe:{x:297,y:1323},target:{x:658,y:297,r:38},bodies:[{kind:"nebula",r:129,mu:0,x:398,y:1113,orbit:null,drag:.762},{kind:"planet",r:53,mu:2.11e6,x:502,y:691,orbit:null}],frags:[{x:359,y:946},{x:401,y:702}],solution:{vx:270.476,vy:-580.037,t0Step:0},fragSolution:{vx:79.223,vy:-473.417,t0Step:0}},
+    {id:"c92",index:91,seed:127827,difficulty:2.24,name:"The Great Nebula in Orion",plate:"XCII",probe:{x:687,y:1305},target:{x:187,y:477,r:37},bodies:[{kind:"nebula",r:101,mu:0,x:576,y:1098,orbit:null,drag:.832},{kind:"planet",r:58,mu:4.02e6,x:531,y:1034,orbit:null}],frags:[{x:626,y:1112},{x:464,y:807},{x:332,y:660}],solution:{vx:-448.582,vy:-456.48,t0Step:0},fragSolution:{vx:-153.221,vy:-571.828,t0Step:0}},
+    {id:"c93",index:92,seed:133924,difficulty:2.26,name:"Messier's Catalogue",plate:"XCIII",probe:{x:456,y:1317},target:{x:360,y:277,r:37},bodies:[{kind:"nebula",r:139,mu:0,x:425,y:857,orbit:null,drag:.606},{kind:"planet",r:52,mu:3.61e6,x:407,y:835,orbit:null}],frags:[{x:339,y:881},{x:331,y:634}],solution:{vx:39.071,vy:-638.806,t0Step:0},fragSolution:{vx:-161.503,vy:-602.738,t0Step:0}},
+    {id:"c94",index:93,seed:122021,difficulty:2.28,name:"The Lagoon",plate:"XCIV",probe:{x:164,y:1295},target:{x:708,y:393,r:36},bodies:[{kind:"nebula",r:130,mu:0,x:228,y:1070,orbit:null,drag:.898},{kind:"planet",r:61,mu:4.91e6,x:491,y:743,orbit:null},{kind:"planet",r:59,mu:4.26e6,x:670,y:817,orbit:null}],frags:[{x:445,y:957},{x:538,y:820}],solution:{vx:203.075,vy:-606.927,t0Step:0},fragSolution:{vx:305.368,vy:-390.853,t0Step:0}},
+    {id:"c95",index:94,seed:100118,difficulty:2.3,name:"The Trifid",plate:"XCV",probe:{x:419,y:1368},target:{x:249,y:563,r:36},bodies:[{kind:"nebula",r:140,mu:0,x:314,y:1129,orbit:null,drag:.897},{kind:"planet",r:51,mu:4.15e6,x:340,y:993,orbit:null},{kind:"planet",r:47,mu:1.94e6,x:186,y:1108,orbit:null}],frags:[{x:320,y:1154},{x:240,y:808}],solution:{vx:16.753,vy:-639.781,t0Step:0},fragSolution:{vx:-245.498,vy:-538.697,t0Step:0}},
+    {id:"c96",index:95,seed:257215,difficulty:2.32,name:"The Ring in Lyra",plate:"XCVI",probe:{x:608,y:1292},target:{x:458,y:325,r:35},bodies:[{kind:"nebula",r:124,mu:0,x:551,y:883,orbit:null,drag:.706},{kind:"planet",r:55,mu:5.45e6,x:551,y:903,orbit:null},{kind:"planet",r:47,mu:2.03e6,x:751,y:751,orbit:null}],frags:[{x:619,y:1092},{x:547,y:636}],solution:{vx:-234.561,vy:-595.467,t0Step:0},fragSolution:{vx:27.916,vy:-639.391,t0Step:0}},
+    {id:"c97",index:96,seed:286312,difficulty:2.34,name:"The Dumbbell",plate:"XCVII",probe:{x:509,y:1329},target:{x:180,y:497,r:35},bodies:[{kind:"nebula",r:116,mu:0,x:401,y:1066,orbit:null,drag:.755},{kind:"planet",r:53,mu:6.83e6,x:378,y:1039,orbit:null},{kind:"planet",r:55,mu:5.55e6,x:191,y:1174,orbit:null},{kind:"moon",r:14,mu:165000,orbit:{cx:191,cy:1174,rad:127,omega:-1.199,phase:3.693}}],frags:[{x:265,y:920},{x:216,y:674}],solution:{vx:-39.071,vy:-638.806,t0Step:498},fragSolution:{vx:-365.904,vy:-485.57,t0Step:0}},
+    {id:"c98",index:97,seed:170409,difficulty:2.36,name:"The Owl",plate:"XCVIII",probe:{x:678,y:1291},target:{x:408,y:322,r:34},bodies:[{kind:"nebula",r:107,mu:0,x:556,y:1149,orbit:null,drag:.758},{kind:"planet",r:57,mu:8.16e6,x:599,y:938,orbit:null},{kind:"planet",r:55,mu:6.84e6,x:737,y:617,orbit:null},{kind:"planet",r:39,mu:1.6e6,x:814,y:970,orbit:null}],frags:[{x:446,y:1022},{x:377,y:807},{x:368,y:662}],solution:{vx:-380.687,vy:-514.468,t0Step:0},fragSolution:{vx:-365.184,vy:-358.866,t0Step:0}},
+    {id:"c99",index:98,seed:195506,difficulty:2.38,name:"The Crab",plate:"XCIX",probe:{x:157,y:1295},target:{x:659,y:643,r:34},bodies:[{kind:"nebula",r:92,mu:0,x:277,y:1154,orbit:null,drag:.863},{kind:"planet",r:53,mu:5.21e6,x:463,y:917,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:463,cy:917,rad:131,omega:-.856,phase:3.978}}],frags:[{x:294,y:1040},{x:398,y:877}],solution:{vx:483.014,vy:-419.878,t0Step:879},fragSolution:{vx:310.278,vy:-559.757,t0Step:0}},
+    {id:"c100",index:99,seed:162603,difficulty:2.4,name:"The Cat's Eye",plate:"C",probe:{x:634,y:1295},target:{x:176,y:404,r:33},bodies:[{kind:"nebula",r:103,mu:0,x:410,y:836,orbit:null,drag:1.058},{kind:"nebula",r:99,mu:0,x:465,y:1160,orbit:null,drag:.69},{kind:"planet",r:70,mu:9.9e6,x:420,y:827,orbit:null},{kind:"planet",r:47,mu:2.23e6,x:524,y:619,orbit:null}],frags:[{x:371,y:1064},{x:275,y:932},{x:204,y:752}],solution:{vx:-424.077,vy:-479.332,t0Step:0},fragSolution:{vx:-371.482,vy:-328.66,t0Step:0}},
+    {id:"c101",index:100,seed:889700,difficulty:2.42,name:"Herschel's Garden",plate:"CI",probe:{x:399,y:1287},target:{x:626,y:184,r:33},bodies:[{kind:"nebula",r:121,mu:0,x:656,y:892,orbit:null,drag:.871},{kind:"planet",r:62,mu:8.08e6,x:545,y:627,orbit:null},{kind:"planet",r:55,mu:8.93e6,x:330,y:519,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:330,cy:519,rad:108,omega:-.532,phase:6.185}}],frags:[{x:691,y:782},{x:731,y:528}],solution:{vx:275.527,vy:-577.655,t0Step:1251},fragSolution:{vx:271.319,vy:-434.201,t0Step:0}},
+    {id:"c102",index:101,seed:131797,difficulty:2.44,name:"The Planetary Nebula",plate:"CII",probe:{x:266,y:1294},target:{x:468,y:672,r:32},bodies:[{kind:"nebula",r:106,mu:0,x:347,y:797,orbit:null,drag:1.177},{kind:"nebula",r:83,mu:0,x:328,y:1085,orbit:null,drag:.878},{kind:"planet",r:51,mu:6.09e6,x:376,y:972,orbit:null},{kind:"planet",r:63,mu:6.39e6,x:598,y:1043,orbit:null},{kind:"moon",r:15,mu:203000,orbit:{cx:598,cy:1043,rad:116,omega:1.181,phase:2.85}}],frags:[{x:386,y:1091},{x:461,y:828}],solution:{vx:22.336,vy:-639.61,t0Step:1145},fragSolution:{vx:242.439,vy:-395.625,t0Step:0}},
+    {id:"c103",index:102,seed:352894,difficulty:2.46,name:"The Coalsack",plate:"CIII",probe:{x:639,y:1311},target:{x:154,y:248,r:32},bodies:[{kind:"nebula",r:104,mu:0,x:566,y:1122,orbit:null,drag:.943},{kind:"blackhole",r:13,capture:41,mu:2.51e7,x:309,y:619,orbit:null},{kind:"repulsor",r:24,mu:-1.23e7,x:814,y:928,orbit:null}],frags:[{x:297,y:915},{x:209,y:791}],solution:{vx:74.381,vy:-159.51,t0Step:0},fragSolution:{vx:-379.867,vy:-495.052,t0Step:0}},
+    {id:"c104",index:103,seed:123991,difficulty:2.48,name:"The Horsehead",plate:"CIV",probe:{x:360,y:1321},target:{x:656,y:352,r:32},bodies:[{kind:"nebula",r:112,mu:0,x:730,y:640,orbit:null,drag:.849},{kind:"repulsor",r:30,mu:-9.36e6,x:528,y:747,orbit:null},{kind:"blackhole",r:13,capture:47,mu:3.87e7,x:771,y:964,orbit:null}],frags:[{x:852,y:741},{x:765,y:585}],solution:{vx:410.843,vy:-178.64,t0Step:0},fragSolution:{vx:392.139,vy:-138.864,t0Step:0}},
+    {id:"c105",index:104,seed:125088,difficulty:2.5,name:"The Keyhole",plate:"CV",probe:{x:298,y:1397},target:{x:408,y:617,r:31},bodies:[{kind:"nebula",r:117,mu:0,x:554,y:852,orbit:null,drag:1.065},{kind:"blackhole",r:13,capture:42,mu:3.3e7,x:339,y:1026,orbit:null},{kind:"repulsor",r:26,mu:-1.31e7,x:154,y:817,orbit:null},{kind:"planet",r:39,mu:2.1e6,x:205,y:993,orbit:null}],frags:[{x:465,y:1108},{x:480,y:923},{x:447,y:720}],solution:{vx:386.155,vy:-360.095,t0Step:0},fragSolution:{vx:367.089,vy:-524.257,t0Step:0}},
+    {id:"c106",index:105,seed:493185,difficulty:2.52,name:"Eta Carinae",plate:"CVI",probe:{x:537,y:1354},target:{x:627,y:222,r:31},bodies:[{kind:"nebula",r:112,mu:0,x:522,y:1134,orbit:null,drag:1.217},{kind:"repulsor",r:24,mu:-1.37e7,x:568,y:758,orbit:null},{kind:"blackhole",r:12,capture:46,mu:2.7e7,x:270,y:571,orbit:null},{kind:"moon",r:21,mu:556000,orbit:{cx:270,cy:571,rad:118,omega:1.152,phase:3.91}}],frags:[{x:313,y:1077},{x:128,y:901},{x:402,y:239}],solution:{vx:-149.679,vy:-336.185,t0Step:850},fragSolution:{vx:-85.326,vy:-153.933,t0Step:0}},
+    {id:"c107",index:106,seed:128282,difficulty:2.54,name:"The Omega",plate:"CVII",probe:{x:644,y:1364},target:{x:215,y:366,r:30},bodies:[{kind:"nebula",r:100,mu:0,x:208,y:802,orbit:null,drag:.926},{kind:"nebula",r:100,mu:0,x:663,y:914,orbit:null,drag:.755},{kind:"blackhole",r:14,capture:41,mu:2.77e7,x:365,y:756,orbit:null},{kind:"repulsor",r:29,mu:-1.19e7,x:169,y:684,orbit:null}],frags:[{x:634,y:926},{x:550,y:637}],solution:{vx:-83.537,vy:-634.525,t0Step:0},fragSolution:{vx:-4.608,vy:-527.98,t0Step:0}},
+    {id:"c108",index:107,seed:144379,difficulty:2.56,name:"The Eagle",plate:"CVIII",probe:{x:190,y:1429},target:{x:469,y:224,r:30},bodies:[{kind:"nebula",r:98,mu:0,x:530,y:1007,orbit:null,drag:1.153},{kind:"repulsor",r:25,mu:-1.15e7,x:334,y:747,orbit:null},{kind:"blackhole",r:16,capture:48,mu:2.97e7,x:630,y:579,orbit:null},{kind:"repulsor",r:29,mu:-8.75e6,x:515,y:545,orbit:null}],frags:[{x:480,y:1115},{x:617,y:425}],solution:{vx:225.719,vy:-368.341,t0Step:0},fragSolution:{vx:128.058,vy:-163.906,t0Step:0}},
+    {id:"c109",index:108,seed:146253,difficulty:2.58,name:"The Rosette",plate:"CIX",probe:{x:192,y:1303},target:{x:698,y:657,r:30},bodies:[{kind:"nebula",r:106,mu:0,x:446,y:746,orbit:{cx:462,cy:710,rad:40,omega:.428,phase:1.983},drag:.956},{kind:"planet",r:50,mu:5.36e6,x:534,y:884,orbit:null},{kind:"planet",r:55,mu:7.48e6,x:677,y:875,orbit:null}],frags:[{x:292,y:955},{x:421,y:733},{x:573,y:642}],solution:{vx:168.796,vy:-397.658,t0Step:0},fragSolution:{vx:84.128,vy:-325.298,t0Step:0}},
+    {id:"c110",index:109,seed:2142684,difficulty:2.6,name:"The Drifting Veil",plate:"CX",probe:{x:455,y:1457},target:{x:515,y:279,r:30},bodies:[{kind:"nebula",r:111,mu:0,x:578,y:1210,orbit:{cx:546,cy:1234,rad:40,omega:-.223,phase:5.639},drag:1.279},{kind:"planet",r:53,mu:6.02e6,x:507,y:692,orbit:null},{kind:"planet",r:58,mu:6.32e6,x:690,y:694,orbit:null}],frags:[{x:677,y:1008},{x:761,y:760},{x:713,y:556}],solution:{vx:44.498,vy:-136.952,t0Step:2514},fragSolution:{vx:288.131,vy:-553.495,t0Step:0}},
+    {id:"c111",index:110,seed:635003,difficulty:2.62,name:"The Cocoon",plate:"CXI",probe:{x:621,y:1295},target:{x:255,y:366,r:29},bodies:[{kind:"nebula",r:127,mu:0,x:618,y:665,orbit:{cx:608,cy:632,rad:34,omega:.39,phase:1.276},drag:1.192},{kind:"planet",r:69,mu:1.75e7,x:417,y:844,orbit:null},{kind:"planet",r:60,mu:8.97e6,x:125,y:755,orbit:null}],frags:[{x:552,y:652},{x:408,y:454}],solution:{vx:-32.658,vy:-623.145,t0Step:1892},fragSolution:{vx:29.308,vy:-559.233,t0Step:0}},
+    {id:"c112",index:111,seed:193767,difficulty:2.64,name:"The Flame",plate:"CXII",probe:{x:255,y:1409},target:{x:652,y:520,r:29},bodies:[{kind:"nebula",r:90,mu:0,x:573,y:917,orbit:{cx:609,cy:861,rad:66,omega:-.311,phase:2.138},drag:1.023},{kind:"nebula",r:85,mu:0,x:253,y:1218,orbit:null,drag:.723},{kind:"planet",r:53,mu:5.61e6,x:472,y:940,orbit:null},{kind:"planet",r:41,mu:2.29e6,x:632,y:1010,orbit:null}],frags:[{x:292,y:1041},{x:341,y:897},{x:449,y:715}],solution:{vx:143.969,vy:-623.597,t0Step:1539},fragSolution:{vx:42.939,vy:-445.937,t0Step:0}},
+    {id:"c113",index:112,seed:2206641,difficulty:2.66,name:"The Pelican",plate:"CXIII",probe:{x:687,y:1418},target:{x:479,y:454,r:28},bodies:[{kind:"nebula",r:99,mu:0,x:659,y:1212,orbit:{cx:696,cy:1205,rad:37,omega:-.424,phase:2.967},drag:1.012},{kind:"planet",r:66,mu:1.34e7,x:563,y:944,orbit:null},{kind:"blackhole",r:12,capture:44,mu:3.43e7,x:275,y:980,orbit:null},{kind:"moon",r:14,mu:165000,orbit:{cx:563,cy:944,rad:151,omega:-.812,phase:4.928}}],frags:[{x:736,y:1136},{x:701,y:793},{x:564,y:559}],solution:{vx:-127.181,vy:-203.532,t0Step:1682},fragSolution:{vx:161.503,vy:-602.738,t0Step:0}},
+    {id:"c114",index:113,seed:372516,difficulty:2.68,name:"Barnard's Dark Lanes",plate:"CXIV",probe:{x:372,y:1430},target:{x:235,y:217,r:28},bodies:[{kind:"nebula",r:105,mu:0,x:347,y:385,orbit:{cx:342,cy:420,rad:36,omega:-.318,phase:4.856},drag:1.197},{kind:"planet",r:53,mu:4.29e6,x:308,y:833,orbit:null},{kind:"planet",r:51,mu:5.57e6,x:540,y:1045,orbit:null},{kind:"repulsor",r:28,mu:-9.47e6,x:535,y:686,orbit:null},{kind:"moon",r:13,mu:132000,orbit:{cx:308,cy:833,rad:136,omega:.99,phase:3.85}}],frags:[{x:386,y:1079},{x:391,y:651},{x:341,y:483}],solution:{vx:-125.868,vy:-311.534,t0Step:840},fragSolution:{vx:22.336,vy:-639.61,t0Step:0}},
+    {id:"c115",index:114,seed:432058,difficulty:2.7,name:"The North America",plate:"CXV",probe:{x:488,y:1452},target:{x:203,y:402,r:30},bodies:[{kind:"nebula",r:109,mu:0,x:435,y:1259,orbit:null,drag:.886},{kind:"planet",r:73,mu:1.64e7,x:350,y:882,orbit:null},{kind:"wormhole",r:30,mu:0,x:632,y:1285,orbit:null,pair:3,turn:.7853981633974483},{kind:"wormhole",r:27,mu:0,x:124,y:754,orbit:null,pair:2,turn:-.7853981633974483}],frags:[{x:507,y:1300},{x:485,y:840}],solution:{vx:-367.089,vy:-524.257,t0Step:0},fragSolution:{vx:55.78,vy:-637.565,t0Step:0}},
+    {id:"c116",index:115,seed:2349155,difficulty:2.72,name:"Huggins's Spectroscope",plate:"CXVI",probe:{x:245,y:1335},target:{x:637,y:598,r:29},bodies:[{kind:"nebula",r:92,mu:0,x:298,y:1135,orbit:null,drag:.863},{kind:"planet",r:52,mu:3.7e6,x:514,y:865,orbit:null},{kind:"planet",r:46,mu:4.45e6,x:604,y:1177,orbit:null},{kind:"wormhole",r:31,mu:0,x:347,y:974,orbit:null,pair:4,turn:0},{kind:"wormhole",r:27,mu:0,x:618,y:938,orbit:null,pair:3,turn:0}],frags:[{x:461,y:1029},{x:594,y:832}],solution:{vx:71.301,vy:-426.075,t0Step:0},fragSolution:{vx:220.775,vy:-333.554,t0Step:0}},
+    {id:"c117",index:116,seed:359252,difficulty:2.74,name:"The Bubble",plate:"CXVII",probe:{x:625,y:1355},target:{x:508,y:208,r:28},bodies:[{kind:"nebula",r:104,mu:0,x:540,y:1148,orbit:null,drag:.963},{kind:"repulsor",r:26,mu:-9.25e6,x:556,y:881,orbit:null},{kind:"blackhole",r:14,capture:50,mu:2.59e7,x:281,y:764,orbit:null},{kind:"wormhole",r:30,mu:0,x:174,y:850,orbit:null,pair:4,turn:-.7853981633974483},{kind:"wormhole",r:27,mu:0,x:791,y:224,orbit:null,pair:3,turn:.7853981633974483}],frags:[{x:406,y:1074},{x:207,y:688}],solution:{vx:-89.98,vy:-389.748,t0Step:0},fragSolution:{vx:-365.904,vy:-485.57,t0Step:0}},
+    {id:"c118",index:117,seed:1030349,difficulty:2.76,name:"The Pillars",plate:"CXVIII",probe:{x:353,y:1374},target:{x:266,y:359,r:28},bodies:[{kind:"nebula",r:84,mu:0,x:336,y:584,orbit:{cx:368,cy:549,rad:48,omega:.404,phase:2.313},drag:1.074},{kind:"blackhole",r:15,capture:47,mu:3.82e7,x:332,y:989,orbit:null},{kind:"planet",r:51,mu:4.13e6,x:150,y:789,orbit:null},{kind:"wormhole",r:31,mu:0,x:385,y:1185,orbit:null,pair:4,turn:0},{kind:"wormhole",r:28,mu:0,x:319,y:760,orbit:null,pair:3,turn:0}],frags:[{x:498,y:952},{x:412,y:625}],solution:{vx:23.447,vy:-447.386,t0Step:205},fragSolution:{vx:324.825,vy:-551.443,t0Step:0}},
+    {id:"c119",index:118,seed:190446,difficulty:2.78,name:"The Gegenschein",plate:"CXIX",probe:{x:191,y:1360},target:{x:506,y:208,r:27},bodies:[{kind:"nebula",r:92,mu:0,x:296,y:1176,orbit:null,drag:.912},{kind:"nebula",r:99,mu:0,x:334,y:862,orbit:null,drag:.621},{kind:"planet",r:63,mu:1.05e7,x:338,y:843,orbit:null},{kind:"moon",r:16,mu:246000,orbit:{cx:338,cy:843,rad:151,omega:.882,phase:2.828}},{kind:"wormhole",r:31,mu:0,x:773,y:791,orbit:null,pair:5,turn:-.7853981633974483},{kind:"wormhole",r:27,mu:0,x:557,y:560,orbit:null,pair:4,turn:.7853981633974483}],frags:[{x:301,y:1199},{x:498,y:725},{x:505,y:527}],solution:{vx:490.268,vy:-411.384,t0Step:410},fragSolution:{vx:348.734,vy:-498.044,t0Step:0}},
+    {id:"c120",index:119,seed:1791876,difficulty:2.8,name:"The Great Nebula in Andromeda",plate:"CXX",probe:{x:734,y:1437},target:{x:723,y:563,r:27},bodies:[{kind:"nebula",r:111,mu:0,x:687,y:1254,orbit:null,drag:1.271},{kind:"planet",r:58,mu:6.02e6,x:728,y:956,orbit:null},{kind:"planet",r:64,mu:6.84e6,x:436,y:802,orbit:null},{kind:"wormhole",r:29,mu:0,x:603,y:1038,orbit:null,pair:4,turn:1.5707963267948966},{kind:"wormhole",r:29,mu:0,x:256,y:964,orbit:null,pair:3,turn:-1.5707963267948966}],frags:[{x:805,y:1117},{x:823,y:908},{x:774,y:708}],solution:{vx:-185.981,vy:-389.917,t0Step:0},fragSolution:{vx:149.405,vy:-622.317,t0Step:0}}
+  ]).concat([
+    {id:"c121",index:120,seed:128640,difficulty:2.82,name:"The Lighthouse",plate:"CXXI",probe:{x:666,y:1412},target:{x:170,y:313,r:38},bodies:[{kind:"planet",r:53,mu:2.93e6,x:402,y:791,orbit:null},{kind:"pulsar",r:12,mu:1.11e7,x:180,y:680,orbit:null,beam:{omega:.377,phase:4.326,half:.081,reach:401,push:941}}],frags:[{x:371,y:1121},{x:183,y:902},{x:104,y:486}],solution:{vx:-384.173,vy:-491.719,t0Step:136},fragSolution:{vx:-241.698,vy:-233.405,t0Step:0}},
+    {id:"c122",index:121,seed:149848,difficulty:2.84,name:"The Lamp Room",plate:"CXXII",probe:{x:290,y:1319},target:{x:682,y:486,r:37},bodies:[{kind:"planet",r:72,mu:5.23e6,x:549,y:813,orbit:null},{kind:"pulsar",r:11,mu:1.41e7,x:547,y:1106,orbit:null,beam:{omega:-.44,phase:3.919,half:.072,reach:426,push:821}}],frags:[{x:665,y:1044},{x:709,y:732}],solution:{vx:105.578,vy:-598.763,t0Step:136},fragSolution:{vx:440.022,vy:-147.229,t0Step:0}},
+    {id:"c123",index:122,seed:451834,difficulty:2.86,name:"Fresnel's Lens",plate:"CXXIII",probe:{x:396,y:1327},target:{x:417,y:261,r:37},bodies:[{kind:"planet",r:69,mu:7.21e6,x:426,y:712,orbit:null},{kind:"pulsar",r:12,mu:2.17e7,x:592,y:1007,orbit:null,beam:{omega:.404,phase:6.093,half:.117,reach:363,push:849}}],frags:[{x:545,y:1173},{x:619,y:762}],solution:{vx:-154.83,vy:-620.989,t0Step:960},fragSolution:{vx:452.634,vy:-429.533,t0Step:0}},
+    {id:"c124",index:123,seed:147931,difficulty:2.88,name:"The Beacon",plate:"CXXIV",probe:{x:635,y:1325},target:{x:200,y:569,r:36},bodies:[{kind:"planet",r:76,mu:1.38e7,x:478,y:1075,orbit:null},{kind:"planet",r:62,mu:6.78e6,x:301,y:1173,orbit:null},{kind:"pulsar",r:13,mu:9.84e6,x:605,y:940,orbit:null,beam:{omega:-.442,phase:5.095,half:.081,reach:416,push:961}}],frags:[{x:304,y:969},{x:241,y:810}],solution:{vx:94.598,vy:-632.97,t0Step:297},fragSolution:{vx:-333.554,vy:-220.775,t0Step:0}},
+    {id:"c125",index:124,seed:145028,difficulty:2.9,name:"The Revolving Light",plate:"CXXV",probe:{x:551,y:1282},target:{x:604,y:360,r:36},bodies:[{kind:"planet",r:53,mu:2.42e6,x:593,y:806,orbit:null},{kind:"planet",r:49,mu:3.95e6,x:710,y:593,orbit:null},{kind:"pulsar",r:12,mu:2.14e7,x:650,y:1011,orbit:null,beam:{omega:-.449,phase:.744,half:.071,reach:348,push:871}}],frags:[{x:716,y:1034},{x:636,y:574}],solution:{vx:-224.133,vy:-599.47,t0Step:256},fragSolution:{vx:419.878,vy:-483.014,t0Step:0}},
+    {id:"c126",index:125,seed:315680,difficulty:2.92,name:"The Signal Lamp",plate:"CXXVI",probe:{x:173,y:1362},target:{x:424,y:221,r:35},bodies:[{kind:"blackhole",r:16,capture:45,mu:3.61e7,x:288,y:758,orbit:null},{kind:"pulsar",r:13,mu:1.89e7,x:66,y:858,orbit:null,beam:{omega:.483,phase:2.723,half:.099,reach:378,push:853}}],frags:[{x:92,y:1232},{x:56,y:590}],solution:{vx:-6.972,vy:79.696,t0Step:1146},fragSolution:{vx:-292.599,vy:-477.478,t0Step:0}},
+    {id:"c127",index:126,seed:293222,difficulty:2.94,name:"The Pharos",plate:"CXXVII",probe:{x:230,y:1389},target:{x:699,y:459,r:35},bodies:[{kind:"planet",r:75,mu:9.85e6,x:485,y:843,orbit:null},{kind:"planet",r:55,mu:6.45e6,x:220,y:814,orbit:null},{kind:"pulsar",r:11,mu:1.01e7,x:677,y:787,orbit:null,beam:{omega:-.736,phase:3.67,half:.105,reach:396,push:1214}}],frags:[{x:278,y:1210},{x:378,y:757}],solution:{vx:448.582,vy:-456.48,t0Step:1077},fragSolution:{vx:21.735,vy:-190.766,t0Step:0}},
+    {id:"c128",index:127,seed:153319,difficulty:2.96,name:"The Eddystone",plate:"CXXVIII",probe:{x:450,y:1320},target:{x:376,y:669,r:34},bodies:[{kind:"planet",r:56,mu:4.4e6,x:408,y:1035,orbit:null},{kind:"planet",r:50,mu:3.81e6,x:597,y:955,orbit:null},{kind:"planet",r:43,mu:1.69e6,x:586,y:813,orbit:null},{kind:"pulsar",r:14,mu:1.69e7,x:300,y:1059,orbit:null,beam:{omega:.796,phase:4.561,half:.07,reach:438,push:1081}}],frags:[{x:310,y:1208},{x:227,y:950}],solution:{vx:122.373,vy:-530.057,t0Step:1001},fragSolution:{vx:-406.197,vy:-311.686,t0Step:0}},
+    {id:"c129",index:128,seed:1230749,difficulty:2.98,name:"Bell Rock",plate:"CXXIX",probe:{x:608,y:1307},target:{x:245,y:290,r:35},bodies:[{kind:"planet",r:58,mu:4.45e6,x:432,y:809,orbit:null},{kind:"planet",r:60,mu:4.92e6,x:521,y:593,orbit:null},{kind:"pulsar",r:13,mu:1.87e7,x:155,y:736,orbit:null,beam:{omega:-.538,phase:5.836,half:.104,reach:390,push:974}}],frags:[{x:359,y:1128},{x:130,y:882}],solution:{vx:-445.068,vy:-437.367,t0Step:186},fragSolution:{vx:-355.422,vy:-272.725,t0Step:0}},
+    {id:"c130",index:129,seed:1074513,difficulty:3,name:"The Lantern Gallery",plate:"CXXX",probe:{x:554,y:1361},target:{x:629,y:394,r:33},bodies:[{kind:"planet",r:56,mu:5.63e6,x:594,y:758,orbit:null},{kind:"planet",r:61,mu:4.85e6,x:776,y:1156,orbit:null},{kind:"planet",r:40,mu:2.49e6,x:294,y:647,orbit:null},{kind:"pulsar",r:11,mu:1.05e7,x:685,y:1088,orbit:null,beam:{omega:-.806,phase:1.681,half:.089,reach:367,push:1305}}],frags:[{x:490,y:1075},{x:504,y:877},{x:569,y:549}],solution:{vx:329.624,vy:-548.587,t0Step:1394},fragSolution:{vx:-144.939,vy:-540.918,t0Step:0}},
+    {id:"c131",index:130,seed:2223387,difficulty:3.02,name:"The Occulting Light",plate:"CXXXI",probe:{x:218,y:1288},target:{x:251,y:325,r:33},bodies:[{kind:"planet",r:51,mu:3.99e6,x:238,y:762,orbit:null},{kind:"planet",r:44,mu:4.08e6,x:549,y:846,orbit:null},{kind:"pulsar",r:14,mu:1.16e7,x:83,y:975,orbit:null,beam:{omega:.739,phase:.483,half:.09,reach:399,push:1078}}],frags:[{x:258,y:1098},{x:295,y:886},{x:280,y:580}],solution:{vx:-329.624,vy:-548.587,t0Step:1024},fragSolution:{vx:140.369,vy:-608.007,t0Step:0}},
+    {id:"c132",index:131,seed:134707,difficulty:3.04,name:"The Flashing Light",plate:"CXXXII",probe:{x:743,y:1312},target:{x:367,y:663,r:32},bodies:[{kind:"planet",r:51,mu:3.62e6,x:609,y:1056,orbit:null},{kind:"planet",r:46,mu:3.54e6,x:775,y:812,orbit:null},{kind:"planet",r:43,mu:2.54e6,x:357,y:1183,orbit:null},{kind:"pulsar",r:13,mu:1.36e7,x:756,y:1069,orbit:null,beam:{omega:-.707,phase:1.306,half:.103,reach:435,push:1194}}],frags:[{x:574,y:1136},{x:425,y:808}],solution:{vx:136.656,vy:-510.009,t0Step:1153},fragSolution:{vx:-467.348,vy:-413.475,t0Step:0}},
+    {id:"c133",index:132,seed:182804,difficulty:3.06,name:"The Leading Lights",plate:"CXXXIII",probe:{x:416,y:1292},target:{x:191,y:320,r:32},bodies:[{kind:"planet",r:56,mu:6.44e6,x:289,y:740,orbit:null},{kind:"planet",r:50,mu:5.95e6,x:563,y:666,orbit:null},{kind:"pulsar",r:10,mu:1.44e7,x:96,y:601,orbit:null,beam:{omega:.688,phase:3.301,half:.101,reach:350,push:904}},{kind:"moon",r:15,mu:203000,orbit:{cx:289,cy:740,rad:117,omega:1.304,phase:3.837}}],frags:[{x:135,y:939},{x:67,y:805}],solution:{vx:-313.712,vy:-483.074,t0Step:576},fragSolution:{vx:-246.72,vy:-251.064,t0Step:0}},
+    {id:"c134",index:133,seed:116456,difficulty:3.08,name:"The Keeper's Watch",plate:"CXXXIV",probe:{x:705,y:1406},target:{x:430,y:363,r:32},bodies:[{kind:"blackhole",r:13,capture:48,mu:3.66e7,x:542,y:795,orbit:null},{kind:"pulsar",r:10,mu:1.54e7,x:774,y:911,orbit:null,beam:{omega:.618,phase:1.882,half:.075,reach:408,push:1126}},{kind:"moon",r:12,mu:104000,orbit:{cx:542,cy:795,rad:106,omega:.989,phase:5.687}}],frags:[{x:545,y:1183},{x:328,y:782}],solution:{vx:1.117,vy:-63.99,t0Step:1261},fragSolution:{vx:-309.085,vy:-466.976,t0Step:0}},
+    {id:"c135",index:134,seed:173998,difficulty:3.1,name:"The Clockwork Lamp",plate:"CXXXV",probe:{x:172,y:1326},target:{x:646,y:559,r:31},bodies:[{kind:"repulsor",r:29,mu:-1.34e7,x:381,y:1010,orbit:null},{kind:"blackhole",r:14,capture:45,mu:2.68e7,x:151,y:1014,orbit:null},{kind:"pulsar",r:14,mu:1.85e7,x:580,y:950,orbit:null,beam:{omega:.519,phase:.725,half:.113,reach:400,push:1203}}],frags:[{x:146,y:928},{x:405,y:748}],solution:{vx:501.069,vy:-344.375,t0Step:723},fragSolution:{vx:-201.719,vy:-539.523,t0Step:0}},
+    {id:"c136",index:135,seed:547650,difficulty:3.12,name:"The Metronome",plate:"CXXXVI",probe:{x:703,y:1337},target:{x:291,y:215,r:31},bodies:[{kind:"planet",r:76,mu:1.59e7,x:533,y:848,orbit:null},{kind:"blackhole",r:15,capture:47,mu:3.43e7,x:524,y:484,orbit:null},{kind:"pulsar",r:12,mu:1.65e7,x:660,y:866,orbit:null,beam:{omega:-.683,phase:3.191,half:.07,reach:406,push:1125}},{kind:"moon",r:15,mu:203000,orbit:{cx:524,cy:484,rad:118,omega:.552,phase:2.871}}],frags:[{x:484,y:1102},{x:354,y:865},{x:273,y:540}],solution:{vx:-26.014,vy:-174.067,t0Step:0},fragSolution:{vx:-456.48,vy:-448.582,t0Step:0}},
+    {id:"c137",index:136,seed:1215192,difficulty:3.14,name:"The Escapement",plate:"CXXXVII",probe:{x:396,y:1386},target:{x:459,y:690,r:30},bodies:[{kind:"blackhole",r:12,capture:49,mu:3.57e7,x:403,y:1097,orbit:null},{kind:"repulsor",r:26,mu:-1.15e7,x:117,y:918,orbit:null},{kind:"pulsar",r:13,mu:1.8e7,x:535,y:1192,orbit:null,beam:{omega:-.844,phase:2.146,half:.119,reach:353,push:1289}},{kind:"moon",r:14,mu:165000,orbit:{cx:403,cy:1097,rad:99,omega:1.118,phase:3.542}}],frags:[{x:687,y:1151},{x:666,y:950},{x:606,y:822}],solution:{vx:166.283,vy:-433.181,t0Step:1191},fragSolution:{vx:608.676,vy:-197.771,t0Step:0}},
+    {id:"c138",index:137,seed:965289,difficulty:3.16,name:"The Chronometer",plate:"CXXXVIII",probe:{x:241,y:1375},target:{x:736,y:479,r:30},bodies:[{kind:"repulsor",r:26,mu:-1.15e7,x:520,y:903,orbit:null},{kind:"blackhole",r:16,capture:41,mu:3.94e7,x:672,y:944,orbit:null},{kind:"planet",r:51,mu:5.15e6,x:679,y:1181,orbit:null},{kind:"pulsar",r:15,mu:2.2e7,x:539,y:997,orbit:null,beam:{omega:-.888,phase:1.686,half:.074,reach:387,push:1224}},{kind:"moon",r:16,mu:246000,orbit:{cx:679,cy:1181,rad:102,omega:-.827,phase:.262}}],frags:[{x:270,y:1033},{x:335,y:887},{x:423,y:742}],solution:{vx:111.135,vy:-630.277,t0Step:1329},fragSolution:{vx:-16.193,vy:-463.717,t0Step:0}},
+    {id:"c139",index:138,seed:609386,difficulty:3.18,name:"Harrison's Clock",plate:"CXXXIX",probe:{x:685,y:1299},target:{x:552,y:366,r:30},bodies:[{kind:"planet",r:51,mu:6.36e6,x:618,y:735,orbit:null},{kind:"pulsar",r:14,mu:1.82e7,x:489,y:954,orbit:null,beam:{omega:.504,phase:4.232,half:.083,reach:391,push:843}},{kind:"pulsar",r:14,mu:1.46e7,x:373,y:923,orbit:null,beam:{omega:.453,phase:1.408,half:.07,reach:323,push:980}}],frags:[{x:721,y:1119},{x:654,y:571}],solution:{vx:-279.242,vy:-370.567,t0Step:934},fragSolution:{vx:143.969,vy:-623.597,t0Step:0}},
+    {id:"c140",index:139,seed:373260,difficulty:3.2,name:"The Time Ball",plate:"CXL",probe:{x:278,y:1388},target:{x:156,y:287,r:30},bodies:[{kind:"planet",r:66,mu:8.7e6,x:240,y:1002,orbit:null},{kind:"pulsar",r:10,mu:1.15e7,x:138,y:884,orbit:null,beam:{omega:-.649,phase:.683,half:.096,reach:390,push:1137}},{kind:"pulsar",r:11,mu:1.99e7,x:122,y:1066,orbit:null,beam:{omega:.501,phase:1.484,half:.079,reach:382,push:1050}}],frags:[{x:362,y:1076},{x:358,y:923},{x:224,y:446}],solution:{vx:-318.727,vy:-400.695,t0Step:1022},fragSolution:{vx:234.561,vy:-595.467,t0Step:0}},
+    {id:"c141",index:140,seed:534357,difficulty:3.22,name:"The Transit Clock",plate:"CXLI",probe:{x:359,y:1370},target:{x:670,y:569,r:29},bodies:[{kind:"planet",r:56,mu:4.44e6,x:509,y:959,orbit:null},{kind:"planet",r:60,mu:6.07e6,x:795,y:1156,orbit:null},{kind:"pulsar",r:10,mu:1.46e7,x:578,y:1193,orbit:null,beam:{omega:-.632,phase:2.813,half:.111,reach:331,push:1268}},{kind:"pulsar",r:11,mu:8.57e6,x:379,y:738,orbit:null,beam:{omega:.735,phase:4.539,half:.109,reach:356,push:900}}],frags:[{x:372,y:1117},{x:475,y:869},{x:540,y:756}],solution:{vx:512.687,vy:-296,t0Step:1088},fragSolution:{vx:29.303,vy:-479.105,t0Step:0}},
+    {id:"c142",index:141,seed:255232,difficulty:3.24,name:"The Regulator",plate:"CXLII",probe:{x:227,y:1320},target:{x:459,y:453,r:29},bodies:[{kind:"blackhole",r:13,capture:45,mu:3.07e7,x:346,y:934,orbit:null},{kind:"planet",r:55,mu:8.24e6,x:204,y:950,orbit:null},{kind:"pulsar",r:15,mu:1.96e7,x:442,y:907,orbit:null,beam:{omega:-.523,phase:4.22,half:.074,reach:358,push:930}},{kind:"pulsar",r:10,mu:2.03e7,x:398,y:1058,orbit:null,beam:{omega:-.688,phase:3.091,half:.072,reach:361,push:1237}}],frags:[{x:89,y:1103},{x:222,y:611}],solution:{vx:267.98,vy:-454.94,t0Step:943},fragSolution:{vx:-360.095,vy:-386.155,t0Step:0}},
+    {id:"c143",index:142,seed:206107,difficulty:3.26,name:"Two Beacons",plate:"CXLIII",probe:{x:691,y:1436},target:{x:650,y:326,r:30},bodies:[{kind:"planet",r:57,mu:9.14e6,x:658,y:857,orbit:null},{kind:"pulsar",r:14,mu:1.3e7,x:535,y:908,orbit:null,beam:{omega:.511,phase:.579,half:.12,reach:328,push:1280}},{kind:"pulsar",r:12,mu:2.1e7,x:557,y:1010,orbit:null,beam:{omega:-.811,phase:4.499,half:.092,reach:349,push:1328}}],frags:[{x:526,y:1307},{x:376,y:900}],solution:{vx:-236.666,vy:-507.532,t0Step:1173},fragSolution:{vx:-327.661,vy:-229.431,t0Step:0}},
+    {id:"c144",index:143,seed:659426,difficulty:3.28,name:"The Neutron Star",plate:"CXLIV",probe:{x:457,y:1292},target:{x:258,y:565,r:28},bodies:[{kind:"planet",r:55,mu:8.02e6,x:377,y:957,orbit:null},{kind:"blackhole",r:16,capture:47,mu:3.09e7,x:243,y:1051,orbit:null},{kind:"pulsar",r:11,mu:1.36e7,x:533,y:992,orbit:null,beam:{omega:.706,phase:5.153,half:.095,reach:293,push:1335}},{kind:"pulsar",r:10,mu:2.07e7,x:245,y:945,orbit:null,beam:{omega:-.874,phase:4.313,half:.104,reach:306,push:1155}}],frags:[{x:192,y:1270},{x:44,y:791}],solution:{vx:-186.167,vy:-335.854,t0Step:1355},fragSolution:{vx:-461.406,vy:132.306,t0Step:0}},
+    {id:"c145",index:144,seed:648523,difficulty:3.3,name:"The Crab Pulsar",plate:"CXLV",probe:{x:488,y:1343},target:{x:637,y:194,r:30},bodies:[{kind:"nebula",r:85,mu:0,x:428,y:619,orbit:null,drag:1.009},{kind:"planet",r:61,mu:6.89e6,x:595,y:608,orbit:null},{kind:"planet",r:43,mu:2.15e6,x:322,y:491,orbit:null},{kind:"pulsar",r:10,mu:1.78e7,x:797,y:562,orbit:null,beam:{omega:.565,phase:.123,half:.096,reach:388,push:906}}],frags:[{x:758,y:913},{x:860,y:669}],solution:{vx:285.567,vy:-572.758,t0Step:832},fragSolution:{vx:235.625,vy:-342.836,t0Step:0}},
+    {id:"c146",index:145,seed:1116842,difficulty:3.32,name:"The Vela Pulsar",plate:"CXLVI",probe:{x:716,y:1452},target:{x:273,y:694,r:29},bodies:[{kind:"planet",r:64,mu:1.38e7,x:551,y:1171,orbit:null},{kind:"pulsar",r:10,mu:1.65e7,x:666,y:1141,orbit:null,beam:{omega:-.595,phase:4.498,half:.092,reach:367,push:938}},{kind:"wormhole",r:30,mu:0,x:114,y:1214,orbit:null,pair:3,turn:0},{kind:"wormhole",r:30,mu:0,x:541,y:864,orbit:null,pair:2,turn:0}],frags:[{x:431,y:1214},{x:382,y:1083}],solution:{vx:-567.249,vy:-100.021,t0Step:578},fragSolution:{vx:-545.69,vy:-334.399,t0Step:0}},
+    {id:"c147",index:146,seed:261939,difficulty:3.34,name:"Little Green Men",plate:"CXLVII",probe:{x:224,y:1396},target:{x:349,y:508,r:28},bodies:[{kind:"nebula",r:88,mu:0,x:130,y:1222,orbit:null,drag:1.05},{kind:"planet",r:70,mu:9.87e6,x:306,y:978,orbit:null},{kind:"planet",r:63,mu:6.25e6,x:105,y:1193,orbit:null},{kind:"pulsar",r:10,mu:1.7e7,x:464,y:850,orbit:null,beam:{omega:-.502,phase:4.068,half:.071,reach:315,push:1056}},{kind:"moon",r:15,mu:203000,orbit:{cx:306,cy:978,rad:144,omega:1.347,phase:1.252}}],frags:[{x:308,y:1287},{x:488,y:978},{x:429,y:630}],solution:{vx:-8.936,vy:-511.922,t0Step:1381},fragSolution:{vx:405.256,vy:-474.493,t0Step:0}},
+    {id:"c148",index:147,seed:594259,difficulty:3.36,name:"The Pulse of the Sky",plate:"CXLVIII",probe:{x:708,y:1392},target:{x:645,y:261,r:28},bodies:[{kind:"blackhole",r:16,capture:48,mu:2.87e7,x:682,y:956,orbit:null},{kind:"planet",r:60,mu:6.1e6,x:355,y:629,orbit:null},{kind:"pulsar",r:15,mu:1.3e7,x:527,y:1072,orbit:null,beam:{omega:-.582,phase:4.288,half:.114,reach:342,push:1396}},{kind:"wormhole",r:31,mu:0,x:188,y:860,orbit:null,pair:4,turn:0},{kind:"wormhole",r:31,mu:0,x:754,y:438,orbit:null,pair:3,turn:0}],frags:[{x:439,y:1272},{x:318,y:1149}],solution:{vx:-562.443,vy:-305.382,t0Step:1421},fragSolution:{vx:-487.808,vy:-202.057,t0Step:0}},
+    {id:"c149",index:148,seed:1433911,difficulty:3.38,name:"The Greenwich Signal",plate:"CXLIX",probe:{x:279,y:1373},target:{x:398,y:430,r:27},bodies:[{kind:"nebula",r:102,mu:0,x:232,y:904,orbit:null,drag:.809},{kind:"planet",r:55,mu:8.01e6,x:367,y:762,orbit:null},{kind:"pulsar",r:11,mu:2.13e7,x:157,y:1092,orbit:null,beam:{omega:.564,phase:4.172,half:.074,reach:321,push:1118}},{kind:"wormhole",r:30,mu:0,x:484,y:1050,orbit:null,pair:4,turn:-.7853981633974483},{kind:"wormhole",r:26,mu:0,x:426,y:566,orbit:null,pair:3,turn:.7853981633974483}],frags:[{x:288,y:884},{x:285,y:669}],solution:{vx:374.082,vy:-437.994,t0Step:580},fragSolution:{vx:128.132,vy:-577.967,t0Step:0}},
+    {id:"c150",index:149,seed:155008,difficulty:3.4,name:"The Last Lighthouse",plate:"CL",probe:{x:481,y:1404},target:{x:269,y:698,r:26},bodies:[{kind:"nebula",r:80,mu:0,x:565,y:930,orbit:null,drag:1.026},{kind:"planet",r:51,mu:5.75e6,x:413,y:1141,orbit:null},{kind:"pulsar",r:15,mu:1.99e7,x:591,y:1070,orbit:null,beam:{omega:.825,phase:3.727,half:.073,reach:378,push:1209}},{kind:"pulsar",r:14,mu:1.93e7,x:558,y:902,orbit:null,beam:{omega:.652,phase:2.543,half:.097,reach:346,push:1107}},{kind:"moon",r:18,mu:3.5e5,orbit:{cx:413,cy:1141,rad:108,omega:-1.274,phase:6.144}},{kind:"wormhole",r:32,mu:0,x:191,y:1143,orbit:null,pair:6,turn:0},{kind:"wormhole",r:31,mu:0,x:698,y:1004,orbit:null,pair:5,turn:0}],frags:[{x:587,y:935},{x:353,y:673}],solution:{vx:444.581,vy:-460.377,t0Step:648},fragSolution:{vx:50.174,vy:-477.371,t0Step:0}}
   ]);/*@END*/
 
   // Full-clear courses (tools/levels-clear.js): one launch that gathers every fragment and hits the target. Drawn by the hint.
@@ -1254,14 +1394,75 @@ var Levels = (function () {
     {vx:-258.853,vy:-126.251,t0Step:0},
     {vx:-33.495,vy:-639.123,t0Step:700},
     {vx:94.43,vy:-185.329,t0Step:120},
-    {vx:233.15,vy:-140.09,t0Step:0}
+    {vx:233.15,vy:-140.09,t0Step:0},
+    {vx:79.223,vy:-473.417,t0Step:0},
+    {vx:-166.757,vy:-601.305,t0Step:0},
+    {vx:-157.362,vy:-587.283,t0Step:0},
+    {vx:298.807,vy:-375.652,t0Step:0},
+    {vx:-247.296,vy:-555.436,t0Step:0},
+    {vx:33.495,vy:-639.123,t0Step:0},
+    {vx:-365.904,vy:-485.57,t0Step:120},
+    {vx:-365.184,vy:-358.866,t0Step:0},
+    {vx:271.288,vy:-544.12,t0Step:260},
+    {vx:-371.482,vy:-328.66,t0Step:0},
+    {vx:271.319,vy:-434.201,t0Step:260},
+    {vx:250.799,vy:-409.267,t0Step:260},
+    {vx:-379.867,vy:-495.052,t0Step:0},
+    {vx:392.139,vy:-138.864,t0Step:0},
+    {vx:367.089,vy:-524.257,t0Step:0},
+    {vx:-94.545,vy:-167.108,t0Step:0},
+    {vx:-4.468,vy:-511.981,t0Step:0},
+    {vx:126.622,vy:-165.017,t0Step:0},
+    {vx:73.544,vy:-294.97,t0Step:260},
+    {vx:283.29,vy:-555.988,t0Step:0},
+    {vx:19.544,vy:-559.659,t0Step:450},
+    {vx:42.939,vy:-445.937,t0Step:0},
+    {vx:165.644,vy:-618.193,t0Step:120},
+    {vx:22.336,vy:-639.61,t0Step:450},
+    {vx:55.78,vy:-637.565,t0Step:0},
+    {vx:209.141,vy:-322.049,t0Step:0},
+    {vx:-371.169,vy:-501.607,t0Step:0},
+    {vx:324.825,vy:-551.443,t0Step:120},
+    {vx:357.883,vy:-530.584,t0Step:700},
+    {vx:149.405,vy:-622.317,t0Step:0},
+    {vx:-253.208,vy:-244.52,t0Step:0},
+    {vx:424.849,vy:-142.152,t0Step:0},
+    {vx:456.48,vy:-448.582,t0Step:0},
+    {vx:-356.023,vy:-244.687,t0Step:0},
+    {vx:419.878,vy:-483.014,t0Step:0},
+    {vx:-288.421,vy:-480.014,t0Step:0},
+    {vx:27.149,vy:-206.221,t0Step:0},
+    {vx:-406.197,vy:-311.686,t0Step:0},
+    {vx:-342.729,vy:-262.985,t0Step:0},
+    {vx:-149.08,vy:-556.373,t0Step:0},
+    {vx:140.369,vy:-608.007,t0Step:0},
+    {vx:-470.939,vy:-409.381,t0Step:0},
+    {vx:-274.786,vy:-333.342,t0Step:450},
+    {vx:-295.254,vy:-437.732,t0Step:0},
+    {vx:-201.719,vy:-539.523,t0Step:0},
+    {vx:-456.48,vy:-448.582,t0Step:0},
+    {vx:608.676,vy:-197.771,t0Step:0},
+    {vx:32.234,vy:-527.015,t0Step:260},
+    {vx:143.969,vy:-623.597,t0Step:0},
+    {vx:234.561,vy:-595.467,t0Step:0},
+    {vx:40.171,vy:-510.422,t0Step:0},
+    {vx:-363.451,vy:-382.998,t0Step:0},
+    {vx:-325.646,vy:-232.281,t0Step:0},
+    {vx:-486.887,vy:94.641,t0Step:0},
+    {vx:245.883,vy:-393.494,t0Step:0},
+    {vx:-545.69,vy:-334.399,t0Step:0},
+    {vx:401.099,vy:-478.012,t0Step:120},
+    {vx:-487.808,vy:-202.057,t0Step:0},
+    {vx:128.132,vy:-577.967,t0Step:0},
+    {vx:50.174,vy:-477.371,t0Step:0}
   ];/*@ENDCLEAR*/
 
   // Full-clear course for a baked campaign plate (or null): used by the hint. Generated plates (Daily, Endless) have none.
   var CLEAR_BY_ID = {}; CAMPAIGN.forEach(function (l, i) { if (CLEAR[i]) CLEAR_BY_ID[l.id] = CLEAR[i]; });
   function clearFor(level) { return level && level.id && CLEAR_BY_ID[level.id] || null; }
 
-  var VOLUMES = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }, { name: 'Volume III', from: 60, to: 89 }];
+  var VOLUMES = [{ name: 'Volume I', from: 0, to: 29 }, { name: 'Volume II', from: 30, to: 59 }, { name: 'Volume III', from: 60, to: 89 },
+    { name: 'Volume IV', from: 90, to: 119 }, { name: 'Volume V', from: 120, to: 149 }];
 
   return { mulberry32: mulberry32, CAMPAIGN: CAMPAIGN, CLEAR: CLEAR, clearFor: clearFor, VOLUMES: VOLUMES, generate: generate, daily: daily, solve: solve, NAMES: NAMES,
     // internal: shared with tools/levels-bake.js so the bake uses exactly the runtime generator
@@ -1301,6 +1502,7 @@ var Render = (function () {
   var Lplate = null, Lplay = null, Ltitle = null, grainTile = null;
   var moving = [];                 // [{b, spr}] bodies on rails (sprites)
   var repulsors = [];              // fixed repulsors [{x,y,r}] (animated rings)
+  var pulsars = [];                // pulsar bodies with beams (animated wedges)
   var tgtSpr = null;
   var hudSpr = { launch: [null, null, null, null], star: [null, null, null], launchW: 70 };
   var titleSpr = [], titleMoonSpr = null;
@@ -1606,6 +1808,11 @@ var Render = (function () {
       var ex = Math.abs(cx - x) - hw, ey = Math.abs(cy - y) - hh; ex = ex > 0 ? ex : 0; ey = ey > 0 ? ey : 0;
       var ov = r - Math.sqrt(ex * ex + ey * ey); return ov > 0 ? w * (ov + 2) : 0;
     }
+    function ringCross(cx, cy, x, y, r) {             // small cost when the box straddles a nebula's dotted boundary
+      var ax = Math.abs(cx - x), ay = Math.abs(cy - y), ex = Math.max(0, ax - hw), ey = Math.max(0, ay - hh);
+      var near = Math.sqrt(ex * ex + ey * ey), fx = ax + hw, fy = ay + hh, far = Math.sqrt(fx * fx + fy * fy);
+      return near < r && far > r ? 3 : 0;
+    }
     for (c = 0; c < 32; c++) {
       var th = (c & 15) * Math.PI / 8, dx = Math.cos(th), dy = Math.sin(th), extra = c < 16 ? 0 : 10;
       var d = R * 1.26 + 4.5 + Math.abs(dx) * hw + Math.abs(dy) * hh + extra;
@@ -1620,6 +1827,8 @@ var Render = (function () {
           if (o.kind === 'blackhole') p += circ(cx, cy, ox, oy, (o.capture || o.r * 3) * s * 1.8, 20);
           else if (o.kind === 'repulsor') { p += circ(cx, cy, ox, oy, o.r * s * 1.5, 20); p += circ(cx, cy, ox, oy, o.r * s * 3.3, 1.5); }
           else if (o.kind === 'wormhole') p += circ(cx, cy, ox, oy, o.r * s * 1.5 + 2, 30);
+          else if (o.kind === 'nebula') p += ringCross(cx, cy, ox, oy, o.r * s);     // a label may sit in a cloud, not on its edge
+          else if (o.kind === 'pulsar') p += circ(cx, cy, ox, oy, o.r * s * 1.8 + 3, 20);
           else p += circ(cx, cy, ox, oy, o.r * s + 3, 20);
         }
         p += circ(cx, cy, tg.x * s, tg.y * s, tr, 30) + circ(cx, cy, lv.probe.x * s, lv.probe.y * s, pr, 15);
@@ -1675,14 +1884,116 @@ var Render = (function () {
     }
   }
 
+  // ---------------------------------------------------------------- nebulae (v4)
+  // A cloud of dust engraved as stipple: fine paper dots at low alpha, denser toward the centre and on the lit (upper-left)
+  // side, gathered in irregular clumps with darker lanes, a few wisps of curved hatching, an irregular soft edge that never
+  // crosses r, and the true boundary (where the drag begins) as a fine dotted hairline at exactly r. No occluder: the
+  // cloud is translucent, so the star field and the grid read through it. Pre-rendered (static layer or one sprite).
+  var NEB_A = [0.2, 0.33, 0.48, 0.68];
+  function isNebula(b) { return b && b.kind === 'nebula'; }
+  function nebulaEdge(R, seed) {
+    var r = rng(seed * 3121 + 77), p = [r() * TAU, r() * TAU, r() * TAU, r() * TAU];
+    return function (th) { return R * (0.95 + 0.04 * Math.sin(3 * th + p[0]) + 0.04 * Math.sin(5 * th + p[1]) + 0.022 * Math.sin(9 * th + p[2]) + 0.012 * Math.sin(14 * th + p[3])); };
+  }
+  function drawNebula(g, x, y, R, seed) {
+    var r = rng(seed * 7717 + 401), i, k, edge = nebulaEdge(R, seed);
+    // clumps: a handful of soft lumps (dense) and lanes (sparse) placed inside the cloud
+    var NL = 7, LX_ = [], LY_ = [], LR = [], LW = [];
+    for (k = 0; k < NL; k++) {
+      var la = r() * TAU, lr = R * Math.sqrt(r()) * 0.7;
+      LX_.push(Math.cos(la) * lr); LY_.push(Math.sin(la) * lr); LR.push(R * (0.18 + 0.22 * r())); LW.push(k < 4 ? 0.9 + 0.5 * r() : -(0.55 + 0.3 * r()));
+    }
+    var b4 = [[], [], [], []], area = Math.PI * R * R, N = Math.min(16000, Math.round(area * 0.95));
+    for (i = 0; i < N; i++) {
+      var u = r() * 2 - 1, v = r() * 2 - 1, d2 = u * u + v * v; if (d2 > 1) continue;
+      var px = u * R, py = v * R, d = Math.sqrt(d2) * R, th = Math.atan2(py, px), e = edge(th);
+      if (d > R - 0.8) continue;
+      var rho = d / e, base = rho < 1 ? Math.pow(1 - rho * rho, 0.95) : 0.18 * Math.max(0, 1 - (rho - 1) / 0.1);
+      if (base <= 0) continue;
+      var cl = 0;
+      for (k = 0; k < NL; k++) { var qx = px - LX_[k], qy = py - LY_[k], q2 = (qx * qx + qy * qy) / (LR[k] * LR[k]); if (q2 < 4) cl += LW[k] * Math.exp(-q2 * 1.4); }
+      var lit = d > 0 ? (px * LX + py * LY) / d * Math.min(1, rho) : 0;   // + toward the light
+      var w = base * (0.7 + 0.38 * cl) * (1 + 0.3 * lit);
+      if (w <= 0 || r() > w * 0.85) continue;
+      var t = w + (r() - 0.5) * 0.5, bk = t < 0.32 ? 0 : t < 0.58 ? 1 : t < 0.85 ? 2 : 3, sz = bk > 2 ? 0.85 : bk > 0 ? 0.7 : 0.6;
+      b4[bk].push(x + px - sz / 2, y + py - sz / 2, sz);
+    }
+    g.fillStyle = PAL.paper;
+    for (k = 0; k < 4; k++) {
+      var a = b4[k]; if (!a.length) continue;
+      g.globalAlpha = NEB_A[k]; g.beginPath();
+      for (i = 0; i < a.length; i += 3) g.rect(a[i], a[i + 1], a[i + 2], a[i + 2]);
+      g.fill();
+    }
+    // wisps: short bundles of curved hatching that follow the cloud round, brighter on the lit side
+    g.strokeStyle = PAL.paper; g.lineCap = 'round'; g.lineWidth = Math.max(0.35, Math.min(0.5, R * 0.006));
+    var NW = 4 + Math.round(R / 40);
+    for (k = 0; k < NW; k++) {
+      var a0 = r() * TAU, span = 0.7 + r() * 0.9, rr = 0.38 + r() * 0.42, dr = (r() - 0.5) * 0.3, nl = 3 + (r() * 3 | 0), sp = 1.5 + r() * 0.8;
+      var litw = 0.5 + 0.5 * Math.cos(a0 + span / 2 - LIGHT_A);
+      for (var l = 0; l < nl; l++) {
+        g.globalAlpha = (0.2 + 0.22 * litw) * (1 - Math.abs(l - (nl - 1) / 2) / nl);
+        g.beginPath();
+        for (var q = 0; q <= 14; q++) {
+          var f = q / 14, ang = a0 + span * f, rad = Math.min(edge(ang) * 0.94, (rr + dr * f) * edge(ang) + (l - (nl - 1) / 2) * sp) * (1 - 0.06 * Math.sin(f * Math.PI));
+          var wx = x + rad * Math.cos(ang), wy = y + rad * Math.sin(ang);
+          if (q) g.lineTo(wx, wy); else g.moveTo(wx, wy);
+        }
+        g.stroke();
+      }
+    }
+    nebulaRing(g, x, y, R);
+    g.globalAlpha = 1; g.lineCap = 'butt';
+  }
+  // the true boundary: a fine dotted hairline at exactly r, with eight small inward ticks like a graduated bezel
+  function nebulaRing(g, x, y, R) {
+    var n = Math.max(24, Math.round(TAU * R / 2.7)), i, a;
+    g.fillStyle = PAL.paper; g.globalAlpha = 0.6; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.36, y + R * Math.sin(a) - 0.36, 0.72, 0.72); }
+    g.fill();
+    g.strokeStyle = PAL.paper; g.globalAlpha = 0.45; g.lineWidth = 0.5; g.beginPath();
+    for (i = 0; i < 8; i++) { a = i * Math.PI / 4 + Math.PI / 8; g.moveTo(x + (R - 0.6) * Math.cos(a), y + (R - 0.6) * Math.sin(a)); g.lineTo(x + (R - 3.2) * Math.cos(a), y + (R - 3.2) * Math.sin(a)); }
+    g.stroke(); g.globalAlpha = 1;
+  }
+
+  // ---------------------------------------------------------------- pulsars (v4)
+  // A small dense hatched sphere (tighter hatching than a planet), a bright paper core ring knocked out of it and a pin-point
+  // centre, and two tiny bearing ticks on the limb. The beams themselves are animated (drawBeams).
+  function drawPulsar(g, x, y, R) {
+    g.fillStyle = PAL.ink; g.beginPath(); g.arc(x, y, R * 1.7 + 1, 0, TAU); g.fill();
+    hatchSphere(g, x, y, R, { sp: Math.max(0.85, Math.min(1.1, R * 0.17)), lw: 0.42, bands: 0, bf: 0, bp: 0, rot: 0.2 });
+    var cr = Math.max(1.5, R * 0.42);
+    g.strokeStyle = PAL.ink; g.lineWidth = 2.2; g.beginPath(); g.arc(x, y, cr, 0, TAU); g.stroke();
+    g.strokeStyle = PAL.paper; g.globalAlpha = 1; g.lineWidth = 1.05; g.beginPath(); g.arc(x, y, cr, 0, TAU); g.stroke();
+    g.fillStyle = PAL.paper; g.beginPath(); g.arc(x, y, 0.75, 0, TAU); g.fill();
+    // a fine outer hairline ring, the star's "field"
+    g.globalAlpha = 0.5; g.lineWidth = 0.45; g.beginPath(); g.arc(x, y, R * 1.45 + 1, 0, TAU); g.stroke();
+    g.globalAlpha = 1;
+  }
+  // how far the beams carry: a faint dotted graphite circle at reach (paper at a whisper on top so it reads on the ink)
+  function beamReach(g, x, y, R) {
+    var n = Math.max(30, Math.round(TAU * R / 3.6)), i, a;
+    g.fillStyle = PAL.graphite; g.globalAlpha = 1; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.6, y + R * Math.sin(a) - 0.6, 1.2, 1.2); }
+    g.fill();
+    g.fillStyle = PAL.paper; g.globalAlpha = 0.16; g.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; g.rect(x + R * Math.cos(a) - 0.35, y + R * Math.sin(a) - 0.35, 0.7, 0.7); }
+    g.fill(); g.globalAlpha = 1;
+  }
+
   function drawBodyArt(g, b, bi, x, y, s, seed) {
     var R = b.r * s;
     if (b.kind === 'blackhole') drawBlackHole(g, x, y, R, (b.capture || b.r * 3) * s);
     else if (b.kind === 'repulsor') drawRepulsor(g, x, y, R);
     else if (b.kind === 'wormhole') drawMouth(g, x, y, R, mouthPN[bi] | 0);
+    else if (b.kind === 'nebula') drawNebula(g, x, y, R, (seed | 0) + bi * 53 + 7);
+    else if (b.kind === 'pulsar') drawPulsar(g, x, y, R);
     else hatchSphere(g, x, y, R, sphereOpts(R, b.kind !== 'moon', (seed | 0) + bi * 31));
   }
-  function bodyExtent(b) { return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.kind === 'wormhole' ? b.r * 1.4 : b.r + 2; }
+  function bodyExtent(b) {
+    return b.kind === 'blackhole' ? (b.capture || b.r * 3) * 1.8 : b.kind === 'repulsor' ? b.r * 1.45 : b.kind === 'wormhole' ? b.r * 1.4 :
+      b.kind === 'nebula' ? b.r + 1 : b.kind === 'pulsar' ? b.r * 1.75 + 2 : b.r + 2;
+  }
   function makeSprite(radCss, fn) {
     var d = layout.dpr, size = Math.ceil((radCss * 2 + 4) * d), c = mk(size, size), g = c.getContext('2d');
     g.setTransform(d, 0, 0, d, 0, 0);
@@ -1807,7 +2118,7 @@ var Render = (function () {
   // ---------------------------------------------------------------- contour wells (marching squares)
   function paintContours(g, lv) {
     var bs = lv.bodies, fixed = [], i, j;
-    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) fixed.push(bs[i]);
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i])) fixed.push(bs[i]);    // a cloud has no well and erases nothing
     var anyAttr = false; for (i = 0; i < fixed.length; i++) if (fixed[i].mu > 0) anyAttr = true;
     if (!anyAttr) return;
     var d = layout.dpr, Pl = layout.plate, s = layout.scale;
@@ -1879,8 +2190,14 @@ var Render = (function () {
   function paintLevel(g, lv) {
     var d = layout.dpr, Pl = layout.plate, s = layout.scale, bs = lv.bodies, i, j;
     prepMouths(lv);
+    sweptByCloud(lv);
+    // fixed nebulae first: under the wells, the orbits and every body
+    g.setTransform(d, 0, 0, d, 0, 0);
+    for (i = 0; i < bs.length; i++) if (isNebula(bs[i]) && !bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
     paintContours(g, lv);
     g.setTransform(d, 0, 0, d, 0, 0);
+    // how far each fixed pulsar's beams carry (a pulsar on rails gets its circle per frame)
+    for (i = 0; i < bs.length; i++) if (bs[i].kind === 'pulsar' && bs[i].beam && !bs[i].orbit) beamReach(g, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, bs[i].beam.reach * s);
     // orbit paths (dotted) and barycentre crosses
     var seen = [];
     for (i = 0; i < bs.length; i++) {
@@ -1903,7 +2220,7 @@ var Render = (function () {
       g.lineWidth = 0.45; g.beginPath(); g.arc(bx, by, 1.4, 0, TAU); g.stroke();
     }
     // fixed bodies (baked)
-    for (i = 0; i < bs.length; i++) if (!bs[i].orbit) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
+    for (i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i]) && !overIdx[i]) drawBodyArt(g, bs[i], i, Pl.x + bs[i].x * s, Pl.y + bs[i].y * s, s, lv.seed);
     for (i = 0; i < wm.length; i++) if (!wm[i].moving) drawMouthLabel(g, Pl.x + wm[i].b.x * s + wm[i].lx, Pl.y + wm[i].b.y * s + wm[i].ly, wm[i].letter, wm[i].turn);
     // launch station: a small surveyor's benchmark at the probe start
     var px = Pl.x + lv.probe.x * s, py = Pl.y + lv.probe.y * s;
@@ -1944,9 +2261,24 @@ var Render = (function () {
     g.setTransform(d, 0, 0, d, 0, 0);
     g.textBaseline = 'alphabetic';
   }
+  // Fixed bodies that a nebula on rails can drift over are drawn as sprites on the animated layer, after the cloud, so a
+  // cloud always lies under every body. overIdx[i] = 1 for those (empty when no nebula moves).
+  var overIdx = [];
+  function sweptByCloud(lv) {
+    var bs = lv.bodies, i, j; overIdx.length = 0;
+    for (i = 0; i < bs.length; i++) overIdx.push(0);
+    for (j = 0; j < bs.length; j++) {
+      var nb = bs[j], o = nb.orbit; if (!isNebula(nb) || !o) continue;
+      for (i = 0; i < bs.length; i++) {
+        var b = bs[i]; if (b.orbit || isNebula(b)) continue;
+        var dx = b.x - o.cx, dy = b.y - o.cy, dd = Math.sqrt(dx * dx + dy * dy), e = bodyExtent(b);
+        if (dd < o.rad + nb.r + e && dd > o.rad - nb.r - e) overIdx[i] = 1;
+      }
+    }
+  }
   function isOrbitCentreEmpty(lv, o) {
     var bs = lv.bodies;
-    for (var i = 0; i < bs.length; i++) if (!bs[i].orbit && Math.abs(bs[i].x - o.cx) < 2 && Math.abs(bs[i].y - o.cy) < 2) return false;
+    for (var i = 0; i < bs.length; i++) if (!bs[i].orbit && !isNebula(bs[i]) && Math.abs(bs[i].x - o.cx) < 2 && Math.abs(bs[i].y - o.cy) < 2) return false;
     return true;
   }
   // top band anchors: the plate edges, or the safe screen edges when the plate is narrow (landscape)
@@ -1971,14 +2303,19 @@ var Render = (function () {
     g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(Lplate, 0, 0);
     paintLevel(g, lv);
     // sprites for bodies on rails; fixed repulsors keep animated rings
-    moving.length = 0; repulsors.length = 0;
+    moving.length = 0; repulsors.length = 0; pulsars.length = 0;
+    var nNeb = 0;
     for (i = 0; i < lv.bodies.length; i++) {
       var b = lv.bodies[i];
-      if (b.orbit) {
+      if (b.orbit || overIdx[i]) {
         (function (b, i) {
-          moving.push({ b: b, spr: makeSprite(bodyExtent(b) * s, function (sg, c) { drawBodyArt(sg, b, i, c, c, s, lv.seed); }) });
+          var m = { b: b, spr: makeSprite(bodyExtent(b) * s, function (sg, c) { drawBodyArt(sg, b, i, c, c, s, lv.seed); }) };
+          if (isNebula(b)) moving.splice(nNeb++, 0, m);          // clouds on rails first: under everything else on the animated layer
+          else moving.push(m);
         })(b, i);
-      } else if (b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
+      }
+      if (!b.orbit && b.kind === 'repulsor') repulsors.push({ x: b.x, y: b.y, r: b.r });
+      if (b.kind === 'pulsar' && b.beam && b.beam.reach > 0) pulsars.push(b);
     }
     buildMouthSprites(lv);
     // target bezel sprite (rotated each frame)
@@ -2193,8 +2530,93 @@ var Render = (function () {
     }
     warpsLive = true;
   }
+  // Nebula entry: a soft puff of stipple dots that drift outward (and a little along the heading of nothing: just out) and fade
+  // in ~500 ms. Pulsar beam catch: a brief paper flash ring and a fan of sparks thrown straight away from the pulsar, ~250 ms.
+  var FOG_MS = 520, FOGN = 3, FOGD = 28, fogs = [], fogIdx = 0, fogsLive = false;
+  for (var fi = 0; fi < FOGN; fi++) fogs.push({ on: false, t0: -1, x: 0, y: 0, d: new Float32Array(FOGD * 4) });
+  var FLASH_MS = 260, FLN = 3, FLS = 7, flashes = [], flashIdx = 0, flashLive = false;
+  for (var fj = 0; fj < FLN; fj++) flashes.push({ on: false, t0: -1, x: 0, y: 0, ux: 0, uy: -1, sp: new Float32Array(FLS * 2) });
+  function fog(x, y) {
+    if (!level || !(x === x && y === y)) return;
+    var f = fogs[fogIdx]; fogIdx = (fogIdx + 1) % FOGN;
+    var r = rng(crashSeed++ * 4243 + 29);
+    f.on = true; f.t0 = -1; f.x = x; f.y = y;
+    for (var i = 0; i < FOGD; i++) {
+      var a = r() * TAU, d0 = 3 + r() * 8;
+      f.d[4 * i] = a; f.d[4 * i + 1] = d0; f.d[4 * i + 2] = 10 + r() * 18; f.d[4 * i + 3] = 0.8 + r() * 0.9;   // angle, start, drift (CSS px), size
+    }
+    fogsLive = true;
+  }
+  function pulsarNear(x, y) {
+    var best = null, bd = 1e18, bs = level ? level.bodies : [];
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i]; if (b.kind !== 'pulsar') continue;
+      Physics.bodyPos(b, lastT, P);
+      var dx = x - P.x, dy = y - P.y, dd = dx * dx + dy * dy, lim = (b.beam ? b.beam.reach : 300) + 40;
+      if (dd < lim * lim && dd < bd) { bd = dd; best = b; }
+    }
+    return best;
+  }
+  function beam(x, y) {
+    if (!level || !(x === x && y === y)) return;
+    var f = flashes[flashIdx]; flashIdx = (flashIdx + 1) % FLN;
+    var r = rng(crashSeed++ * 5113 + 41), b = pulsarNear(x, y), base = -Math.PI / 2;
+    if (b) { Physics.bodyPos(b, lastT, P); base = Math.atan2(y - P.y, x - P.x); }
+    f.on = true; f.t0 = -1; f.x = x; f.y = y; f.ux = Math.cos(base); f.uy = Math.sin(base);
+    for (var i = 0; i < FLS; i++) {
+      var spread = b ? 0.95 : Math.PI;                      // a fan away from the pulsar (or all round when no pulsar is near)
+      f.sp[2 * i] = base + (((i + 0.5) / FLS) * 2 - 1) * spread + (r() - 0.5) * 0.2; f.sp[2 * i + 1] = 6 + r() * 9 + (Math.abs(i - (FLS - 1) / 2) < 1 ? 5 : 0);
+    }
+    flashLive = true;
+  }
+  function drawFogs(now, u) {
+    var live = false;
+    ctx.fillStyle = PAL.paper;
+    for (var k = 0; k < FOGN; k++) {
+      var f = fogs[k]; if (!f.on) continue;
+      if (f.t0 < 0) f.t0 = now;
+      var p = (now - f.t0) / FOG_MS; if (p >= 1) { f.on = false; continue; }
+      live = true;
+      var e = easeOutCubic(p), a = (1 - p) * (1 - p) * Math.min(1, p * 10);
+      for (var band = 0; band < 2; band++) {
+        ctx.globalAlpha = a * (band ? 0.95 : 0.6); ctx.beginPath();
+        for (var i = band; i < FOGD; i += 2) {
+          var an = f.d[4 * i], rr = (f.d[4 * i + 1] + f.d[4 * i + 2] * e) * u, sz = f.d[4 * i + 3] * (1 + 0.5 * e) * u;
+          var qx = f.x + Math.cos(an) * rr, qy = f.y + Math.sin(an) * rr; ctx.moveTo(qx + sz / 2, qy); ctx.arc(qx, qy, sz / 2, 0, TAU);
+        }
+        ctx.fill();
+      }
+      // a faint stippled ring breathing out
+      ctx.globalAlpha = a * 0.55; ctx.beginPath();
+      var R = (6 + 26 * e) * u, n = 22;
+      for (var j = 0; j < n; j++) { var aj = j * TAU / n + p; ctx.rect(f.x + Math.cos(aj) * R - 0.45 * u, f.y + Math.sin(aj) * R - 0.45 * u, 0.9 * u, 0.9 * u); }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1; fogsLive = live;
+  }
+  function drawFlashes(now, u, t) {
+    var live = false;
+    ctx.lineCap = 'round';
+    for (var k = 0; k < FLN; k++) {
+      var f = flashes[k]; if (!f.on) continue;
+      if (f.t0 < 0) f.t0 = now;
+      var p = (now - f.t0) / FLASH_MS; if (p >= 1) { f.on = false; continue; }
+      live = true;
+      var e = easeOutCubic(p), a = 1 - p;
+      ctx.strokeStyle = PAL.paper; ctx.globalAlpha = 0.9 * a; ctx.lineWidth = (1.1 - 0.6 * p) * u;
+      ctx.beginPath(); ctx.arc(f.x, f.y, (2 + 9 * e) * u, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = a; ctx.lineWidth = 0.7 * u; ctx.beginPath();
+      for (var i = 0; i < FLS; i++) {
+        var an = f.sp[2 * i], len = f.sp[2 * i + 1], r0 = (3 + 8 * e) * u, r1 = r0 + len * (1 - 0.5 * e) * u, ca = Math.cos(an), sa = Math.sin(an);
+        ctx.moveTo(f.x + ca * r0, f.y + sa * r0); ctx.lineTo(f.x + ca * r1, f.y + sa * r1);
+      }
+      ctx.stroke();
+      ctx.fillStyle = PAL.paper; ctx.globalAlpha = a * (1 - e); ctx.beginPath(); ctx.arc(f.x, f.y, 2.2 * u, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1; flashLive = live;
+  }
   var fx = {
-    warp: warp,
+    warp: warp, fog: fog, beam: beam,
     crash: function (x, y) {
       var c = crashes[crashIdx]; crashIdx = (crashIdx + 1) % CR;
       var r = rng(crashSeed++ * 7717 + 3), i;
@@ -2216,7 +2638,9 @@ var Render = (function () {
       for (var i = 0; i < CR; i++) crashes[i].on = false;
       shakePending = false; shakeT0 = -2; succ.on = false; succ.seal = null; succ.n = 0;
       for (i = 0; i < WN; i++) warps[i].on = false;
-      warpsLive = false;
+      for (i = 0; i < FOGN; i++) fogs[i].on = false;
+      for (i = 0; i < FLN; i++) flashes[i].on = false;
+      warpsLive = fogsLive = flashLive = false;
       for (i = 0; i < wm.length; i++) wm[i].kPend = false;
       for (i = 0; i < 8; i++) { popT[i] = -1; prevCol[i] = 0; }
     }
@@ -2407,9 +2831,12 @@ var Render = (function () {
       ctx.lineCap = 'round';
     }
 
+    if (pulsars.length) drawBeams(t, u, d, s, ox, oy);
     drawFrags(state, now, u);
     if (state.spotlight) drawSpotlight(state.spotlight, now, u);
     if (warpsLive) drawWarps(now, u, t);
+    if (fogsLive) drawFogs(now, u);
+    if (flashLive) drawFlashes(now, u, t);
     drawGhosts(state, u);
     var showTrail = state.phase === 'flight' || state.phase === 'result';
     if (showTrail) drawTrail(state.trail, u, succ.on ? 0.45 : 1);
@@ -2530,6 +2957,55 @@ var Render = (function () {
       }
     }
     ctx.globalAlpha = 1; warpsLive = live;
+  }
+
+  // Pulsar beams at the physics time t (= state.step * K.DT, as for the moons): axis a = phase + omega * t and the opposite
+  // direction, each a wedge of half-angle `half` out to `reach`. Drawn in the beam's own frame (one transform per pulsar, no
+  // trig per stroke): two paper hairlines per wedge, the leading edge a touch heavier, and sparse alternate-slant hatching
+  // between them, every line fading in four alpha bands toward the tip. One path per band per pulsar.
+  var BEAM_A = [0.62, 0.42, 0.26, 0.13], BEAM_H = [0.3, 0.22, 0.14, 0.07];
+  function drawBeams(t, u, d, s, ox, oy) {
+    var i, k, sg, e;
+    ctx.save();
+    ctx.strokeStyle = PAL.paper; ctx.lineCap = 'round';
+    for (i = 0; i < pulsars.length; i++) {
+      var b = pulsars[i], bm = b.beam, a = bm.phase + bm.omega * t, ca = Math.cos(a), sa = Math.sin(a), x = b.x, y = b.y;
+      if (b.orbit) { Physics.bodyPos(b, t, P); x = P.x; y = P.y; }
+      ctx.setTransform(d * s * ca, d * s * sa, -d * s * sa, d * s * ca, d * (ox + x * s), d * (oy + y * s));
+      if (b.orbit) { ctx.setTransform(d * s, 0, 0, d * s, d * (ox + x * s), d * (oy + y * s)); beamReachLive(bm.reach, u); ctx.setTransform(d * s * ca, d * s * sa, -d * s * sa, d * s * ca, d * (ox + x * s), d * (oy + y * s)); }
+      var R = bm.reach, th = Math.tan(bm.half), r0 = b.r * 1.7 + 1.5 * u, L = R - r0, lead = bm.omega >= 0 ? 1 : -1;
+      var hs = 7 * u, nh = Math.max(2, Math.floor(L / hs));
+      for (k = 0; k < 4; k++) {
+        var x0 = r0 + L * k / 4, x1 = r0 + L * (k + 1) / 4;
+        // edges: trailing (thin) then leading (heavier)
+        for (var lw = 0; lw < 2; lw++) {
+          ctx.globalAlpha = BEAM_A[k] * (lw ? 1 : 0.7); ctx.lineWidth = (lw ? 0.8 : 0.5) * u; ctx.beginPath();
+          for (sg = -1; sg <= 1; sg += 2) {
+            e = (lw ? lead : -lead) * sg;                  // the leading edge of the beam pointing along sg
+            ctx.moveTo(sg * x0, e * x0 * th); ctx.lineTo(sg * x1, e * x1 * th);
+          }
+          ctx.stroke();
+        }
+        // cross-hatching: two families of straight strokes at +-42 degrees to the rungs, clipped to the wedge (inset), offset by
+        // half a period so they form an open diamond lattice
+        ctx.globalAlpha = BEAM_H[k]; ctx.lineWidth = 0.45 * u; ctx.beginPath();
+        var j0 = Math.ceil(nh * k / 4), j1 = Math.ceil(nh * (k + 1) / 4), ti = th * 0.86;
+        for (var j = j0; j < j1; j++) {
+          var hx = r0 + (j + 0.5) * hs, m = (j & 1) ? 0.9 : -0.9;
+          if (hx * ti < 1.2 * u) continue;
+          var yT = ti * hx / (1 - ti * m), yB = -ti * hx / (1 + ti * m);
+          for (sg = -1; sg <= 1; sg += 2) { ctx.moveTo(sg * (hx + m * yB), yB); ctx.lineTo(sg * (hx + m * yT), yT); }
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  function beamReachLive(R, u) {
+    ctx.fillStyle = PAL.graphite; ctx.globalAlpha = 1; ctx.beginPath();
+    var n = Math.max(30, Math.round(TAU * R / (3.6 * u))), r = 0.6 * u;
+    for (var i = 0; i < n; i++) { var a = i * TAU / n; ctx.rect(R * Math.cos(a) - r, R * Math.sin(a) - r, 2 * r, 2 * r); }
+    ctx.fill();
   }
 
   function drawGhosts(state, u) {
@@ -3040,6 +3516,31 @@ var Render = (function () {
     c.globalAlpha = 1; c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, Math.min(0.9, R * 0.22), 0, TAU); c.fill();
     c.lineCap = 'butt';
   }
+  // A nebula in miniature: a dotted circle at r with a sprinkle of stipple inside (denser toward the centre).
+  function thumbNebula(c, x, y, R, seed) {
+    var r = rng(seed * 977 + 5), n = Math.max(14, Math.round(TAU * R / 2.2)), i, a;
+    c.fillStyle = PAL.paper; c.globalAlpha = 0.55; c.beginPath();
+    for (i = 0; i < n; i++) { a = i * TAU / n; c.rect(x + R * Math.cos(a) - 0.3, y + R * Math.sin(a) - 0.3, 0.6, 0.6); }
+    c.fill();
+    var m = Math.min(70, Math.round(R * R * 0.5));
+    c.globalAlpha = 0.4; c.beginPath();
+    for (i = 0; i < m; i++) { a = r() * TAU; var d = R * 0.9 * r() * Math.sqrt(r()); c.rect(x + d * Math.cos(a) - 0.3, y + d * Math.sin(a) - 0.3, 0.6, 0.6); }
+    c.fill(); c.globalAlpha = 1;
+  }
+  // A pulsar in miniature: a dot with a core ring and its two beams as short strokes at the t = 0 angle.
+  function thumbPulsar(c, x, y, b, s) {
+    var R = Math.max(1.6, b.r * s), bm = b.beam;
+    if (bm) {
+      var a = bm.phase, ca = Math.cos(a), sa = Math.sin(a), L = Math.max(R * 3, Math.min(bm.reach * s * 0.45, R + 12));
+      c.strokeStyle = PAL.paper; c.globalAlpha = 0.7; c.lineWidth = 0.5; c.lineCap = 'round'; c.beginPath();
+      c.moveTo(x + ca * R * 1.6, y + sa * R * 1.6); c.lineTo(x + ca * L, y + sa * L);
+      c.moveTo(x - ca * R * 1.6, y - sa * R * 1.6); c.lineTo(x - ca * L, y - sa * L);
+      c.stroke(); c.lineCap = 'butt';
+    }
+    c.globalAlpha = 1; c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, R, 0, TAU); c.fill();
+    c.fillStyle = PAL.ink; c.beginPath(); c.arc(x, y, R * 0.55, 0, TAU); c.fill();
+    c.fillStyle = PAL.paper; c.beginPath(); c.arc(x, y, Math.min(0.6, R * 0.25), 0, TAU); c.fill();
+  }
   var TH_DIRS = [0, Math.PI, -Math.PI / 2, Math.PI / 2, -Math.PI / 4, -3 * Math.PI / 4, Math.PI / 4, 3 * Math.PI / 4];
   function thumbLetters(c, lv, ox, oy, s, pw, ph) {
     var bs = lv.bodies, no = pairNumbers(lv), tg = lv.target, i, k;
@@ -3087,8 +3588,14 @@ var Render = (function () {
     for (i = 0; i < bs.length; i++) { o = bs[i].orbit; if (!o) continue; c.moveTo(ox + (o.cx + o.rad) * s, oy + o.cy * s); c.arc(ox + o.cx * s, oy + o.cy * s, o.rad * s, 0, TAU); }
     c.stroke(); c.setLineDash(DASH_NONE);
     var nw = 0;
+    for (i = 0; i < bs.length; i++) {                     // clouds first: under everything
+      if (!isNebula(bs[i])) continue;
+      Physics.bodyPos(bs[i], 0, P); thumbNebula(c, ox + P.x * s, oy + P.y * s, Math.max(3, bs[i].r * s), (lv.seed | 0) + i);
+    }
     for (i = 0; i < bs.length; i++) {
+      if (isNebula(bs[i])) continue;
       Physics.bodyPos(bs[i], 0, P);
+      if (bs[i].kind === 'pulsar') { thumbPulsar(c, ox + P.x * s, oy + P.y * s, bs[i], s); continue; }
       if (bs[i].kind === 'wormhole') { thumbMouth(c, ox + P.x * s, oy + P.y * s, Math.max(2.6, bs[i].r * s), i); nw++; continue; }
       drawBodyArt(c, bs[i], i, ox + P.x * s, oy + P.y * s, s, lv.seed);
     }
@@ -3109,7 +3616,7 @@ var Render = (function () {
     c.restore();
   }
 
-  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx, warp: warp,
+  return { init: init, resize: resize, setLevel: setLevel, frame: frame, drawThumbnail: drawThumbnail, fx: fx, warp: warp, fog: fog, beam: beam,
            worldToScreen: worldToScreen, screenToWorld: screenToWorld, get layout() { return layout; }, get caption() { return capInfo; } };
 })();
 
@@ -3369,6 +3876,48 @@ var Sound = (function () {
     } catch (e) {}
   }
 
+  // ---- fog: entering a nebula (~0.5 s). A low-passed hush of noise whose filter closes as the probe bleeds speed;
+  //      quieter than warp, slow attack and an exponential tail so there are no clicks. Re-entries closer than 0.15 s are folded. ----
+  var fogLast = -1;
+  function fog() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.01, D = 0.5;
+      if (fogLast >= 0 && t - fogLast < 0.15) return;
+      fogLast = t;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuf;
+      var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5;
+      lp.frequency.setValueAtTime(1300, t);
+      lp.frequency.exponentialRampToValueAtTime(320, t + D);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.06, t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      src.connect(lp); lp.connect(g); g.connect(master);
+      src.start(t, Math.random() * 0.9); src.stop(t + D + 0.03);
+    } catch (e) {}
+  }
+
+  // ---- beam: a pulsar beam catches the probe (~0.12 s). A bright, distant click: a high sine with a faint inharmonic partial,
+  //      3 ms attack and a quick exponential decay. Catches closer than 60 ms are folded. ----
+  var beamLast = -1;
+  function beam() {
+    if (!ready()) return;
+    try {
+      var t = now() + 0.005, D = 0.12;
+      if (beamLast >= 0 && t - beamLast < 0.06) return;
+      beamLast = t;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(2350, t); o.frequency.exponentialRampToValueAtTime(1900, t + D);
+      env(g, t, 0.075, 0.003, D);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t + D + 0.03);
+      var o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o2.type = 'sine'; o2.frequency.setValueAtTime(2350 * 2.76, t);
+      env(g2, t, 0.025, 0.002, D * 0.5);
+      o2.connect(g2); g2.connect(master); o2.start(t); o2.stop(t + D * 0.5 + 0.03);
+    } catch (e) {}
+  }
+
   // ---- launch: soft whoosh, bandpassed noise sweep ----
   function launch(power) {
     if (!ready()) return;
@@ -3389,18 +3938,18 @@ var Sound = (function () {
   return {
     unlock: unlock, setMuted: setMuted, isMuted: isMuted, suspend: suspend, resume: resume,
     droneStart: droneStart, droneSpeed: droneSpeed, droneStop: droneStop,
-    chime: chime, ach: ach, warp: warp, thump: thump, pluck: pluck, tick: tick, launch: launch,
+    chime: chime, ach: ach, warp: warp, fog: fog, beam: beam, thump: thump, pluck: pluck, tick: tick, launch: launch,
     get state() { return ctx ? ctx.state : 'none'; }
   };
 })();
 
 // ===================== MODULE: 50-save.js =====================
 /* PERIHELION — save.
-   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: plates (60 at first, 90 with Volume III; shorter saved arrays are padded with zeros), `seen` flags for the
+   localStorage key 'perihelion.v1' (kept so existing saves migrate). Schema v2 adds: plates (60 at first, 90 with Volume III, 150 with Volumes IV and V; shorter saved arrays are padded with zeros), `seen` flags for the
    popup cards, the Daily Plate record, lifetime `stats` and unlocked achievements. Every storage access is wrapped in
    try/catch; if storage is unavailable (private mode, sandboxed iframe, quota) the game keeps working from memory. */
 var Save = (function () {
-  var KEY = 'perihelion.v1', N = 90, VERSION = 2;
+  var KEY = 'perihelion.v1', N = 150, VERSION = 2;
   var persistent = false;
   var DAY = 86400000;
 
@@ -3566,7 +4115,13 @@ var Save = (function () {
    - Volume ranges come from Levels.VOLUMES (Volumes I and II fall back to 0-29 / 30-59 if Levels is missing); a volume that
      does not exist never unlocks its honour. Plate counts come from Save.N. Honours are only ever added, never revoked.
    - Wormholes: flightEnd counts sim.warps (stat 'warps') and remembers whether the winning flight warped; plateSealed uses
-     that for the gate honours (stat 'gateSeals' counts sealed flights that warped). */
+     that for the gate honours (stat 'gateSeals' counts sealed flights that warped).
+   - Nebulae and pulsars (CONTRACT-v4 §6) work the same way: flightEnd counts sim.fog (stat 'fog', steps inside nebulae)
+     and sim.beams (stat 'beams', beam catches) on every flight, and plateSealed judges the veil/beam honours on the
+     sealing flight only.
+   - Nothing assumes a plate count. The campaign size is Levels.CAMPAIGN.length (Save.N without Levels); the later
+     cartographers ask for every plate up to the end of their volume (cartographer_90 = Volume III's last plate + 1, so
+     still ninety plates) and, like the volume honours, never unlock while that volume's plates do not exist. */
 var Log = (function () {
   var ROM_VOL = [{ from: 0, to: 29 }, { from: 30, to: 59 }];
 
@@ -3588,10 +4143,27 @@ var Log = (function () {
     for (var i = 0; i < b.length; i++) if (b[i] && b[i].kind !== 'wormhole' && b[i].pair !== undefined && b[i].pair !== null) return true;
     return false;
   }
-  function vol(i) { var v; try { v = Levels.VOLUMES[i]; } catch (e) {} return v || ROM_VOL[i] || null; }
-  function volDone(c, i, min) { var v = vol(i); return !!v && v.to >= v.from && sealedAll(c, v.from, v.to, min); }
+  function vol(i) {
+    var v = null, have = false;
+    try { have = Levels.VOLUMES && typeof Levels.VOLUMES.length === 'number'; if (have) v = Levels.VOLUMES[i]; } catch (e) {}
+    if (!have) v = ROM_VOL[i];
+    if (!v || typeof v !== 'object') return null;
+    var from = Math.floor(Number(v.from)), to = Math.floor(Number(v.to));
+    return isFinite(from) && isFinite(to) && from >= 0 && to >= from ? { from: from, to: to } : null;
+  }
+  // plates that exist now: the campaign as loaded (it may still be shorter than the save), never more than the save holds
+  function platesNow() {
+    var n = 0; try { n = Save.N | 0; } catch (e) {}
+    try { if (Levels.CAMPAIGN && typeof Levels.CAMPAIGN.length === 'number') n = n > 0 ? Math.min(n, Levels.CAMPAIGN.length) : Levels.CAMPAIGN.length; } catch (e) {}
+    return n;
+  }
+  function volDone(c, i, min) { var v = vol(i); return !!v && v.to < platesNow() && sealedAll(c, v.from, v.to, min); }
+  // seal as many plates as there are up to the end of volume i (and those plates exist)
+  function volCount(c, i) { var v = vol(i); return !!v && v.to < platesNow() && c.totals.sealed >= v.to + 1; }
   function sealedNow(c) { return c.ev === 'plateSealed'; }
   function oneShot(c) { return sealedNow(c) && c.data.launches === 1; }
+  // physics steps in two seconds (240 at the 120 Hz step)
+  var FOG_LONG = 240; try { if (K.DT > 0) FOG_LONG = Math.round(2 / K.DT); } catch (e) {}
 
   var LIST = [
     { id: 'first_light', name: 'First Light', blurb: 'Seal any plate.',
@@ -3615,14 +4187,22 @@ var Log = (function () {
       test: function (c) { return c.totals.sealed >= 30; } },
     { id: 'cartographer_60', name: 'Master Cartographer', blurb: 'Seal sixty plates of the Atlas.',
       test: function (c) { return c.totals.sealed >= 60; } },
-    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal all ninety plates of the Atlas.',
-      test: function (c) { return c.totals.sealed >= 90; } },
+    { id: 'cartographer_90', name: 'Cartographer of the Third Volume', blurb: 'Seal ninety plates of the Atlas.',
+      test: function (c) { return volCount(c, 2); } },
+    { id: 'cartographer_120', name: 'Cartographer of the Fourth Volume', blurb: 'Seal one hundred and twenty plates of the Atlas.',
+      test: function (c) { return volCount(c, 3); } },
+    { id: 'cartographer_150', name: 'Cartographer of the Fifth Volume', blurb: 'Seal one hundred and fifty plates of the Atlas.',
+      test: function (c) { return volCount(c, 4); } },
     { id: 'volume_one', name: 'Volume I, Complete', blurb: 'Seal every plate of Volume I.',
       test: function (c) { return volDone(c, 0, 1); } },
     { id: 'volume_two', name: 'Volume II, Complete', blurb: 'Seal every plate of Volume II.',
       test: function (c) { return volDone(c, 1, 1); } },
     { id: 'volume_three', name: 'Volume III, Complete', blurb: 'Seal every plate of Volume III.',
       test: function (c) { return volDone(c, 2, 1); } },
+    { id: 'volume_four', name: 'Volume IV, Complete', blurb: 'Seal every plate of Volume IV.',
+      test: function (c) { return volDone(c, 3, 1); } },
+    { id: 'volume_five', name: 'Volume V, Complete', blurb: 'Seal every plate of Volume V.',
+      test: function (c) { return volDone(c, 4, 1); } },
     { id: 'perfectionist', name: 'The Perfectionist', blurb: 'Three stars on every plate of Volume I.',
       test: function (c) { return volDone(c, 0, 3); } },
     { id: 'event_horizon', name: 'Event Horizon', blurb: 'Seal a plate holding a black hole with a single launch.',
@@ -3637,6 +4217,14 @@ var Log = (function () {
       test: function (c) { return sealedNow(c) && c.warps >= 2; } },
     { id: 'gate_keeper', name: 'Keeper of the Gates', blurb: 'Seal ten flights that passed a wormhole.',
       test: function (c) { return c.stat('gateSeals') >= 10; } },
+    { id: 'into_the_veil', name: 'Into the Veil', blurb: 'Seal a plate with a flight that passed through a nebula.',
+      test: function (c) { return sealedNow(c) && c.fog > 0; } },
+    { id: 'becalmed', name: 'Becalmed', blurb: 'Seal a plate with one flight that spent two seconds in nebulae.',
+      test: function (c) { return sealedNow(c) && c.fog >= FOG_LONG; } },
+    { id: 'lighthouse', name: 'By the Lighthouse', blurb: 'Seal a plate with a flight that a pulsar’s beam pushed.',
+      test: function (c) { return sealedNow(c) && c.beams > 0; } },
+    { id: 'beam_rider', name: 'Riding the Beam', blurb: 'Seal a plate with one flight caught twice by pulsar beams.',
+      test: function (c) { return sealedNow(c) && c.beams >= 2; } },
     { id: 'persistence', name: 'Persistence of Vision', blurb: 'Seal a plate on your third and final launch.',
       test: function (c) { return sealedNow(c) && c.data.launches === 3; } },
     { id: 'long_way_round', name: 'The Long Way Round', blurb: 'Win with a flight of 960 steps or more.',
@@ -3665,7 +4253,7 @@ var Log = (function () {
 
   // ---- helpers -------------------------------------------------------------------------------------------------------
   var STAT_NAMES = ['launches', 'wins', 'losses', 'crashes', 'lost', 'distance', 'frags', 'hints', 'nearMiss', 'threads',
-    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps'];
+    'platesNoHint', 'dailyWins', 'endlessRounds', 'warps', 'fog', 'beams'];
 
   function num(x, dflt) { x = Number(x); return isFinite(x) ? x : dflt; }
   function stat(n) { try { return Save.stat(n) || 0; } catch (e) { return 0; } }
@@ -3701,7 +4289,8 @@ var Log = (function () {
   function starsNow(pending) {
     var a = [], i, src = null;
     try { src = Save.data.stars; } catch (e) {}
-    var n = 90; try { n = Save.N || 90; } catch (e) {}
+    var n = 0; try { n = Save.N | 0; } catch (e) {}
+    if (!(n > 0)) n = src && src.length ? src.length : 0;
     for (i = 0; i < n; i++) a.push(src && src[i] ? src[i] : 0);
     if (pending && pending.idx >= 0 && pending.idx < n) a[pending.idx] = Math.max(a[pending.idx], pending.stars > 0 ? pending.stars : 1);
     return a;
@@ -3729,7 +4318,7 @@ var Log = (function () {
     var full = {
       ev: c.ev, data: c.data || {}, level: c.level || null, win: !!c.win,
       minGap: c.minGap === undefined ? Infinity : c.minGap, minDist: c.minDist === undefined ? Infinity : c.minDist,
-      steps: c.steps || 0, warps: c.warps || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
+      steps: c.steps || 0, warps: c.warps || 0, fog: c.fog || 0, beams: c.beams || 0, aimOff: c.aimOff === undefined ? Infinity : c.aimOff, fragsPlate: c.fragsPlate || 0, fragsAttempt: c.fragsAttempt || 0,
       endlessRound: c.endlessRound || 0,
       stars: stars, totals: c.totals || totalsOf(stars), stat: stat, dailyBest: 0
     };
@@ -3758,7 +4347,9 @@ var Log = (function () {
   // ---- events --------------------------------------------------------------------------------------------------------
   function isWin(status) { return status === 'hit'; }
 
-  var last = { lv: null, w: 0 };      // the latest flightEnd: its plate and (if it hit) how many times it warped
+  // the latest flightEnd: its plate and (if it hit) how many times it warped, its steps in nebulae and its beam catches
+  var last = { lv: null, w: 0, f: 0, b: 0 };
+  function count(x) { return Math.max(0, Math.floor(num(x, 0))); }
   var handlers = {
     launch: function (d) {
       bump('launches');
@@ -3778,9 +4369,11 @@ var Log = (function () {
       if (win && gap <= 12) bump('threads');
       var fd = fragDelta(d.level, d.fragsThisAttempt);
       if (fd > 0) bump('frags', fd);
-      var wp = Math.max(0, Math.floor(num(sim.warps, 0)));
+      var wp = count(sim.warps), fg = count(sim.fog), bm = count(sim.beams);
       if (wp > 0) bump('warps', wp);
-      last = { lv: d.level, w: win ? wp : 0 };
+      if (fg > 0) bump('fog', fg);
+      if (bm > 0) bump('beams', bm);
+      last = { lv: d.level, w: win ? wp : 0, f: win ? fg : 0, b: win ? bm : 0 };
       return { ev: 'flightEnd', data: d, level: d.level, win: win, minGap: gap, minDist: num(sim.minDist, Infinity),
         steps: num(sim.step, 0), aimOff: win ? aimOffset(sim, d.level) : Infinity };
     },
@@ -3791,13 +4384,14 @@ var Log = (function () {
       if (fd > 0) bump('frags', fd);
       var idx = num(d.plateIndex, -1);
       if (idx >= 0 && !d.hintUsed) bump('platesNoHint');
-      var wp = (last.lv || null) === level ? last.w : 0;
-      last = { lv: null, w: 0 };
+      var same = (last.lv || null) === level;
+      var wp = same ? last.w : 0, fg = same ? last.f : 0, bm = same ? last.b : 0;
+      last = { lv: null, w: 0, f: 0, b: 0 };
       if (wp > 0) bump('gateSeals');
       var stars = starsNow({ idx: idx, stars: num(d.stars, 1) });
       var plateFrags = level && level.frags ? level.frags.length : num(d.fragsTotal, 0);
       return { ev: 'plateSealed', data: d, level: level, stars: stars, totals: totalsOf(stars),
-        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp };
+        fragsPlate: plateFrags, fragsAttempt: Math.max(0, num(d.fragsThisAttempt, 0)), warps: wp, fog: fg, beams: bm };
     },
 
     hint: function (d) {
@@ -4021,6 +4615,20 @@ var LogUI = (function () {
     return (n < 0 ? '-' : '') + s + out;
   }
 
+  // physics steps -> seconds: one decimal under a minute, whole seconds after
+  function secs(steps) {
+    var dt = 1 / 120; try { if (K.DT > 0) dt = K.DT; } catch (e) {}
+    var v = Math.max(0, Number(steps) || 0) * dt;
+    return v < 60 ? (Math.round(v * 10) / 10).toFixed(1) : fmt(v);
+  }
+  // plates in the Atlas as it stands (the campaign may still be shorter than the save)
+  function plates() {
+    var n = 0;
+    try { if (Levels.CAMPAIGN && Levels.CAMPAIGN.length > 0) n = Levels.CAMPAIGN.length; } catch (e) {}
+    if (!n) { try { n = Save.N | 0; } catch (e) {} }
+    return n;
+  }
+
   function injectCss() {
     if (!doc || doc.getElementById('logui-css')) return;
     var st = doc.createElement('style');
@@ -4060,7 +4668,7 @@ var LogUI = (function () {
 
   function render(snap) {
     var t = snap.totals || {}, st = snap.stats || {}, dl = snap.daily || {}, ach = snap.achievements || [];
-    var N = 90; try { N = Save.N || 90; } catch (e) {}
+    var N = plates();
     var got = 0, i;
     for (i = 0; i < ach.length; i++) if (ach[i].unlocked) got++;
     var hit = st.launches > 0 ? Math.round(100 * (st.hitRate || 0)) + '<i>%</i>' : '&mdash;';
@@ -4078,7 +4686,9 @@ var LogUI = (function () {
       row('Distance flown', fmt(st.distance || 0), 'u') +
       row('Near misses', fmt(st.nearMiss || 0)) +
       row('Needles threaded', fmt(st.threads || 0)) +
-      row('Gates passed', fmt(st.warps || 0)) + '</ul>';
+      row('Gates passed', fmt(st.warps || 0)) +
+      row('Time in nebulae', secs(st.fog), 's') +
+      row('Beam catches', fmt(st.beams || 0)) + '</ul>';
     if (!(st.launches > 0)) h += '<p class="lg-note">Nothing observed as yet. The log fills as you fly.</p>';
     h += '</section>';
 
@@ -4261,8 +4871,8 @@ var LogUI = (function () {
     step: 0,
     frozen: false,                    // the astronomer holds the heavens: step does not advance while aiming
     hint: { on: false, used: false, pts: new Float32Array(K.HINT_MAX * 2), n: 0, t0: 0 },
-    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole card is open
-    card: null,                       // null | 'intro' | 'fragments' | 'wormholes': a popup card is open (aim blocked, clock held)
+    spotlight: null,                  // [{x, y, r?}] world points ringed while a fragment / wormhole / nebula / pulsar card is open
+    card: null,                       // null | 'intro' | 'fragments' | 'wormholes' | 'nebulae' | 'pulsars': a popup card is open (aim blocked, clock held)
     phase: 'aim',
     aim: { active: false, dx: 0, dy: 0, power: 0, vx: 0, vy: 0, cancel: true },
     predict: { pts: new Float32Array(K.PREDICT_STEPS * 2), n: 0 },
@@ -4290,7 +4900,11 @@ var LogUI = (function () {
 
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
-  function hasWormhole(lv) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].kind === 'wormhole') return true; return false; }
+  function hasKind(lv, kind) { if (lv && lv.bodies) for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i] && lv.bodies[i].kind === kind) return true; return false; }
+  function hasWormhole(lv) { return hasKind(lv, 'wormhole'); }
+  // popup cards that point at bodies of one kind (shown once, the first time a plate holds one), in queue order
+  var BODY_CARDS = { wormholes: 'wormhole', nebulae: 'nebula', pulsars: 'pulsar' };
+  var POP_NAMES = ['intro', 'fragments', 'wormholes', 'nebulae', 'pulsars'];
   // every wormhole mouth names a twin that is a different mouth naming it back (Physics.stepSim would throw otherwise)
   function wormholesMutual(lv) {
     var bs = lv.bodies;
@@ -4302,7 +4916,8 @@ var LogUI = (function () {
     }
     return true;
   }
-  function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit) return true; return false; }
+  // anything that changes with time: bodies on rails, and pulsar beams (they turn even though the star stands still)
+  function hasMoving(lv) { for (var i = 0; i < lv.bodies.length; i++) if (lv.bodies[i].orbit || lv.bodies[i].beam) return true; return false; }
 
   // ------------------------------------------------------------------ timers (in physics steps)
   function logEvent(name, data) { if (state.custom) return; try { if (typeof Log !== 'undefined' && Log && typeof Log.event === 'function') Log.event(name, data); } catch (e) {} }
@@ -4413,6 +5028,17 @@ var LogUI = (function () {
     try { if (typeof Sound !== 'undefined' && typeof Sound.warp === 'function') Sound.warp(); } catch (e) {}
     vibrate(14);
   }
+  // Entering a nebula: a puff of dust where the probe went in and a soft hush. A pulsar beam catch: a flash and a click, a short buzz.
+  // Both mark the probe's position (the event is pushed by the step that ends there). Every call is guarded.
+  function onFog(ev, s) {
+    try { if (typeof Render !== 'undefined' && typeof Render.fog === 'function') Render.fog(s.x, s.y); } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.fog === 'function') Sound.fog(); } catch (e) {}
+  }
+  function onBeam(ev, s) {
+    try { if (typeof Render !== 'undefined' && typeof Render.beam === 'function') Render.beam(s.x, s.y); } catch (e) {}
+    try { if (typeof Sound !== 'undefined' && typeof Sound.beam === 'function') Sound.beam(); } catch (e) {}
+    vibrate([6, 40, 6]);                                     // a double pulse, like the star
+  }
 
   function countFrags() { var c = 0; for (var k = 0; k < state.collected.length; k++) c += state.collected[k]; return c; }
 
@@ -4488,6 +5114,8 @@ var LogUI = (function () {
           var ev = s.events[i];
           if (ev.type === 'frag') onFrag(ev.i);
           else if (ev.type === 'warp') onWarp(ev, s);
+          else if (ev.type === 'fog') onFog(ev, s);
+          else if (ev.type === 'beam') onBeam(ev, s);
         }
         s.events.length = 0;
       }
@@ -4725,7 +5353,14 @@ var LogUI = (function () {
     }
     var rest = [];
     for (i = 0; i < CAMP.length; i++) if (!used[i]) rest.push(i);
-    if (rest.length) { html += '<div class="vol-rule"></div><div class="grid">'; for (i = 0; i < rest.length; i++) html += plateHtml(rest[i]); html += '</div>'; }
+    // plates no volume names (a campaign longer than Levels.VOLUMES): thirty to a volume, numbered by position
+    for (i = 0; i < rest.length;) {
+      var g = Math.floor(rest[i] / 30), grp = [];
+      while (i < rest.length && Math.floor(rest[i] / 30) === g) grp.push(rest[i++]);
+      html += volHead({ name: 'Volume ' + toRoman(g + 1) }, grp[0], grp[grp.length - 1]) + '<div class="grid">';
+      for (var gi = 0; gi < grp.length; gi++) html += plateHtml(grp[gi]);
+      html += '</div>';
+    }
     elGrid.innerHTML = html;
     cards = [];
     var bs = elGrid.querySelectorAll('.plate');
@@ -4817,13 +5452,13 @@ var LogUI = (function () {
     else elNote.classList.remove('on');
   }
 
-  // ---- popup cards (To Observe / Comet Fragments / Wormholes): atlas plates that hold the clock while open
+  // ---- popup cards (To Observe / Comet Fragments / Wormholes / Nebulae / Pulsars): atlas plates that hold the clock while open
   function levelFrags() { return (state.level && state.level.frags && state.level.frags.length) || 0; }
   function popupSafe() { return state.screen === 'play' && state.phase !== 'flight' && !cardVisible(); }
   function autoNext() {
     if (!Save.seen('intro')) return 'intro';
     if (levelFrags() && !Save.seen('fragments')) return 'fragments';
-    if (hasWormhole(state.level) && !Save.seen('wormholes')) return 'wormholes';
+    for (var k in BODY_CARDS) if (hasKind(state.level, BODY_CARDS[k]) && !Save.seen(k)) return k;
     return null;
   }
   function autoCards() { var n = autoNext(); if (n) requestPopup(n); }
@@ -4833,7 +5468,7 @@ var LogUI = (function () {
     if (n) showPopup(n, false);
   }
   function requestPopup(name) {
-    if (name !== 'intro' && name !== 'fragments' && name !== 'wormholes') return null;
+    if (POP_NAMES.indexOf(name) < 0) return null;
     if (state.card || !popupSafe()) {
       if (state.card !== name && popQueue.indexOf(name) < 0) popQueue.push(name);
       return 'queued';
@@ -4856,31 +5491,42 @@ var LogUI = (function () {
         '<p class="pop-text">Wormholes come in pairs, marked with the same Greek letter. Fly into one and you leave by its twin at the same speed. A mark such as <span class="m">\u21bb 90\u00b0</span> means your heading turns that far as you pass through. They pull on nothing and do no harm.</p>' +
         '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
     }
+    if (name === 'nebulae') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Nebulae</h3><div class="rule"></div>' +
+        '<p class="pop-text">Nebulae are clouds of dust and gas. They pull on nothing and do no harm, but while you are inside one you lose speed, and a slower probe bends more sharply round everything else.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
+    if (name === 'pulsars') {
+      return '<p class="kicker">Notice</p><h3 class="c-title">Pulsars</h3><div class="rule"></div>' +
+        '<p class="pop-text">A pulsar is a spinning neutron star. It pulls like a small planet and is just as solid. Two beams sweep round it, and a beam that catches the probe pushes it straight away from the star, so when you launch matters as much as where.</p>' +
+        '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
+    }
     return '<p class="kicker">Notice</p><h3 class="c-title">Comet Fragments</h3><div class="rule"></div>' +
       '<p class="pop-text">Small brass comets drift on this plate. Fly through one to collect it. They are optional, but a course that gathers them is a harder one. Fragments you collect stay collected across your launches on this plate.</p>' +
       '<div class="c-btns"><button class="btn primary" data-act="pop-ok">Understood</button></div>';
   }
-  // world points a card rings while it is open; wormhole mouths carry their ring radius (mouth.r + 14) and follow their rails
+  // world points a card rings while it is open; bodies carry their ring radius (mouth.r + 14, nebula.r + 10, 60 round a pulsar) and follow their rails
   var _mp = { x: 0, y: 0 };
   function spotlightFor(name) {
     var lv = state.level, out = [], i;
     if (name === 'fragments') {
       var f = lv && lv.frags;
       if (f && f.length) for (i = 0; i < f.length; i++) out.push({ x: f[i].x, y: f[i].y });
-    } else if (name === 'wormholes' && lv) {
+    } else if (BODY_CARDS[name] && lv) {
+      var kind = BODY_CARDS[name];
       for (i = 0; i < lv.bodies.length; i++) {
         var b = lv.bodies[i];
-        if (b.kind !== 'wormhole') continue;
+        if (!b || b.kind !== kind) continue;
         Physics.bodyPos(b, state.step * K.DT, _mp);
-        out.push({ x: _mp.x, y: _mp.y, r: b.r + 14, body: i });
+        out.push({ x: _mp.x, y: _mp.y, r: kind === 'wormhole' ? b.r + 14 : kind === 'nebula' ? b.r + 10 : 60, body: i });
       }
     }
     return out.length ? out : null;
   }
-  // mouths on rails move with state.step (held while a card is open, but keep the rings honest anyway)
+  // mouths and clouds on rails move with state.step (held while a card is open, but keep the rings honest anyway)
   function refreshSpotlight() {
     var sp = state.spotlight, lv = state.level;
-    if (state.card !== 'wormholes' || !sp || !lv) return;
+    if (!BODY_CARDS[state.card] || !sp || !lv) return;
     for (var i = 0; i < sp.length; i++) {
       var b = lv.bodies[sp[i].body];
       if (!b || !b.orbit) continue;
@@ -5067,19 +5713,22 @@ var LogUI = (function () {
     if (!canHint()) return false;
     var lv = state.level, sol = hintSol(lv), t0 = sol.t0Step | 0, h = state.hint;
     // Fly the course once, noting the step at which the last fragment is gathered.
-    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, i;
+    var sim = Physics.createSim(lv, sol.vx, sol.vy, t0), got = 0, lastFrag = 0, total = 0, warps = 0, lastWarp = 0, beams = 0, lastBeam = 0, i;
     while (sim.status === 'flying' && sim.step < K.MAX_STEPS) {
       Physics.stepSim(sim, lv);
       hintBuf[2 * total] = sim.x; hintBuf[2 * total + 1] = sim.y; total++;      // a wormhole passage is one long jump between two consecutive points
       var c = 0; for (i = 0; i < sim.collected.length; i++) c += sim.collected[i];
       if (c > got) { got = c; lastFrag = total; }
       if (sim.warps > warps) { warps = sim.warps; lastWarp = total; }
+      if (sim.beams > beams) { beams = sim.beams; lastBeam = total; }       // undefined on an older physics: never true
     }
     // The line is the first 55% of the course; on a full-clear course it runs on to just past the last fragment, and on a course through
-    // wormholes to just past the last passage, so the exit's heading is shown (never the final approach: at most 92%).
+    // wormholes (or pushed by pulsar beams) to just past the last passage / catch, so the new heading is shown (never the final approach:
+    // at most 92%). Nebulae and beams never jump, so their paths need nothing else; sim.events piles up here unread and is dropped.
     var n = Math.floor(0.55 * total);
     if (got) n = Math.max(n, Math.min(lastFrag + 24, Math.floor(0.92 * total)));
     if (warps) n = Math.max(n, Math.min(lastWarp + 24, Math.floor(0.92 * total)));
+    if (beams) n = Math.max(n, Math.min(lastBeam + 24, Math.floor(0.92 * total)));
     n = Math.min(K.HINT_MAX, n);
     h.pts.set(hintBuf.subarray(0, 2 * n));
     h.n = n; h.on = true; h.used = true; h.t0 = nowMs();
@@ -5096,6 +5745,8 @@ var LogUI = (function () {
     $('sheet-exit').textContent = state.mode === 'endless' ? 'End survey' : (state.mode === 'daily' ? 'Return to the Title' : 'Return to the Atlas');
     var ok = canHint(), hb = $('sheet-hint'), why = $('sheet-hint-why'), wt = ok ? '' : hintWhy();
     var wb = $('sheet-worm'); if (wb) wb.hidden = !hasWormhole(state.level);       // "About wormholes" only on plates that have one
+    var nb = $('sheet-neb'); if (nb) nb.hidden = !hasKind(state.level, 'nebula');   // likewise "About nebulae" / "About pulsars"
+    var pb = $('sheet-pul'); if (pb) pb.hidden = !hasKind(state.level, 'pulsar');
     hb.setAttribute('aria-disabled', String(!ok));
     why.textContent = wt; why.hidden = !wt;
     refreshSoundButtons();
@@ -5149,7 +5800,7 @@ var LogUI = (function () {
         break;
       case 'howto': if (state.paused) showPopup('intro', true); break;
       case 'fragments': if (state.paused) showPopup('fragments', true); break;
-      case 'wormholes': if (state.paused) showPopup('wormholes', true); break;
+      case 'wormholes': case 'nebulae': case 'pulsars': if (state.paused) showPopup(name, true); break;
       case 'pop-ok': closePopup(); break;
       case 'atlas': setScreen(state.mode === 'campaign' ? 'select' : 'title'); break;
       case 'next':
@@ -5409,10 +6060,10 @@ var LogUI = (function () {
     } else {
       left = safe.left + (W - safe.left - safe.right - cw) / 2;
       top = (minTop + maxBottom - ch) / 2;
-      var c = (state.card === 'fragments' || state.card === 'wormholes') ? fragCentroid() : null;
+      var c = (state.card === 'fragments' || BODY_CARDS[state.card]) ? fragCentroid() : null;
       if (c) {
         var mid = (minTop + maxBottom) / 2;
-        if (state.card === 'wormholes') top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths can sit anywhere: the clearest band, away from them
+        if (BODY_CARDS[state.card]) top = placeWormCard(ch, minTop, maxBottom, c.y);   // mouths, clouds and pulsars can sit anywhere: the clearest band, away from them
         else if (c.y < mid) top = Math.max(mid, mid + (maxBottom - mid - ch) / 2);     // comets above: card in the lower half
         else top = Math.min(mid - ch, minTop + (mid - minTop - ch) / 2);               // comets below: card in the upper half
       }
@@ -5447,7 +6098,7 @@ var LogUI = (function () {
         else { nudgeIdle = 0; setNudge(false); }
       }
     } else acc = 0;
-    if (state.card === 'wormholes') refreshSpotlight();
+    if (BODY_CARDS[state.card]) refreshSpotlight();
     try { Render.frame(state, t); }
     catch (e) { if (renderErr++ < 3) console.error('Render.frame', e); }
   }

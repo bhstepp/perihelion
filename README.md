@@ -2,7 +2,7 @@
 
 A gravity-slingshot puzzle game for iPhone, drawn as a 19th-century astronomical engraving.
 
-Pull back anywhere on the screen and release. Your probe curves around planets, moons and black holes, and slips through wormholes, on its way to the brass target ring. You get three launches per plate, and the fewer you use, the more stars you earn.
+Pull back anywhere on the screen and release. Your probe curves around planets, moons and black holes, slips through wormholes, ploughs through nebulae and dodges the sweeping beams of pulsars on its way to the brass target ring. You get three launches per plate, and the fewer you use, the more stars you earn.
 
 The whole game is one self-contained HTML file (about 350 KB). There is no server, no build step to play, and no assets other than an optional Google Fonts stylesheet. Add it to your Home Screen and it runs offline.
 
@@ -25,14 +25,16 @@ The whole game is one self-contained HTML file (about 350 KB). There is no serve
 - **Comet fragments:** optional brass comets that sit on harder routes. Once collected they stay collected across your launches on that plate. On every Atlas plate that has them, one launch exists that gathers them all and reaches the ring, which is the only way to earn three stars with the full set (verified with the game's own physics; some are narrow).
 - **Hazards:** hitting a body, drifting off the plate, being pulled into a black hole's capture ring, or flying for more than 10 seconds all end the launch.
 - **Wormholes:** they come in pairs, marked with the same Greek letter. Fly into one mouth and you leave by its twin at the same speed. A mark such as ↻ 90° means your heading turns that far as you pass through. They pull on nothing and never hurt you, so the puzzle is working out where an exit leads. Some mouths ride rails, so the plate changes with the moment you launch.
-- **Instruction cards:** a card explains the controls the first time you play, and others explain comet fragments and wormholes the first time they appear. Both can be reopened from the Menu.
+- **Nebulae:** clouds of dust and gas, drawn as stipple inside a dotted ring. They pull on nothing and never hurt you, but while the probe is inside one it loses speed (each cloud has its own density), and a slower probe bends more sharply around everything else. Some clouds drift on rails.
+- **Pulsars:** spinning neutron stars. A pulsar pulls like a small planet and is just as solid, and two beams sweep around it out to a dotted ring. A beam that catches the probe pushes it straight away from the star, so when you launch matters as much as where.
+- **Instruction cards:** a card explains the controls the first time you play, and others explain comet fragments, wormholes, nebulae and pulsars the first time they appear. All of them can be reopened from the Menu.
 
 ### Modes
 
-- **The Atlas:** 90 plates in three volumes, unlocked in order.
+- **The Atlas:** 150 plates in five volumes, unlocked in order.
 - **Daily Plate:** one plate a day, generated from the date, so everyone gets the same one with no server. It keeps a streak of consecutive days. Harder later in the week.
 - **Endless Survey:** generated plates that get harder each round, with a saved best score.
-- **Observer's Log:** lifetime statistics (launches, hit rate, distance flown, near misses), your Daily streak, and 31 honours to earn, such as *Thread the Needle* for winning while grazing a body.
+- **Observer's Log:** lifetime statistics (launches, hit rate, distance flown, near misses, wormhole passages, time in nebulae, beam catches), your Daily streak, and 39 honours to earn, such as *Thread the Needle* for winning while grazing a body.
 
 ### Consult the Astronomer
 
@@ -50,6 +52,8 @@ Open **Menu → Consult the Astronomer** while aiming. The heavens are held stil
 | XX–XXX | I | Repulsors (negative mass), then everything combined |
 | XXXI–LX | II | The same mechanics in denser arrangements: 4–7 bodies, smaller targets, more comets, more moving bodies |
 | LXI–XC | III | Wormholes: a single pair, then turned exits, mouths on rails, chains of two pairs, and everything combined |
+| XCI–CXX | IV | Nebulae: one cloud, then clouds that tighten a slingshot, clouds near black holes and repulsors, drifting clouds, and clouds with wormholes |
+| CXXI–CL | V | Pulsars: one slow beam, then faster beams among planets, pulsars with moons and black holes, two pulsars, and pulsars with nebulae and wormholes |
 
 ## Put it on GitHub Pages
 
@@ -101,7 +105,7 @@ Edit the files in `src/`, then rebuild. Do not edit `index.html` by hand.
 ### Tests
 
 ```sh
-npm test             # physics self-test, golden-flight hash, verification of all 90 plates and their full-clear courses
+npm test             # physics self-test, golden-flight hash, verification of all 150 plates and their full-clear courses
 npx playwright install chromium
 npm run test:flow    # touch flow, popup cards, Daily, hint, atlas, menus, storage disabled, landscape
 npm run test:log     # achievements and stats logic, the Observer's Log screen, toasts
@@ -113,12 +117,13 @@ The suites run in Chromium with iPhone 14 emulation (390×844 at 3× DPR, touch,
 
 ### Rebuilding the campaign
 
-The 90 plates are baked into `src/20-levels.js` as plain data, so nothing is solved at startup. Volumes I and II (plates I–LX) are frozen: their lines are never rewritten, and `tools/levels-golden.json` pins their hashes because players hold stars against them. Volume III is baked by `tools/levels-bake3.js`.
+The 150 plates are baked into `src/20-levels.js` as plain data, so nothing is solved at startup. Volumes I and II (plates I–LX) are frozen: their lines are never rewritten, and `tools/levels-golden.json` pins their hashes because players hold stars against them. Volume III is baked by `tools/levels-bake3.js` and is pinned the same way since Volumes IV and V were added; Volumes IV and V are baked by `tools/levels-bake45.js`.
 
 ```sh
 npm run bake         # bakes the missing Volume II plates (resumable, two worker processes) and rewrites the CAMPAIGN block
 npm run clear        # finds each plate's full-clear course (every fragment + the target) and rewrites the CLEAR block (about 8 minutes)
 npm run bake3        # bakes Volume III, the wormhole plates (resumable, two worker processes; designed layouts, see the header of tools/levels-bake3.js)
+npm run bake45       # bakes Volumes IV and V, the nebula and pulsar plates (resumable, LEVELS_JOBS workers, default 3; see the header of tools/levels-bake45.js)
 node tools/levels-daily-test.js   # Daily Plate determinism and timing over 400 dates
 ```
 
@@ -132,11 +137,11 @@ To tune difficulty, `K.PREDICT_STEPS` in `src/00-const.js` sets how much of the 
 |---|---|
 | `src/00-const.js` | World size, physics constants, palette, fonts |
 | `src/10-physics.js` | Integrator, gravity, collisions, the predictor, `selfTest()` |
-| `src/20-levels.js` | Seeded generator (mulberry32), solver, the 90 baked plates, the Endless and Daily generators |
+| `src/20-levels.js` | Seeded generator (mulberry32), solver, the 150 baked plates, the Endless and Daily generators |
 | `src/30-render.js` | Canvas 2D renderer: hatching, contour wells, grid, HUD, hint line, effects, thumbnails |
 | `src/40-audio.js` | Web Audio synthesis: drone, bell, thump, pluck, whoosh, honour chime |
 | `src/50-save.js` | `localStorage` progress, popup-card flags, Daily record, stats and honours, with an in-memory fallback |
-| `src/55-log.js` | Observer's Log: lifetime stats and the 31 honours |
+| `src/55-log.js` | Observer's Log: lifetime stats and the 39 honours |
 | `src/56-logui.js` | Observer's Log screen and achievement toasts |
 | `src/60-main.js` | Game loop, touch input, screens, cards, Daily and hint flows, test hooks (`window.__peri`) |
 | `src/shell.*.html` | Page head, styles and markup for the menus |
@@ -161,9 +166,9 @@ More detail is in [docs/CONTRACT.md](docs/CONTRACT.md) (the original module cont
 - Plate I is only as easy as one planet and a small target allow. The first five plates are all fairly gentle, and the difficulty curve starts in earnest at plate VI.
 - It is designed for portrait. Landscape works, but the plate is small.
 - `navigator.vibrate` is used where available. iOS Safari does not support it, so there are no haptics on iPhone.
-- Wormholes appear only in the Atlas (Volume III). Daily and Endless plates are generated on the phone and do not use them.
-- The page is about 354 KiB (362,520 bytes); the QA suite checks a 400 KiB limit. Every feature adds to it, mostly baked plate data.
+- Wormholes, nebulae and pulsars appear only in the Atlas (Volumes III–V). Daily and Endless plates are generated on the phone and do not use them.
+- The page is about 423 KiB (433,177 bytes); the QA suite checks a 480 KiB limit (raised from 400 KiB for Volumes IV and V). Every feature adds to it, mostly baked plate data.
 
 ## Background
 
-Perihelion was built from a single prompt as a test of what a current model can do end to end. A lead agent wrote the shared contract, then physics, level, render and input & feel sub-agents built their modules in parallel, and a QA agent tested the integrated build in iPhone emulation and sent fixes back. The second version (60 plates, Daily Plate, the astronomer's hint, the Observer's Log, the instruction cards and the shorter aiming line) was built the same way. The third (wormholes, Volume III, the full-clear hint courses) added render, sound, log and level agents plus independent review and verification agents.
+Perihelion was built from a single prompt as a test of what a current model can do end to end. A lead agent wrote the shared contract, then physics, level, render and input & feel sub-agents built their modules in parallel, and a QA agent tested the integrated build in iPhone emulation and sent fixes back. The second version (60 plates, Daily Plate, the astronomer's hint, the Observer's Log, the instruction cards and the shorter aiming line) was built the same way. The third (wormholes, Volume III, the full-clear hint courses) added render, sound, log and level agents plus independent review and verification agents. The fourth (nebulae and pulsars, Volumes IV and V) was built the same way: the lead wrote the physics and the contract (`docs/CONTRACT-v4.md`) and baked the plates while render, feel and log agents worked in parallel.

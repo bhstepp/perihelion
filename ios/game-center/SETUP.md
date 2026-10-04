@@ -12,45 +12,53 @@ All three: **Classic** leaderboard, score format **Integer**, submission type **
 
 | Leaderboard ID | Name | Score range | Unit (singular / plural) | What it ranks | Image (optional) |
 |---|---|---|---|---|---|
-| `perihelion.lb.stars` | Atlas Stars | 0 to 270 | star / stars | Total stars across the 90 plates of the Atlas. | `leaderboards/stars.png` |
+| `perihelion.lb.stars` | Atlas Stars | 0 to 450 | star / stars | Total stars across the 150 plates of the Atlas. | `leaderboards/stars.png` |
 | `perihelion.lb.endless` | Endless Survey | 0 to 1,000,000 | star / stars | Best score in a single Endless Survey. | `leaderboards/endless.png` |
 | `perihelion.lb.daily_streak` | Daily Streak | 0 to 100,000 | day / days | Longest run of consecutive Daily Plates. | `leaderboards/streak.png` |
 
-## Achievements (31, 1000 of 1000 points)
+## Achievements (39, 1000 of 1000 points)
 
 All: **Hidden: No**, **Achievable more than once: No**. Use the title for both the pre-earned and earned title. The
 description works for both states too; the earned one can simply repeat it.
 
 | # | Achievement ID | Title | Description | Points | Image |
 |---|---|---|---|---|---|
-| I | `perihelion.ach.first_light` | First Light | Seal any plate. | 10 | `achievements/first_light.png` |
-| II | `perihelion.ach.thread_needle` | Threading the Needle | Win a flight that passes within 12 units of a body. | 25 | `achievements/thread_needle.png` |
-| III | `perihelion.ach.near_ten` | Ten Near Misses | Graze a body within 20 units, ten times over. | 25 | `achievements/near_ten.png` |
-| IV | `perihelion.ach.dead_center` | Dead Centre | Win with the probe heading straight for the ring’s centre. | 25 | `achievements/dead_center.png` |
-| V | `perihelion.ach.clean_sweep` | The Clean Sweep | Gather every fragment of a plate in one attempt, and seal it. | 25 | `achievements/clean_sweep.png` |
+| I | `perihelion.ach.first_light` | First Light | Seal any plate. | 5 | `achievements/first_light.png` |
+| II | `perihelion.ach.thread_needle` | Threading the Needle | Win a flight that passes within 12 units of a body. | 20 | `achievements/thread_needle.png` |
+| III | `perihelion.ach.near_ten` | Ten Near Misses | Graze a body within 20 units, ten times over. | 20 | `achievements/near_ten.png` |
+| IV | `perihelion.ach.dead_center` | Dead Centre | Win with the probe heading straight for the ring’s centre. | 20 | `achievements/dead_center.png` |
+| V | `perihelion.ach.clean_sweep` | The Clean Sweep | Gather every fragment of a plate in one attempt, and seal it. | 20 | `achievements/clean_sweep.png` |
 | VI | `perihelion.ach.one_shot_ten` | Ten True Shots | Earn three stars on ten plates. | 25 | `achievements/one_shot_ten.png` |
 | VII | `perihelion.ach.cartographer_10` | Apprentice Cartographer | Seal ten plates of the Atlas. | 10 | `achievements/cartographer_10.png` |
-| VIII | `perihelion.ach.cartographer_30` | Journeyman Cartographer | Seal thirty plates of the Atlas. | 25 | `achievements/cartographer_30.png` |
-| IX | `perihelion.ach.cartographer_60` | Master Cartographer | Seal sixty plates of the Atlas. | 50 | `achievements/cartographer_60.png` |
-| X | `perihelion.ach.cartographer_90` | Cartographer of the Third Volume | Seal all ninety plates of the Atlas. | 100 | `achievements/cartographer_90.png` |
-| XI | `perihelion.ach.volume_one` | Volume I, Complete | Seal every plate of Volume I. | 25 | `achievements/volume_one.png` |
-| XII | `perihelion.ach.volume_two` | Volume II, Complete | Seal every plate of Volume II. | 50 | `achievements/volume_two.png` |
-| XIII | `perihelion.ach.volume_three` | Volume III, Complete | Seal every plate of Volume III. | 50 | `achievements/volume_three.png` |
-| XIV | `perihelion.ach.perfectionist` | The Perfectionist | Three stars on every plate of Volume I. | 100 | `achievements/perfectionist.png` |
-| XV | `perihelion.ach.event_horizon` | Event Horizon | Seal a plate holding a black hole with a single launch. | 25 | `achievements/event_horizon.png` |
-| XVI | `perihelion.ach.contrary_star` | Contrary Star | Seal a plate holding a repulsor with a single launch. | 25 | `achievements/contrary_star.png` |
-| XVII | `perihelion.ach.binary_star` | Binary Star | Seal a plate holding a binary pair with a single launch. | 25 | `achievements/binary_star.png` |
-| XVIII | `perihelion.ach.first_gate` | Through the Gate | Seal a plate with a flight that passed a wormhole. | 10 | `achievements/first_gate.png` |
-| XIX | `perihelion.ach.double_gate` | Twice Through | Seal a plate with one flight that passed two wormholes. | 25 | `achievements/double_gate.png` |
-| XX | `perihelion.ach.gate_keeper` | Keeper of the Gates | Seal ten flights that passed a wormhole. | 25 | `achievements/gate_keeper.png` |
-| XXI | `perihelion.ach.persistence` | Persistence of Vision | Seal a plate on your third and final launch. | 10 | `achievements/persistence.png` |
-| XXII | `perihelion.ach.long_way_round` | The Long Way Round | Win with a flight of 960 steps or more. | 25 | `achievements/long_way_round.png` |
-| XXIII | `perihelion.ach.comet_hunter` | Comet Hunter | Gather twenty-five comet fragments. | 25 | `achievements/comet_hunter.png` |
-| XXIV | `perihelion.ach.apprentice` | The Astronomer’s Apprentice | Consult the Astronomer for the first time. | 10 | `achievements/apprentice.png` |
-| XXV | `perihelion.ach.self_reliant` | Self-Reliant | Seal twenty plates without consulting the Astronomer. | 25 | `achievements/self_reliant.png` |
-| XXVI | `perihelion.ach.daily_3` | Three Nights Running | Seal the Daily Plate three days in a row. | 10 | `achievements/daily_3.png` |
-| XXVII | `perihelion.ach.daily_7` | A Week at the Eyepiece | Seal the Daily Plate seven days in a row. | 25 | `achievements/daily_7.png` |
-| XXVIII | `perihelion.ach.daily_30` | A Month of Nights | Seal the Daily Plate thirty days in a row. | 90 | `achievements/daily_30.png` |
-| XXIX | `perihelion.ach.daily_perfect` | Plate of the Day | Seal a Daily Plate with a single launch. | 25 | `achievements/daily_perfect.png` |
-| XXX | `perihelion.ach.endless_5` | Deep Survey | Reach round five of the Endless Survey. | 25 | `achievements/endless_5.png` |
-| XXXI | `perihelion.ach.endless_10` | Uncharted Waters | Reach round ten of the Endless Survey. | 50 | `achievements/endless_10.png` |
+| VIII | `perihelion.ach.cartographer_30` | Journeyman Cartographer | Seal thirty plates of the Atlas. | 20 | `achievements/cartographer_30.png` |
+| IX | `perihelion.ach.cartographer_60` | Master Cartographer | Seal sixty plates of the Atlas. | 30 | `achievements/cartographer_60.png` |
+| X | `perihelion.ach.cartographer_90` | Cartographer of the Third Volume | Seal ninety plates of the Atlas. | 40 | `achievements/cartographer_90.png` |
+| XI | `perihelion.ach.cartographer_120` | Cartographer of the Fourth Volume | Seal one hundred and twenty plates of the Atlas. | 50 | `achievements/cartographer_120.png` |
+| XII | `perihelion.ach.cartographer_150` | Cartographer of the Fifth Volume | Seal one hundred and fifty plates of the Atlas. | 80 | `achievements/cartographer_150.png` |
+| XIII | `perihelion.ach.volume_one` | Volume I, Complete | Seal every plate of Volume I. | 20 | `achievements/volume_one.png` |
+| XIV | `perihelion.ach.volume_two` | Volume II, Complete | Seal every plate of Volume II. | 30 | `achievements/volume_two.png` |
+| XV | `perihelion.ach.volume_three` | Volume III, Complete | Seal every plate of Volume III. | 30 | `achievements/volume_three.png` |
+| XVI | `perihelion.ach.volume_four` | Volume IV, Complete | Seal every plate of Volume IV. | 30 | `achievements/volume_four.png` |
+| XVII | `perihelion.ach.volume_five` | Volume V, Complete | Seal every plate of Volume V. | 30 | `achievements/volume_five.png` |
+| XVIII | `perihelion.ach.perfectionist` | The Perfectionist | Three stars on every plate of Volume I. | 80 | `achievements/perfectionist.png` |
+| XIX | `perihelion.ach.event_horizon` | Event Horizon | Seal a plate holding a black hole with a single launch. | 20 | `achievements/event_horizon.png` |
+| XX | `perihelion.ach.contrary_star` | Contrary Star | Seal a plate holding a repulsor with a single launch. | 20 | `achievements/contrary_star.png` |
+| XXI | `perihelion.ach.binary_star` | Binary Star | Seal a plate holding a binary pair with a single launch. | 20 | `achievements/binary_star.png` |
+| XXII | `perihelion.ach.first_gate` | Through the Gate | Seal a plate with a flight that passed a wormhole. | 10 | `achievements/first_gate.png` |
+| XXIII | `perihelion.ach.double_gate` | Twice Through | Seal a plate with one flight that passed two wormholes. | 20 | `achievements/double_gate.png` |
+| XXIV | `perihelion.ach.gate_keeper` | Keeper of the Gates | Seal ten flights that passed a wormhole. | 20 | `achievements/gate_keeper.png` |
+| XXV | `perihelion.ach.into_the_veil` | Into the Veil | Seal a plate with a flight that passed through a nebula. | 10 | `achievements/into_the_veil.png` |
+| XXVI | `perihelion.ach.becalmed` | Becalmed | Seal a plate with one flight that spent two seconds in nebulae. | 20 | `achievements/becalmed.png` |
+| XXVII | `perihelion.ach.lighthouse` | By the Lighthouse | Seal a plate with a flight that a pulsar’s beam pushed. | 10 | `achievements/lighthouse.png` |
+| XXVIII | `perihelion.ach.beam_rider` | Riding the Beam | Seal a plate with one flight caught twice by pulsar beams. | 20 | `achievements/beam_rider.png` |
+| XXIX | `perihelion.ach.persistence` | Persistence of Vision | Seal a plate on your third and final launch. | 10 | `achievements/persistence.png` |
+| XXX | `perihelion.ach.long_way_round` | The Long Way Round | Win with a flight of 960 steps or more. | 20 | `achievements/long_way_round.png` |
+| XXXI | `perihelion.ach.comet_hunter` | Comet Hunter | Gather twenty-five comet fragments. | 20 | `achievements/comet_hunter.png` |
+| XXXII | `perihelion.ach.apprentice` | The Astronomer’s Apprentice | Consult the Astronomer for the first time. | 5 | `achievements/apprentice.png` |
+| XXXIII | `perihelion.ach.self_reliant` | Self-Reliant | Seal twenty plates without consulting the Astronomer. | 25 | `achievements/self_reliant.png` |
+| XXXIV | `perihelion.ach.daily_3` | Three Nights Running | Seal the Daily Plate three days in a row. | 10 | `achievements/daily_3.png` |
+| XXXV | `perihelion.ach.daily_7` | A Week at the Eyepiece | Seal the Daily Plate seven days in a row. | 25 | `achievements/daily_7.png` |
+| XXXVI | `perihelion.ach.daily_30` | A Month of Nights | Seal the Daily Plate thirty days in a row. | 75 | `achievements/daily_30.png` |
+| XXXVII | `perihelion.ach.daily_perfect` | Plate of the Day | Seal a Daily Plate with a single launch. | 20 | `achievements/daily_perfect.png` |
+| XXXVIII | `perihelion.ach.endless_5` | Deep Survey | Reach round five of the Endless Survey. | 20 | `achievements/endless_5.png` |
+| XXXIX | `perihelion.ach.endless_10` | Uncharted Waters | Reach round ten of the Endless Survey. | 40 | `achievements/endless_10.png` |

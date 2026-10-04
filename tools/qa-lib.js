@@ -32,7 +32,15 @@ function seedScript(obj) {
   return `(() => { try { if (!localStorage.getItem('perihelion.v1')) localStorage.setItem('perihelion.v1', ${JSON.stringify(JSON.stringify(obj))}); } catch (e) {} })();`;
 }
 const zeros = n => new Array(n).fill(0);
-const SEEN_SAVE = { v: 2, stars: zeros(90), frags: zeros(90), unlocked: 1, endlessBest: 0, muted: false, seen: { intro: true, fragments: true, wormholes: true } };
+// The final shape of the campaign (CONTRACT-v4): checks loop over what the game reports (Levels.CAMPAIGN.length, Levels.VOLUMES, Save.N,
+// Log.ACHIEVEMENTS) and then assert it equals this. Saves seeded below use FINAL.N entries (shorter saves are padded by Save anyway).
+const FINAL = { N: 150, VOLS: 5, HONOURS: 39,
+  HEADS: ['Volume I · Plates I–XXX', 'Volume II · Plates XXXI–LX', 'Volume III · Plates LXI–XC', 'Volume IV · Plates XCI–CXX', 'Volume V · Plates CXXI–CL'] };
+const roman = n => { let s = ''; for (const [v, r] of [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]) while (n >= v) { s += r; n -= v; } return s; };
+// "Volume IV · Plates XCI–CXX" from a Levels.VOLUMES entry (the Atlas heading, innerText with whitespace collapsed)
+const volHead = v => v.name + ' · Plates ' + roman(v.from + 1) + '–' + roman(v.to + 1);
+const SEEN_ALL = { intro: true, fragments: true, wormholes: true, nebulae: true, pulsars: true };
+const SEEN_SAVE = { v: 2, stars: zeros(FINAL.N), frags: zeros(FINAL.N), unlocked: 1, endlessBest: 0, muted: false, seen: SEEN_ALL };
 const SEED_SEEN = seedScript(SEEN_SAVE);
 // date stub: window.__dayOffset shifts "now" by whole days
 const DATE_STUB = `(() => {
@@ -46,9 +54,9 @@ const SEED_HALF = `(() => { try { if (localStorage.getItem('perihelion.v1')) ret
   const now = new Date(), done = {};
   [[0, 3], [1, 2], [2, 3], [3, 1], [5, 2], [6, 3], [9, 1], [12, 2]].forEach(([ago, st]) => { done[key(new Date(now.getFullYear(), now.getMonth(), now.getDate() - ago, 12))] = st; });
   const stars = [], frags = [];
-  for (let i = 0; i < 90; i++) { stars.push(i < 44 ? [3, 2, 3, 1, 3, 2][i % 6] : 0); frags.push(i < 27 ? (i % 4 === 0 ? 2 : i % 3 === 0 ? 1 : 0) : 0); }
+  for (let i = 0; i < ${FINAL.N}; i++) { stars.push(i < 44 ? [3, 2, 3, 1, 3, 2][i % 6] : 0); frags.push(i < 27 ? (i % 4 === 0 ? 2 : i % 3 === 0 ? 1 : 0) : 0); }
   const ach = {}; ['first_light', 'thread_needle', 'cartographer_10', 'apprentice', 'daily_3', 'near_ten', 'persistence', 'event_horizon', 'comet_hunter', 'one_shot_ten', 'long_way_round'].forEach((id, i) => { ach[id] = '2026-09-' + pad(10 + i); });
-  localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars, frags, unlocked: 45, endlessBest: 7, muted: true, seen: { intro: true, fragments: true, wormholes: true },
+  localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars, frags, unlocked: 45, endlessBest: 7, muted: true, seen: { intro: true, fragments: true, wormholes: true, nebulae: true, pulsars: true },
     daily: { last: key(now), lastStars: 3, lastLaunches: 1, streak: 4, best: 6, done },
     stats: { launches: 143, wins: 61, losses: 82, crashes: 40, lost: 42, distance: 184230, frags: 31, hints: 3, nearMiss: 17, threads: 5, platesNoHint: 22, dailyWins: 8, endlessRounds: 12 }, ach }));
 } catch (e) {} })();`;
@@ -232,6 +240,19 @@ async function layoutAudit(page, tag) {
   }, tag);
 }
 
-module.exports = { fs, path, ROOT, QA, DIST, IPHONE, INSETS_P, INSETS_L, results, notes, metrics, check, note, sleep, RAF_WRAP,
+// Playwright may expect a newer browser build than the one preinstalled under PLAYWRIGHT_BROWSERS_PATH: fall back to whatever is there.
+function launchOpts(chromium) {
+  try { if (fs.existsSync(chromium.executablePath())) return {}; } catch (e) {}
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH, cands = [];
+  try {
+    for (const d of fs.readdirSync(base).sort().reverse()) {
+      if (/^chromium_headless_shell-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'headless_shell'), path.join(base, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+      else if (/^chromium-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'chrome'), path.join(base, d, 'chrome-linux64', 'chrome'));
+    }
+  } catch (e) {}
+  for (const c of cands) if (fs.existsSync(c)) return { executablePath: c };
+  return {};
+}
+module.exports = { FINAL, roman, volHead, SEEN_ALL, launchOpts, fs, path, ROOT, QA, DIST, IPHONE, INSETS_P, INSETS_L, results, notes, metrics, check, note, sleep, RAF_WRAP,
   seedScript, zeros, SEEN_SAVE, SEED_SEEN, DATE_STUB, SEED_HALF, allErrors, allRequests, newPage, cdpTap, tapEl, touchDrag, touchHold,
   cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit };

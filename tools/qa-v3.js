@@ -1,10 +1,11 @@
-// PERIHELION — QA v3 feature blocks (owner: QA AGENT): wormholes + Volume III (CONTRACT-v3), Atlas with three volumes,
+// PERIHELION — QA v3 feature blocks (owner: QA AGENT): wormholes + Volume III (CONTRACT-v3), Atlas with five volumes, nebulae + pulsars (Volumes IV-V, CONTRACT-v4),
 // Endless no-repeat run, Volume III frame budget, and the silent-switch revert (no <audio>, no navigator.audioSession).
 // Sections: 18 = wormholes / Volume III, 15 = Atlas (shared with qa-v2b), 4 = Endless, 5 = frame rate, 19 = audio.
 const L = require('./qa-lib.js');
-const { fs, path, ROOT, DIST, check, note, sleep, newPage, tapEl, cdpTap, touchDrag, touchHold, cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit, SEED_SEEN, seedScript, zeros, metrics } = L;
+const { fs, path, ROOT, DIST, check, note, sleep, newPage, tapEl, cdpTap, touchDrag, touchHold, cardOn, frames, shot, text, rectOf, solutionPull, layoutAudit, SEED_SEEN, seedScript, zeros, metrics, FINAL, roman, volHead } = L;
 
 const FIX = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'fixtures-wormhole.json'), 'utf8'));
+const FIX4 = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'fixtures-v4.json'), 'utf8'));   // fn1, fn2 (nebulae), fp1, fp2 (pulsars)
 
 // ---------------------------------------------------------------- helpers that run in the page
 // Instrument a flight: every Physics.stepSim call (distance moved, warps gained), Render.warp / Sound.warp / navigator.vibrate calls.
@@ -58,8 +59,8 @@ async function worm(browser, STD) {
     const { ctx, page, errors } = await newPage(browser, { url: STD, label: 'worm-all', init: [SEED_SEEN] });
     await page.waitForTimeout(900);
     const r = await page.evaluate((jumpsSrc) => {
-      const P = __peri, S = P.state, jumpsOf = eval(jumpsSrc), out = [];
-      for (let i = 60; i < 90; i++) {
+      const P = __peri, S = P.state, jumpsOf = eval(jumpsSrc), out = [], V3 = P.Levels.VOLUMES[2];
+      for (let i = V3.from; i <= V3.to; i++) {
         P.loadLevel(i); const lv = S.level; P.solveCurrent(); P.fastForward(1500); const r = S.result, J = r ? jumpsOf(r.pts, r.n) : [];
         let maxSeg = 0; if (r) for (let k = 1; k < r.n; k++) { const d = Math.hypot(r.pts[2 * k] - r.pts[2 * k - 2], r.pts[2 * k + 1] - r.pts[2 * k - 1]); if (d <= K.WARP_JUMP && d > maxSeg) maxSeg = d; }
         const worms = lv.bodies.filter(b => b.kind === 'wormhole'), mutual = worms.every(b => lv.bodies[b.pair] && lv.bodies[b.pair].pair === lv.bodies.indexOf(b));
@@ -71,13 +72,13 @@ async function worm(browser, STD) {
         const sim = P.Physics.createSim(lv, c.vx, c.vy, c.t0Step | 0); while (sim.status === 'flying' && sim.step < K.MAX_STEPS) P.Physics.stepSim(sim, lv);
         cl.push({ i, hit: sim.status === 'hit', all: sim.collected.length === (lv.frags || []).length && sim.collected.every(v => v) });
       }
-      return { out, cl, n: P.Levels.CAMPAIGN.length, clearLen: P.Levels.CLEAR.length };
+      return { out, cl, n: P.Levels.CAMPAIGN.length, clearLen: P.Levels.CLEAR.length, v3: V3 };
     }, jumpsIn);
     const bad = r.out.filter(c => !(c.ok && c.warps >= 1 && c.jumps === c.warps && c.maxSeg < 40 && c.worms >= 2 && c.mutual && c.frags >= 2));
     check(S, 'Volume III: all 30 plates solve to 3 stars through the game loop; every flight warps (sim.warps ≥ 1) and its result path has exactly sim.warps jumps > K.WARP_JUMP, other steps < 40', r.out.length === 30 && !bad.length, bad.map(c => c.plate + ' ' + JSON.stringify(c)).join(' | '));
     check(S, 'Volume III: every mouth has a mutual twin (pair), 2-3 fragments per plate, plates LXI..XC in order', r.out.every((c, k) => c.mutual && c.frags >= 2 && c.frags <= 3) && r.out[0].plate === 'LXI' && r.out[29].plate === 'XC', r.out.map(c => c.plate).join(','));
     const withClear = r.cl.filter(c => !c.none), badCl = withClear.filter(c => !(c.hit && c.all));
-    check(S, 'Levels.CLEAR covers 87 plates (all but I-III): every course hits the target and gathers every fragment', r.clearLen === 90 && withClear.length === 87 && r.cl.filter(c => c.none).map(c => c.i).join() === '0,1,2' && !badCl.length, 'with course ' + withClear.length + ', none at ' + r.cl.filter(c => c.none).map(c => c.i + 1).join(',') + ', bad ' + badCl.map(c => c.i + 1).join(','));
+    check(S, 'Levels.CLEAR covers ' + (FINAL.N - 3) + ' plates (all but I-III; one entry per campaign plate): every course hits the target and gathers every fragment', r.clearLen === r.n && r.n === FINAL.N && withClear.length === r.n - 3 && r.cl.filter(c => c.none).map(c => c.i).join() === '0,1,2' && !badCl.length, 'with course ' + withClear.length + ', none at ' + r.cl.filter(c => c.none).map(c => c.i + 1).join(',') + ', bad ' + badCl.map(c => c.i + 1).join(','));
     check(S, 'no console errors (Volume III all plates)', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -100,6 +101,16 @@ async function worm(browser, STD) {
     }, FIX);
     check(S, 'loadCustom(fw1..fw3): campaign-like play with levelIndex -1, solution hits with ≥ 1 warp, ≥ 1 star', r.rows.length === 3 && r.rows.every(x => x.ok && x.idx === -1 && x.scr === 'play' && x.mode === 'campaign' && x.sol && x.success && x.warps >= 1 && x.stars >= 1), JSON.stringify(r.rows));
     check(S, 'loadCustom writes nothing to Save and emits no plateSealed', r.same && r.sealed === 0, JSON.stringify({ same: r.same, sealed: r.sealed }));
+    const r4 = await page.evaluate((fx) => {
+      const P = __peri, S = P.state, rows = [], before = JSON.stringify(P.Save.data);
+      for (const k of Object.keys(fx)) {
+        const lv = fx[k], ok = P.loadCustom(lv), sol = P.solveCurrent(); P.fastForward(1500); const res = S.result;
+        rows.push({ k, ok: !!ok, idx: S.levelIndex, sol: !!sol, t0: sol && sol.t0Step, want: lv.solution && lv.solution.t0Step, success: !!(res && res.success), stars: res && res.stars, fog: S.sim ? S.sim.fog : -1, beams: S.sim ? S.sim.beams : -1,
+          neb: lv.bodies.some(b => b.kind === 'nebula'), pul: lv.bodies.some(b => b.kind === 'pulsar') });
+      }
+      return { rows, same: JSON.stringify(P.Save.data) === before };
+    }, FIX4);
+    check(S, 'loadCustom(tools/fixtures-v4.json: fn1, fn2, fp1, fp2): solution launched at its t0Step hits; nebula fixtures fly through fog (sim.fog > 0), pulsar fixtures are pushed by a beam (sim.beams > 0); nothing saved', r4.same && r4.rows.length === 4 && r4.rows.every(x => x.ok && x.idx === -1 && x.sol && x.t0 === (x.want | 0) && x.success && x.stars >= 1 && (x.pul ? x.beams > 0 : x.fog > 0)), JSON.stringify(r4.rows));
     check(S, 'no console errors (loadCustom)', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -287,8 +298,8 @@ async function worm(browser, STD) {
 // ================================================================= (b) Atlas, Volume III  [section 15]
 async function atlas3(browser, STD) {
   const S = '15';
-  const stars59 = zeros(90).map((_, i) => (i < 59 ? [3, 2, 1][i % 3] : 0));
-  const mk = (n, unlocked) => ({ v: 2, stars: zeros(90).map((_, i) => (i < n ? [3, 2, 1][i % 3] : 0)), frags: zeros(90), unlocked, endlessBest: 0, muted: false, seen: { intro: true, fragments: true } });
+  const N = FINAL.N;
+  const mk = (n, unlocked) => ({ v: 2, stars: zeros(N).map((_, i) => (i < n ? [3, 2, 1][i % 3] : 0)), frags: zeros(N), unlocked, endlessBest: 0, muted: false, seen: { intro: true, fragments: true } });
   const sum = n => zeros(n).reduce((a, _, i) => a + [3, 2, 1][i % 3], 0);
   const lockedOf = page => page.evaluate(() => [...document.querySelectorAll('.plate')].map(c => c.classList.contains('locked')));
   for (const [tag, seedObj, openIdx, sealed] of [['unlocked 60 (plate LX open, LXI locked)', mk(59, 60), 59, 59], ['unlocked 61 (LX sealed, LXI open)', mk(60, 61), 60, 60]]) {
@@ -298,17 +309,17 @@ async function atlas3(browser, STD) {
     const a = await page.evaluate(() => { const hs = [...document.querySelectorAll('.vol-head')], grids = [...document.querySelectorAll('.grid')], g3 = grids[2];
       return { heads: hs.map(h => h.innerText.replace(/\s+/g, ' ').trim()), grids: grids.length, n3: g3 ? g3.querySelectorAll('.plate').length : 0, first3: g3 && +g3.querySelector('.plate').dataset.i, last3: g3 && +[...g3.querySelectorAll('.plate')].pop().dataset.i,
         names3: g3 ? [...g3.querySelectorAll('.pl-num')].map(e => e.innerText).filter((_, k) => k === 0 || k === 29).join('..') : '', tally: document.getElementById('tally').innerText.replace(/\s+/g, ' '), total: document.querySelectorAll('.plate').length }; });
-    check(S, 'Atlas [' + tag + ']: Volume III section present (heading "Volume III · Plates LXI–XC") with 30 plates, indices 60..89', a.grids === 3 && /^Volume III\s*·\s*Plates LXI–XC$/i.test(a.heads[2]) && a.n3 === 30 && a.first3 === 60 && a.last3 === 89 && a.total === 90 && a.names3 === 'LXI..XC', JSON.stringify(a));
-    const tally = new RegExp('Stars ' + sum(sealed) + '/270.*Sealed ' + sealed + '/90', 'i');
-    check(S, 'Atlas [' + tag + ']: tally "Stars ' + sum(sealed) + '/270 · Sealed ' + sealed + '/90"', tally.test(a.tally), a.tally);
+    check(S, 'Atlas [' + tag + ']: Volume III section present (heading "Volume III · Plates LXI–XC") with 30 plates, indices 60..89; ' + FINAL.VOLS + ' sections, ' + N + ' plates in all', a.grids === FINAL.VOLS && a.heads.length === FINAL.VOLS && a.heads.every((h, k) => h === FINAL.HEADS[k]) && a.n3 === 30 && a.first3 === 60 && a.last3 === 89 && a.total === N && a.names3 === 'LXI..XC', JSON.stringify(a));
+    const tally = new RegExp('Stars ' + sum(sealed) + '/' + 3 * N + '.*Sealed ' + sealed + '/' + N + '\\b', 'i');
+    check(S, 'Atlas [' + tag + ']: tally "Stars ' + sum(sealed) + '/' + 3 * N + ' · Sealed ' + sealed + '/' + N + '"', tally.test(a.tally), a.tally);
     const lk = await lockedOf(page);
     const expectLocked = k => k > openIdx;
-    check(S, 'Atlas [' + tag + ']: plate LXI is ' + (openIdx === 59 ? 'locked' : 'open') + ', every Volume III plate after it locked, LX open', lk.every((v, k) => v === expectLocked(k)) && lk.filter(Boolean).length === 89 - openIdx, 'locked ' + lk.filter(Boolean).length + ' (expected ' + (89 - openIdx) + '), LXI locked=' + lk[60] + ', LX locked=' + lk[59]);
+    check(S, 'Atlas [' + tag + ']: plate LXI is ' + (openIdx === 59 ? 'locked' : 'open') + ', every Volume III plate after it locked, LX open', lk.length === N && lk.every((v, k) => v === expectLocked(k)) && lk.filter(Boolean).length === N - 1 - openIdx, 'locked ' + lk.filter(Boolean).length + ' (expected ' + (N - 1 - openIdx) + '), LXI locked=' + lk[60] + ', LX locked=' + lk[59]);
     // scroll down through Volume III by real swipes; every thumbnail of the 30 must get drawn (lazy) and none blank
     await page.evaluate(() => { const hs = document.querySelectorAll('.vol-head'), sc = document.getElementById('s-scroll'); sc.scrollTop = hs[2].getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 12; });
     await page.waitForTimeout(600);
     const seen = new Set(), snap = async () => page.evaluate(() => { const sc = document.getElementById('s-scroll').getBoundingClientRect(), out = [];
-      for (const c of document.querySelectorAll('.plate')) { const i = +c.dataset.i; if (i < 60) continue; const r = c.getBoundingClientRect(); if (r.bottom > sc.top && r.top < sc.bottom) { const cv = c.querySelector('canvas'), drawn = cv.width !== 300; let n = 0; if (drawn) { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 120) n++; } out.push({ i, drawn, n }); } } return out; });
+      for (const c of document.querySelectorAll('.plate')) { const i = +c.dataset.i; if (i < 60 || i > 89) continue; const r = c.getBoundingClientRect(); if (r.bottom > sc.top && r.top < sc.bottom) { const cv = c.querySelector('canvas'), drawn = cv.width !== 300; let n = 0; if (drawn) { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; for (let k = 0; k < d.length; k += 4) if (d[k] + d[k + 1] + d[k + 2] > 120) n++; } out.push({ i, drawn, n }); } } return out; });
     let first = null, blank = [], undrawn = [];
     for (let k = 0; k < 14; k++) {
       const v = await snap(); if (!first) first = v;
@@ -319,7 +330,7 @@ async function atlas3(browser, STD) {
     await page.waitForTimeout(400);
     const fin = await snap(); for (const c of fin) { seen.add(c.i); if (c.drawn && c.n < 40) blank.push(c.i); }
     // after the sweep, all 30 have been drawn
-    const drawnAll = await page.evaluate(() => [...document.querySelectorAll('.plate')].filter(c => +c.dataset.i >= 60).map(c => c.querySelector('canvas').width !== 300));
+    const drawnAll = await page.evaluate(() => [...document.querySelectorAll('.plate')].filter(c => +c.dataset.i >= 60 && +c.dataset.i <= 89).map(c => c.querySelector('canvas').width !== 300));
     check(S, 'Atlas [' + tag + ']: touch-scrolling through Volume III draws all 30 thumbnails lazily (first screen drew ' + first.filter(c => c.drawn).length + '/' + first.length + ' visible), none blank', seen.size === 30 && drawnAll.every(Boolean) && !blank.length && first.length < 30 && first.every(c => c.drawn), JSON.stringify({ seen: seen.size, drawnAll: drawnAll.filter(Boolean).length, blank: [...new Set(blank)], firstVisible: first.map(c => c.i + (c.drawn ? '' : '!')) }));
     await shot(page, 'qa-atlas-vol3-' + openIdx + '.png');
     const au = await layoutAudit(page, 'atlas vol III ' + openIdx); check(S, 'layout: Atlas Volume III [' + tag + ']', !au.issues.length, au.issues.join(' | '));
@@ -330,7 +341,7 @@ async function atlas3(browser, STD) {
       check(S, 'tapping the locked plate LXI by touch does nothing (still the Atlas)', await page.evaluate(() => __peri.state.screen === 'select' && __peri.state.levelIndex !== 60));
       await page.evaluate(() => { __peri.loadLevel(59); __peri.solveCurrent(); __peri.fastForward(1500); __peri.screen('select'); }); await page.waitForTimeout(600);
       const lk2 = await lockedOf(page), u = await page.evaluate(() => ({ u: __peri.Save.data.unlocked, tally: document.getElementById('tally').innerText.replace(/\s+/g, ' ') }));
-      check(S, 'sealing plate LX unlocks plate LXI (not LXII); tally Sealed 60/90', lk2[60] === false && lk2[61] === true && u.u === 61 && /Sealed 60\/90/.test(u.tally) && lk2.filter(Boolean).length === 29, JSON.stringify({ u, lockedN: lk2.filter(Boolean).length }));
+      check(S, 'sealing plate LX unlocks plate LXI (not LXII); tally Sealed 60/' + N, lk2[60] === false && lk2[61] === true && u.u === 61 && new RegExp('Sealed 60/' + N + '\\b').test(u.tally) && lk2.filter(Boolean).length === N - 61, JSON.stringify({ u, lockedN: lk2.filter(Boolean).length }));
       await page.evaluate(() => { const hs = document.querySelectorAll('.vol-head'), sc = document.getElementById('s-scroll'); sc.scrollTop = hs[2].getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 12; }); await page.waitForTimeout(400);
       await tapEl(page, cdp, '.plate[data-i="60"]'); await page.waitForTimeout(700);
       const pl = await page.evaluate(() => ({ scr: __peri.state.screen, i: __peri.state.levelIndex, card: __peri.state.card, name: __peri.state.level.name }));
@@ -385,7 +396,7 @@ async function perfV3(browser, STD) {
   await page.waitForTimeout(1200);
   metrics.perfV3 = {};
   for (const idx of [84, 85, 86, 87, 88, 89]) {   // LXXXV..XC: two pairs plus moons, black holes, repulsors, small targets
-    const info = await page.evaluate((i) => { const lv = __peri.Levels.CAMPAIGN[i]; return { i, name: lv.name, plate: lv.plate, bodies: lv.bodies.length, moving: lv.bodies.filter(b => b.orbit).length, worms: lv.bodies.filter(b => b.kind === 'wormhole').length, frags: (lv.frags || []).length }; }, idx);
+    const info = await page.evaluate((i) => { const lv = __peri.Levels.CAMPAIGN[i]; return { i, name: lv.name, plate: lv.plate, bodies: lv.bodies.length, moving: lv.bodies.filter(b => b.orbit || b.beam).length, worms: lv.bodies.filter(b => b.kind === 'wormhole').length, frags: (lv.frags || []).length }; }, idx);
     await page.evaluate(b => __peri.loadLevel(b.i), info); await page.waitForTimeout(400);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
     const stats = async (secs, mode) => {
@@ -479,4 +490,99 @@ async function sound(browser, STD) {
   await ctx.close();
 }
 
-module.exports = { worm, atlas3, endless, perfV3, sound };
+// ================================================================= (f) Volumes IV (nebulae) and V (pulsars)  [section 18]
+// The baked plates through the game loop, the two new cards and menu items on the real plates (feel-test covers the fixtures in depth),
+// and one hinted real-touch launch on the first pulsar plate (time-dependent: the hint holds the heavens at the course's t0Step).
+async function vol45(browser, STD) {
+  const S = '18';
+  {
+    const { ctx, page, errors } = await newPage(browser, { url: STD, label: 'vol45-all', init: [SEED_SEEN] });
+    await page.waitForTimeout(900);
+    const r = await page.evaluate(() => {
+      const P = __peri, S = P.state, V = P.Levels.VOLUMES, out = {};
+      for (const k of [3, 4]) {
+        const v = V[k], rows = []; if (!v) { out[k] = null; continue; }
+        for (let i = v.from; i <= v.to && i < P.Levels.CAMPAIGN.length; i++) {
+          P.loadLevel(i); const lv = S.level, sol = lv.solution, moving = lv.bodies.some(b => b.orbit || b.beam);
+          P.solveCurrent(); const t0 = S.sim ? S.sim.t0Step : -1; P.fastForward(1500); const res = S.result;
+          rows.push({ i, plate: lv.plate, ok: !!(res && res.success && res.stars === 3), t0, want: sol.t0Step | 0, moving, fog: S.sim ? S.sim.fog : -1, beams: S.sim ? S.sim.beams : -1,
+            neb: lv.bodies.filter(b => b.kind === 'nebula').length, pul: lv.bodies.filter(b => b.kind === 'pulsar').length, frags: (lv.frags || []).length });
+        }
+        out[k] = { v, rows };
+      }
+      return out;
+    });
+    for (const [k, nm, kind, what] of [[3, 'IV', 'nebula', 'fog'], [4, 'V', 'pulsar', 'beams']]) {
+      const d = r[k];
+      if (!d) { check(S, 'Volume ' + nm + ' exists in Levels.VOLUMES', false, 'missing'); continue; }
+      const bad = d.rows.filter(c => !(c.ok && c[what] > 0 && (kind === 'nebula' ? c.neb >= 1 : c.pul >= 1) && c.frags >= 2 && c.frags <= 3 && (!c.moving || c.t0 === c.want)));
+      check(S, 'Volume ' + nm + ': all 30 plates (' + roman(d.v.from + 1) + '..' + roman(d.v.to + 1) + ') solve to 3 stars through the game loop; every plate has a ' + kind + ' and 2-3 fragments, every stored flight ' + (what === 'fog' ? 'passes through a nebula (sim.fog > 0)' : 'is pushed by a beam (sim.beams > 0)') + '; time-dependent plates launch at solution.t0Step',
+        d.rows.length === 30 && d.rows[0].plate === roman(d.v.from + 1) && d.rows[29].plate === roman(d.v.to + 1) && !bad.length, bad.map(c => c.plate + ' ' + JSON.stringify(c)).join(' | ') || d.rows.length + ' plates');
+    }
+    check(S, 'no console errors (Volumes IV-V all plates)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  // ---- the nebulae / pulsars cards on the first plate of each volume: once, by touch, menu items
+  const seenOld = { v: 2, stars: zeros(FINAL.N), frags: zeros(FINAL.N), unlocked: 1, endlessBest: 0, muted: false, seen: { intro: true, fragments: true, wormholes: true } };
+  const { ctx, page, cdp, errors } = await newPage(browser, { url: STD, label: 'vol45-cards', init: [seedScript(seenOld)] });
+  await page.waitForTimeout(1000);
+  const V = await page.evaluate(() => __peri.Levels.VOLUMES);
+  const menuState = () => page.evaluate(() => { const vis = id => { const b = document.getElementById(id); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { t: b.innerText.trim(), w: r.width, h: r.height }; };
+    const kinds = __peri.state.level.bodies.map(b => b.kind); return { worm: vis('sheet-worm'), neb: vis('sheet-neb'), pul: vis('sheet-pul'), hasW: kinds.includes('wormhole'), hasN: kinds.includes('nebula'), hasP: kinds.includes('pulsar') }; });
+  for (const [k, card, kind, title, re, ringR, item, menuKey] of [[3, 'nebulae', 'nebula', 'Nebulae', /Nebulae are clouds of dust and gas\./, b => b.r + 10, 'About nebulae', 'neb'], [4, 'pulsars', 'pulsar', 'Pulsars', /A pulsar is a spinning neutron star\./, () => 60, 'About pulsars', 'pul']]) {
+    if (!V[k]) { check(S, 'Volume ' + (k + 1) + ' present for the ' + card + ' card check', false, 'missing'); continue; }
+    const at = V[k].from, pl = roman(at + 1);
+    await page.evaluate(i => __peri.loadLevel(i), at); await page.waitForTimeout(700);
+    const c = await page.evaluate((kind) => { const s = __peri.state, p = document.getElementById('pcard'), bs = s.level.bodies.filter(b => b.kind === kind);
+      return { card: s.card, on: p.classList.contains('on'), t: p.innerText.replace(/\s+/g, ' '), sp: (s.spotlight || []).map(q => [q.x, q.y, q.r]), bodies: bs.map(b => ({ x: b.x, y: b.y, r: b.r, orbit: !!b.orbit })), btn: (p.querySelector('[data-act="pop-ok"]') || {}).innerText }; }, kind);
+    const ringOk = c.sp.length === c.bodies.length && c.bodies.length >= 1 && c.bodies.every((b, n) => c.sp[n][2] === ringR(b) && (b.orbit || (c.sp[n][0] === b.x && c.sp[n][1] === b.y)));
+    const au = await layoutAudit(page, card + ' card ' + pl);
+    await shot(page, 'qa-' + card + '-card.png');
+    check(S, 'plate ' + pl + ' (first of Volume ' + roman(k + 1) + '): the ' + card + ' card opens (title "' + title + '", contract text, "Understood"), rings every ' + kind + ' (r ' + (kind === 'nebula' ? 'nebula.r + 10' : '60') + ')', c.card === card && c.on && c.t.indexOf(title) >= 0 && re.test(c.t) && /Understood/.test(c.btn || '') && ringOk, JSON.stringify({ card: c.card, sp: c.sp, bodies: c.bodies }));
+    check(S, 'layout: ' + card + ' card on plate ' + pl + ' — inside the safe area, clear of HUD, target and spotlight rings, buttons ≥ 44', !au.issues.length, au.issues.join(' | ') + ' rings ' + au.info.rings);
+    await tapEl(page, cdp, '#pcard [data-act="pop-ok"]'); await page.waitForTimeout(500);
+    check(S, 'dismissing the ' + card + ' card by touch clears it and stores seen.' + card, await page.evaluate(n => __peri.state.card === null && __peri.state.spotlight === null && __peri.Save.seen(n) && JSON.parse(localStorage.getItem('perihelion.v1')).seen[n] === true, card));
+    await page.evaluate(i => __peri.loadLevel(i), at + 1); await page.waitForTimeout(600);
+    await page.evaluate(i => __peri.loadLevel(i), at); await page.waitForTimeout(600);
+    check(S, 'the ' + card + ' card shows once: reloading plate ' + pl + ' (and the next plate) brings no card', await page.evaluate(() => __peri.state.card === null));
+    await tapEl(page, cdp, '#zone-r .btn'); await page.waitForTimeout(450);
+    const m = await menuState();
+    check(S, 'Menu on plate ' + pl + ' lists "' + item + '" (≥ 44 px); the other body items follow the plate\'s bodies', m[menuKey] && m[menuKey].t === item && m[menuKey].w >= 44 && m[menuKey].h >= 44 && !!m.worm === m.hasW && !!m.neb === m.hasN && !!m.pul === m.hasP, JSON.stringify(m));
+    await shot(page, 'qa-menu-' + card + '.png');
+    await tapEl(page, cdp, '#sheet [data-act="' + card + '"]'); await page.waitForTimeout(450);
+    check(S, 'Menu → ' + item + ' reopens the card with its spotlight', await page.evaluate(n => __peri.state.card === n && !!__peri.state.spotlight && __peri.state.spotlight.length >= 1, card));
+    await tapEl(page, cdp, '#pcard [data-act="pop-ok"]'); await page.waitForTimeout(400);
+    await tapEl(page, cdp, '#sheet [data-act="resume"]'); await page.waitForTimeout(250);
+  }
+  await page.evaluate(() => __peri.loadLevel(0)); await page.waitForTimeout(400);
+  await tapEl(page, cdp, '#zone-r .btn'); await page.waitForTimeout(450);
+  const m0 = await menuState();
+  check(S, 'Menu on plate I hides "About nebulae" and "About pulsars"', !m0.neb && !m0.pul, JSON.stringify(m0));
+  await tapEl(page, cdp, '#sheet [data-act="resume"]'); await page.waitForTimeout(250);
+  await page.reload(); await page.waitForTimeout(1000);
+  const after = [];
+  for (const k of [3, 4]) if (V[k]) { await page.evaluate(i => __peri.loadLevel(i), V[k].from); await page.waitForTimeout(600); after.push(await page.evaluate(() => __peri.state.card)); }
+  check(S, 'after a page reload neither the nebulae nor the pulsars card returns', after.length === 2 && after.every(c => c === null), JSON.stringify(after));
+  // ---- hinted real-touch launch on the first pulsar plate: frozen at the course's t0Step, the beam pushes, Render.beam / Sound.beam fire
+  if (V[4]) {
+    const at = V[4].from;
+    await page.evaluate(i => __peri.loadLevel(i), at); await page.waitForTimeout(500);
+    await page.evaluate(() => { const P = __peri, W = window.__b = { rb: 0, sb: 0, rf: 0 };
+      if (typeof P.Render.beam === 'function' && !P.Render.__beam) { P.Render.__beam = P.Render.beam; P.Render.beam = function () { W.rb++; return P.Render.__beam.apply(this, arguments); }; }
+      if (typeof P.Sound.beam === 'function' && !P.Sound.__beam) { P.Sound.__beam = P.Sound.beam; P.Sound.beam = function () { W.sb++; return P.Sound.__beam.apply(this, arguments); }; } });
+    const h = await page.evaluate(() => { const P = __peri, S = P.state, ok = P.useHint(), sol = P.Levels.clearFor(S.level) || S.level.solution; return { ok, fz: S.frozen, step: S.step, t0: sol.t0Step | 0 }; });
+    const pull = await page.evaluate(() => { const S = __peri.state, sol = __peri.Levels.clearFor(S.level) || S.level.solution, Lo = __peri.Render.layout, sp = Math.hypot(sol.vx, sol.vy), len = Math.max(41, sp / 640 * 300); return { dx: -sol.vx / sp * len * Lo.scale, dy: -sol.vy / sp * len * Lo.scale }; });
+    await touchDrag(cdp, 195, 420, 195 + pull.dx, 420 + pull.dy, 12, 150);
+    await page.waitForTimeout(40);
+    const l = await page.evaluate(() => ({ l: __peri.state.launches, t0: __peri.state.sim && __peri.state.sim.t0Step }));
+    let ok = true; try { await cardOn(page, 20000); } catch (e) { ok = false; }
+    await page.waitForTimeout(800);
+    const res = await page.evaluate(() => ({ ok: !!(__peri.state.result && __peri.state.result.success), stars: __peri.state.result && __peri.state.result.stars, beams: __peri.state.sim ? __peri.state.sim.beams : -1, b: window.__b }));
+    await shot(page, 'qa-pulsar-success.png');
+    check(S, 'plate ' + roman(at + 1) + ' (pulsar): the hint holds the heavens at the course t0Step; a hinted real-touch launch leaves at that step, is pushed by a beam and seals with 2 stars; Render.beam and Sound.beam fire per catch', h.ok && h.fz && h.step === h.t0 && l.l === 1 && l.t0 === h.t0 && ok && res.ok && res.stars === 2 && res.beams >= 1 && res.b.rb === res.beams && res.b.sb === res.beams, JSON.stringify({ h, l, res }));
+  }
+  check(S, 'no console errors (Volumes IV-V cards session)', errors.length === 0, errors.join(' | '));
+  await ctx.close();
+}
+
+module.exports = { worm, atlas3, endless, perfV3, sound, vol45 };

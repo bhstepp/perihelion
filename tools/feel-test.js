@@ -36,8 +36,10 @@ const cardOn = page => page.waitForFunction(() => document.getElementById('card'
 const rectOf = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; }, sel);
 const inside = (r, W, H, m = 0) => r && r.l >= m && r.t >= m && r.r <= W - m && r.b <= H - m;
 const text = (page, sel) => page.evaluate(s => document.querySelector(s).innerText.replace(/\s+/g, ' ').trim(), sel);
-const SEEN_ALL = () => { try { Save.markSeen('intro'); Save.markSeen('fragments'); Save.markSeen('wormholes'); } catch (e) {} };
+const SEEN_ALL = () => { try { for (const n of ['intro', 'fragments', 'wormholes', 'nebulae', 'pulsars']) Save.markSeen(n); } catch (e) {} };
 const FX = require('./fixtures-wormhole.json');          // three complete wormhole plates with verified solutions (fw1, fw2, fw3)
+function toRomanN(n) { const T = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]; let s = ''; for (const [v, r] of T) while (n >= v) { s += r; n -= v; } return s; }
+const FX4 = require('./fixtures-v4.json');               // fn1, fn2 (nebulae), fp1 (pulsar), fp2 (pulsar + nebula + wormholes), verified solutions
 // Date stub: window.__dayOffset shifts "now" by whole days
 const DATE_STUB = () => {
   const R = Date; window.__dayOffset = 0;
@@ -49,25 +51,28 @@ const DATE_STUB = () => {
   const { file, levels } = build();
   const url = 'file://' + file;
   console.log('testing', url, 'levels', levels);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOpts(chromium));
   const info = await (async () => { const { ctx, page } = await newPage(browser, IPHONE); await page.goto(url); await page.waitForTimeout(300);
     const r = await page.evaluate(() => { const C = __peri.Levels.CAMPAIGN; return { n: C.length, frag: C.findIndex(l => l.frags && l.frags.length), moving: C.findIndex(l => l.bodies.some(b => b.orbit)), vols: (__peri.Levels.VOLUMES || []).length, hasDaily: typeof __peri.Levels.daily === 'function' }; });
     await ctx.close(); return r; })();
   console.log('level info', JSON.stringify(info));
-  // While the baked Volume III is missing (CAMPAIGN < 90), a copy of the page gets 30 stand-in plates (the fixtures, cycled) so the
-  // 90-plate behaviour can be tested now. With the real plates in place the stand-in is not used.
-  const STUB = levels < 90;
+  // While the baked Volumes III-V are missing (CAMPAIGN < 150), a copy of the page gets stand-in plates up to 150 (the fixtures, cycled:
+  // wormhole fixtures for Volume III, nebula fixtures for IV, pulsar fixtures for V) and the missing VOLUMES entries, so the 150-plate
+  // behaviour can be tested now. With the real plates in place the stand-in is not used.
+  const FULL = 150;
+  const STUB = levels < FULL;
   let url3 = url;
   if (STUB) {
     const fs = require('fs'), html = fs.readFileSync(file, 'utf8'), mark = '// ===================== MODULE: 30-render.js';
     if (html.indexOf(mark) < 0) throw new Error('module marker not found');
-    const snip = '(function () { var C = Levels.CAMPAIGN, FX = ' + JSON.stringify(FX) + ';\n' +
-      'for (var i = C.length; i < 90; i++) { var f = JSON.parse(JSON.stringify(FX[i % 3])); f.id = "c" + (i + 1); f.index = i; f.plate = toRoman(i + 1); f.name = "Stand-in Gate " + toRoman(i + 1); f.difficulty = 1.7 + i * 0.01; C.push(f); }\n' +
-      'var V = Levels.VOLUMES; if (V.length < 3) V.push({ name: "Volume III", from: 60, to: 89 }); })();\n';
-    const out = path.join(QA, 'feel-vol3.html');
+    const snip = '(function () { var C = Levels.CAMPAIGN, FX = ' + JSON.stringify(FX) + ', NB = ' + JSON.stringify(FX4.slice(0, 2)) + ', PU = ' + JSON.stringify(FX4.slice(2)) + ';\n' +
+      'for (var i = C.length; i < ' + FULL + '; i++) { var src = i < 90 ? FX[i % 3] : i < 120 ? NB[i % 2] : PU[i % 2], f = JSON.parse(JSON.stringify(src)); f.id = "c" + (i + 1); f.index = i; f.plate = toRoman(i + 1); f.name = (i < 90 ? "Stand-in Gate " : i < 120 ? "Stand-in Veil " : "Stand-in Beacon ") + toRoman(i + 1); f.difficulty = 1.7 + i * 0.01; C.push(f); }\n' +
+      'var V = Levels.VOLUMES, W = [{ name: "Volume III", from: 60, to: 89 }, { name: "Volume IV", from: 90, to: 119 }, { name: "Volume V", from: 120, to: 149 }];\n' +
+      'for (var k = 0; k < W.length; k++) if (!V.some(function (v) { return v.name === W[k].name; })) V.push(W[k]); })();\n';
+    const out = path.join(QA, 'feel-vol5.html');
     fs.writeFileSync(out, html.replace(mark, snip + mark));
     url3 = 'file://' + out;
-    console.log('stand-in Volume III page', out);
+    console.log('stand-in Volumes III-V page', out);
   }
   const atlasTargets = [{ url, stub: false }].concat(STUB ? [{ url: url3, stub: true }] : []);
 
@@ -468,9 +473,9 @@ const DATE_STUB = () => {
 
   // ---------------------------------------------------------------- atlas: volumes, lazy thumbnails (real build; and, while Volume III is not baked yet, a variant with 90 stand-in plates)
   for (const T of atlasTargets) {
-    const tag = T.stub ? ' [stand-in Vol III]' : '';
+    const tag = T.stub ? ' [stand-in Vols III-V]' : '';
     const seed = () => { const st = [], fr = []; for (let i = 0; i < 90; i++) { st.push(i < 44 ? (i % 3) + 1 : 0); fr.push(0); }
-      try { localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars: st, frags: fr, unlocked: 45, endlessBest: 0, muted: false, seen: { intro: true, fragments: true, wormholes: true } })); } catch (e) {} };
+      try { localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars: st, frags: fr, unlocked: 45, endlessBest: 0, muted: false, seen: { intro: true, fragments: true, wormholes: true, nebulae: true, pulsars: true } })); } catch (e) {} };
     const { ctx, page, errors } = await newPage(browser, IPHONE, seed);
     await page.goto(T.url); await page.waitForTimeout(500);
     await page.evaluate(() => __peri.screen('select'));
@@ -483,9 +488,12 @@ const DATE_STUB = () => {
       return { heads, n: cards.length, drawn, cols, tally: document.getElementById('tally').innerText.replace(/\s+/g, ' '), grids: document.querySelectorAll('.grid').length, vols: __peri.Levels.VOLUMES.length, N: __peri.Levels.CAMPAIGN.length };
     });
     const N = at.N, V = Math.ceil(N / 30);
-    check('atlas' + tag + ': one heading per volume present (' + V + '), each plate once', at.n === N && at.heads.length === V && at.vols === V, JSON.stringify(at.heads));
+    // Levels.VOLUMES may name volumes whose plates are not baked yet (CAMPAIGN 90, VOLUMES 5): those get no heading
+    check('atlas' + tag + ': one heading per volume present (' + V + '), each plate once', at.n === N && at.heads.length === V && at.vols >= V, JSON.stringify(at.heads) + ' vols ' + at.vols);
     check('atlas' + tag + ': heading style "Volume I · Plates I–XXX"', /^Volume I\s*·\s*Plates I–XXX$/i.test(at.heads[0]), at.heads[0]);
-    if (N >= 90) check('atlas' + tag + ': Volume III section "Plates LXI–XC", 90 plates in all', /^Volume III\s*·\s*Plates LXI–XC$/i.test(at.heads[2]) && at.n === 90, at.heads[2] + ' / ' + at.n);
+    if (N >= 90) check('atlas' + tag + ': Volume III section "Plates LXI–XC"', /^Volume III\s*·\s*Plates LXI–XC$/i.test(at.heads[2]), at.heads[2] + ' / ' + at.n);
+    if (N >= 120) check('atlas' + tag + ': Volume IV section "Plates XCI–CXX"', /^Volume IV\s*·\s*Plates XCI–CXX$/i.test(at.heads[3]), at.heads[3]);
+    if (N >= 150) check('atlas' + tag + ': Volume V section "Plates CXXI–CL", 150 plates in all', /^Volume V\s*·\s*Plates CXXI–CL$/i.test(at.heads[4]) && at.n === 150, at.heads[4] + ' / ' + at.n);
     check('atlas' + tag + ': 3 columns portrait', at.cols === 3, 'cols ' + at.cols);
     check('atlas' + tag + ': tally shows stars x/' + (N * 3) + ' and sealed plates x/' + N, new RegExp('Stars \\d+/' + N * 3 + '.*Sealed \\d+/' + N, 'i').test(at.tally), at.tally);
     const stamps = await page.evaluate(() => { const cs = [...document.querySelectorAll('.plate')], vis = c => !c.querySelector('.sealed').hidden, txt = c => c.querySelector('.sealed').innerText.replace(/\s+/g, ' ').trim();
@@ -497,7 +505,7 @@ const DATE_STUB = () => {
     // scroll to the last volume
     await page.evaluate(() => { const hs = document.querySelectorAll('.vol-head'); const sc = document.getElementById('s-scroll'); const h = hs[hs.length - 1]; sc.scrollTop = h.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 12; });
     await page.waitForTimeout(500);
-    await shot(page, T.stub ? 'feel-atlas-stub-vol3.png' : 'feel-atlas-vol2.png');
+    await shot(page, T.stub ? 'feel-atlas-stub-last.png' : 'feel-atlas-last.png');
     await page.evaluate(() => { document.getElementById('s-scroll').scrollTop = 1e6; }); await page.waitForTimeout(500);
     check('atlas' + tag + ': thumbnails drawn on scroll (last plate)', await page.evaluate(() => { const cs = [...document.querySelectorAll('.plate')]; return cs[cs.length - 1].querySelector('canvas').width !== 300; }));
     if (N > 46) {
@@ -801,13 +809,13 @@ const DATE_STUB = () => {
     // ---- (f) loadCustom writes nothing to Save and emits nothing to Log; real plates afterwards behave normally
     const { ctx, page, errors } = await newPage(browser, IPHONE);
     await page.goto(url); await page.waitForTimeout(500);
-    await page.evaluate(() => { SEEN_ALL_PAGE(); function SEEN_ALL_PAGE() { for (const n of ['intro', 'fragments', 'wormholes']) __peri.Save.markSeen(n); } __peri.Save.recordPlate(0, 2, 0); __peri.Save.bump('launches', 3); });
+    await page.evaluate(() => { SEEN_ALL_PAGE(); function SEEN_ALL_PAGE() { for (const n of ['intro', 'fragments', 'wormholes', 'nebulae', 'pulsars']) __peri.Save.markSeen(n); } __peri.Save.recordPlate(0, 2, 0); __peri.Save.bump('launches', 3); });
     const before = await page.evaluate(() => ({ raw: localStorage.getItem('perihelion.v1'), mem: JSON.stringify(__peri.Save.data) }));
     await page.evaluate(() => { window.__ev = []; const o = __peri.Log.event; __peri.Log.event = function (n) { window.__ev.push(n); return o.apply(this, arguments); }; });
-    for (let i = 0; i < 3; i++) {
-      await loadFx(page, i); await page.waitForTimeout(100);
+    for (const lv of [...FX, ...FX4]) {      // wormhole and v4 fixtures alike
+      await page.evaluate(lv => { __peri.loadCustom(JSON.parse(JSON.stringify(lv))); }, lv); await page.waitForTimeout(100);
       await page.evaluate(() => { __peri.useHint(); __peri.solveCurrent(); __peri.fastForward(1500); });
-      await page.evaluate(() => { __peri.loadCustom(__peri.state.level); for (let k = 0; k < 3; k++) { __peri.launch(0, 640); const s = __peri.state; while (s.sim && s.sim.status === 'flying') __peri.fastForward(1); __peri.fastForward(100); } __peri.openCard('wormholes'); __peri.closeCard(); });
+      await page.evaluate(() => { __peri.loadCustom(__peri.state.level); for (let k = 0; k < 3; k++) { __peri.launch(0, 640); const s = __peri.state; while (s.sim && s.sim.status === 'flying') __peri.fastForward(1); __peri.fastForward(100); } for (const c of ['wormholes', 'nebulae', 'pulsars']) { __peri.openCard(c); __peri.closeCard(); } });
       await page.tap('#zone-r .btn').catch(() => {}); await page.waitForTimeout(150);
       await page.evaluate(() => __peri.resume());
     }
@@ -820,47 +828,58 @@ const DATE_STUB = () => {
     check('no console errors (loadCustom run)', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
-  {
-    // ---- (g) 90 plates: a save that finished 60 plates finds plate 61 unlocked; unlock stays in order; the card shows once on first load
-    const T = atlasTargets[atlasTargets.length - 1], tag = T.stub ? ' [stand-in Vol III]' : '';
-    const seed = () => { const st = [], fr = []; for (let i = 0; i < 60; i++) { st.push(i % 3 + 1); fr.push(0); }
-      try { if (!localStorage.getItem('perihelion.v1')) localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars: st, frags: fr, unlocked: 60, endlessBest: 0, muted: false, seen: { intro: true, fragments: true } })); } catch (e) {} };
-    const { ctx, page, errors } = await newPage(browser, IPHONE, seed);
+  // ---- (g) volume seams: a save that finished the plates before a volume finds its first plate unlocked; unlock stays in order;
+  //      the volume's body card shows once on first load (LXI wormholes, XCI nebulae, CXXI pulsars). Runs on the stand-in page while
+  //      the baked volumes are missing.
+  for (const seam of [{ at: 60, card: 'wormholes', kind: 'wormhole', vol: 'III' }, { at: 90, card: 'nebulae', kind: 'nebula', vol: 'IV' }, { at: 120, card: 'pulsars', kind: 'pulsar', vol: 'V' }]) {
+    const T = atlasTargets[atlasTargets.length - 1], tag = (T.stub ? ' [stand-in Vols III-V]' : '') + ' [seam ' + seam.at + ']';
+    const seen = { intro: true, fragments: true }; for (const c of ['wormholes', 'nebulae', 'pulsars']) if (c !== seam.card) seen[c] = true;
+    const seed = (o) => { const st = [], fr = []; for (let i = 0; i < o.at; i++) { st.push(i % 3 + 1); fr.push(0); }
+      try { if (!localStorage.getItem('perihelion.v1')) localStorage.setItem('perihelion.v1', JSON.stringify({ v: 2, stars: st, frags: fr, unlocked: o.at, endlessBest: 0, muted: false, seen: o.seen })); } catch (e) {} };
+    const ctx = await browser.newContext(IPHONE); await ctx.addInitScript(seed, { at: seam.at, seen });
+    const page = await ctx.newPage(), errors = [];
+    page.on('console', m => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)|ERR_|net::/i.test(m.text())) errors.push(m.text()); });
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message));
     await page.goto(T.url); await page.waitForTimeout(600);
-    const mg = await page.evaluate(() => ({ u: __peri.Save.data.unlocked, n: __peri.Levels.CAMPAIGN.length, N: __peri.Save.N, sealed: __peri.Save.totals().sealed, vols: __peri.Levels.VOLUMES.map(v => v.from + '-' + v.to).join(),
-      ed: document.getElementById('t-ed').innerText.replace(/\s+/g, ' ') }));
-    check('90-plate build: Save.N is 90 and the last volume ends at the last plate', mg.N === 90 && mg.n <= 90 && +mg.vols.split(',').pop().split('-')[1] === mg.n - 1, JSON.stringify(mg));
-    check('title edition line follows the campaign length', mg.ed.indexOf('Plates I–' + (await page.evaluate(n => toRoman(n), mg.n))) === 0, mg.ed);
-    if (mg.n > 60) {
-      check('existing save with 60 plates finished: plate 61 unlocked (unlocked = 61)', mg.u === 61 && mg.sealed === 60, JSON.stringify({ u: mg.u, sealed: mg.sealed }));
+    const mg = await page.evaluate(() => ({ u: __peri.Save.data.unlocked, n: __peri.Levels.CAMPAIGN.length, N: __peri.Save.N, sealed: __peri.Save.totals().sealed,
+      vols: __peri.Levels.VOLUMES.filter(v => v.from < __peri.Levels.CAMPAIGN.length).map(v => v.from + '-' + v.to).join(), ed: document.getElementById('t-ed').innerText.replace(/\s+/g, ' ') }));
+    if (seam.at === 60) {
+      check('Save.N is 150 and the last volume with plates ends at the last plate' + tag, mg.N === 150 && mg.n <= mg.N && +mg.vols.split(',').pop().split('-')[1] === mg.n - 1, JSON.stringify(mg));
+      check('title edition line follows the campaign length', mg.ed.indexOf('Plates I–' + (await page.evaluate(n => toRoman(n), mg.n))) === 0, mg.ed);
+    }
+    if (mg.n > seam.at) {
+      const A = seam.at;
+      check('existing save with ' + A + ' plates finished: plate ' + (A + 1) + ' unlocked (unlocked = ' + (A + 1) + ')' + tag, mg.u === A + 1 && mg.sealed === A, JSON.stringify({ u: mg.u, sealed: mg.sealed }));
       await page.tap('[data-act="begin"]'); await page.waitForTimeout(500);
-      const lk = await page.evaluate(() => ({ p60: document.querySelector('.plate[data-i="60"]').classList.contains('locked'), p61: document.querySelector('.plate[data-i="61"]').classList.contains('locked'), p59: document.querySelector('.plate[data-i="59"]').classList.contains('locked') }));
-      check('atlas: plates 1-61 open, plate 62 locked', !lk.p59 && !lk.p60 && lk.p61, JSON.stringify(lk));
-      await page.evaluate(() => { document.querySelector('.plate[data-i="61"]').click(); });
-      check('atlas: a locked Volume III plate cannot be opened', await page.evaluate(() => __peri.state.screen === 'select'));
-      await page.evaluate(() => { const sc = document.getElementById('s-scroll'), e = document.querySelector('.plate[data-i="60"]'); sc.scrollTop = e.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 120; });
+      const lk = await page.evaluate(A => ({ pa: document.querySelector('.plate[data-i="' + A + '"]').classList.contains('locked'), pb: document.querySelector('.plate[data-i="' + (A + 1) + '"]').classList.contains('locked'), pp: document.querySelector('.plate[data-i="' + (A - 1) + '"]').classList.contains('locked') }), A);
+      check('atlas: plates 1-' + (A + 1) + ' open, plate ' + (A + 2) + ' locked' + tag, !lk.pp && !lk.pa && lk.pb, JSON.stringify(lk));
+      await page.evaluate(A => { document.querySelector('.plate[data-i="' + (A + 1) + '"]').click(); }, A);
+      check('atlas: a locked Volume ' + seam.vol + ' plate cannot be opened' + tag, await page.evaluate(() => __peri.state.screen === 'select'));
+      await page.evaluate(A => { const sc = document.getElementById('s-scroll'), e = document.querySelector('.plate[data-i="' + A + '"]'); sc.scrollTop = e.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 120; }, A);
       await page.waitForTimeout(450);
-      await shot(page, T.stub ? 'feel-atlas-stub-seam.png' : 'feel-atlas-seam.png');
-      await page.evaluate(() => { const e = document.querySelector('.plate[data-i="60"]'); e.scrollIntoView({ block: 'center' }); }); await page.waitForTimeout(300);
-      await page.tap('.plate[data-i="60"]'); await page.waitForTimeout(550);
-      const p61 = await page.evaluate(() => ({ s: __peri.state.screen, i: __peri.state.levelIndex, card: __peri.state.card, w: __peri.state.level.bodies.some(b => b.kind === 'wormhole'), cap: __peri.state.level.plate, sp: __peri.state.spotlight && __peri.state.spotlight.length }));
-      check('tapping plate LXI opens it; its wormhole card shows on first load' + tag, p61.s === 'play' && p61.i === 60 && p61.w && p61.card === 'wormholes' && p61.sp >= 2, JSON.stringify(p61));
+      await shot(page, (T.stub ? 'feel-atlas-stub-seam-' : 'feel-atlas-seam-') + A + '.png');
+      await page.evaluate(A => { document.querySelector('.plate[data-i="' + A + '"]').scrollIntoView({ block: 'center' }); }, A); await page.waitForTimeout(300);
+      await page.tap('.plate[data-i="' + A + '"]'); await page.waitForTimeout(550);
+      const p1 = await page.evaluate(k => ({ s: __peri.state.screen, i: __peri.state.levelIndex, card: __peri.state.card, has: __peri.state.level.bodies.some(b => b.kind === k), sp: __peri.state.spotlight && __peri.state.spotlight.length, nk: __peri.state.level.bodies.filter(b => b.kind === k).length }), seam.kind);
+      check('tapping plate ' + toRomanN(A + 1) + ' opens it; its ' + seam.card + ' card shows on first load' + tag, p1.s === 'play' && p1.i === A && p1.has && p1.card === seam.card && p1.sp === p1.nk && p1.sp >= 1, JSON.stringify(p1));
       await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(400);
       await page.evaluate(() => { __peri.solveCurrent(); __peri.fastForward(1500); }); await cardOn(page);
-      const sl = await page.evaluate(() => ({ u: __peri.Save.data.unlocked, st: __peri.Save.data.stars[60], btns: [...document.querySelectorAll('#card .btn')].map(b => b.innerText.trim()) }));
-      check('sealing plate LXI unlocks LXII, result card offers Next plate', sl.u === 62 && sl.st >= 1 && sl.btns.indexOf('Next plate') >= 0, JSON.stringify(sl));
+      const sl = await page.evaluate(A => ({ u: __peri.Save.data.unlocked, st: __peri.Save.data.stars[A], btns: [...document.querySelectorAll('#card .btn')].map(b => b.innerText.trim()) }), A);
+      check('sealing plate ' + toRomanN(A + 1) + ' unlocks ' + toRomanN(A + 2) + ', result card offers Next plate' + tag, sl.u === A + 2 && sl.st >= 1 && sl.btns.indexOf('Next plate') >= 0, JSON.stringify(sl));
       await page.tap('#card [data-act="next"]'); await page.waitForTimeout(450);
       const nx = await page.evaluate(() => ({ i: __peri.state.levelIndex, card: __peri.state.card }));
-      check('Next plate from LXI goes to LXII; the wormhole card does not repeat', nx.i === 61 && nx.card === null, JSON.stringify(nx));
+      check('Next plate from ' + toRomanN(A + 1) + ' goes to ' + toRomanN(A + 2) + '; the ' + seam.card + ' card does not repeat' + tag, nx.i === A + 1 && nx.card === null, JSON.stringify(nx));
     } else {
-      console.log('  note: CAMPAIGN has only ' + mg.n + ' plates; Volume III plate flow not tested');
+      console.log('  note: CAMPAIGN has only ' + mg.n + ' plates; Volume ' + seam.vol + ' plate flow not tested');
     }
-    // last plate of the atlas: "The atlas is complete."
-    await page.evaluate(() => { const n = __peri.Levels.CAMPAIGN.length; const d = __peri.Save.data; for (let i = 0; i < n; i++) d.stars[i] = Math.max(d.stars[i], 1); d.unlocked = n; __peri.loadLevel(n - 1); __peri.solveCurrent(); __peri.fastForward(1500); });
-    await cardOn(page).catch(() => {});
-    const lastc = await page.evaluate(() => ({ t: document.getElementById('card').innerText.replace(/\s+/g, ' '), u: __peri.Save.data.unlocked, n: __peri.Levels.CAMPAIGN.length }));
-    check('last plate of the atlas: "The atlas is complete.", Replay/Atlas, unlocked stays <= Save.N', /The atlas is complete\./.test(lastc.t) && !/Next plate/.test(lastc.t) && lastc.u <= 90, lastc.t);
-    check('no console errors (90-plate run' + tag + ')', errors.length === 0, errors.join(' | '));
+    if (seam.at === 120) {
+      // last plate of the atlas: "The atlas is complete."
+      await page.evaluate(() => { const n = __peri.Levels.CAMPAIGN.length; const d = __peri.Save.data; for (let i = 0; i < n; i++) d.stars[i] = Math.max(d.stars[i], 1); d.unlocked = n; __peri.loadLevel(n - 1); __peri.closeCard(); __peri.solveCurrent(); __peri.fastForward(1500); });
+      await cardOn(page).catch(() => {});
+      const lastc = await page.evaluate(() => ({ t: document.getElementById('card').innerText.replace(/\s+/g, ' '), u: __peri.Save.data.unlocked, n: __peri.Levels.CAMPAIGN.length, N: __peri.Save.N }));
+      check('last plate of the atlas: "The atlas is complete.", Replay/Atlas, unlocked stays <= Save.N', /The atlas is complete\./.test(lastc.t) && !/Next plate/.test(lastc.t) && lastc.u <= lastc.N, lastc.t);
+    }
+    check('no console errors (volume seam run' + tag + ')', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
   {
@@ -924,8 +943,240 @@ const DATE_STUB = () => {
     await ctx.close();
   }
 
+  // ---------------------------------------------------------------- nebulae & pulsars (v4): cards, menu items, live events, hint, sound (fixtures-v4)
+  const NTEXT = 'Nebulae are clouds of dust and gas. They pull on nothing and do no harm, but while you are inside one you lose speed, and a slower probe bends more sharply round everything else.';
+  const PTEXT = 'A pulsar is a spinning neutron star. It pulls like a small planet and is just as solid. Two beams sweep round it, and a beam that catches the probe pushes it straight away from the star, so when you launch matters as much as where.';
+  const SEEN_OLD = () => { try { for (const n of ['intro', 'fragments', 'wormholes']) Save.markSeen(n); } catch (e) {} };     // nebulae + pulsars still due
+  const load4 = (page, i, f) => page.evaluate(([lv, f]) => { lv = JSON.parse(JSON.stringify(lv)); if (f) (new Function('lv', f))(lv); __peri.loadCustom(lv); return __peri.state.card; }, [FX4[i], f || '']);
+  const popInfo = page => page.evaluate(() => { const s = __peri.state, e = document.getElementById('pcard');
+    return { card: s.card, on: e.classList.contains('on'), title: e.querySelector('.c-title') && e.querySelector('.c-title').innerText.trim(), body: e.querySelector('.pop-text') && e.querySelector('.pop-text').innerText.replace(/\s+/g, ' ').trim(),
+      btns: [...e.querySelectorAll('.btn')].map(b => b.innerText.trim()), sp: s.spotlight && s.spotlight.map(p => ({ x: p.x, y: p.y, r: p.r, body: p.body })),
+      bodies: s.level.bodies.map((b, i) => ({ i, kind: b.kind, r: b.r, orbit: !!b.orbit, pos: (() => { const o = {}; __peri.Physics.bodyPos(b, s.step * K.DT, o); return [o.x, o.y]; })() })) }; });
+  {
+    // ---- (j) order on a fresh profile: fp2 has a fragment, wormholes, a nebula and a pulsar
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    await load4(page, 3); await page.waitForTimeout(450);
+    const seq = [];
+    for (let k = 0; k < 7; k++) { const c = await page.evaluate(() => __peri.state.card); if (!c) break; seq.push(c); await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(420); }
+    check('fresh profile on fp2: cards queue intro, fragments, wormholes, nebulae, pulsars, each once', JSON.stringify(seq) === JSON.stringify(['intro', 'fragments', 'wormholes', 'nebulae', 'pulsars']), JSON.stringify(seq));
+    const sv = await page.evaluate(() => JSON.parse(localStorage.getItem('perihelion.v1')).seen);
+    check('nebulae and pulsars seen flags saved', sv.nebulae && sv.pulsars, JSON.stringify(sv));
+    await load4(page, 0); await page.waitForTimeout(300);
+    const c1 = await page.evaluate(() => __peri.state.card);
+    await page.reload(); await page.waitForTimeout(700);
+    await load4(page, 2); await page.waitForTimeout(300);
+    check('nebulae / pulsars cards are once-only, also after a reload', c1 === null && await page.evaluate(() => __peri.state.card === null && __peri.Save.seen('nebulae') && __peri.Save.seen('pulsars')));
+    // a nebula plate with a pulsar not yet seen: nebulae first, pulsars queued after it
+    await page.evaluate(() => { __peri.Save.data.seen.nebulae = false; __peri.Save.data.seen.pulsars = false; });
+    await load4(page, 3); await page.waitForTimeout(300);
+    const q1 = await page.evaluate(() => __peri.state.card); await page.evaluate(() => __peri.closeCard()); await page.waitForTimeout(100);
+    const q2 = await page.evaluate(() => __peri.state.card); await page.evaluate(() => __peri.closeCard());
+    check('nebulae card before pulsars when both are due', q1 === 'nebulae' && q2 === 'pulsars', q1 + ',' + q2);
+    check('no console errors (v4 card order)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (k) the cards themselves, portrait: text, spotlight, placement, aim blocked, clock held; nebula on rails; menu items
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(SEEN_OLD);
+    for (const [i, name, title, txt, ring] of [[0, 'nebulae', 'Nebulae', NTEXT, b => b.r + 10], [2, 'pulsars', 'Pulsars', PTEXT, () => 60]]) {
+      await page.evaluate(() => { __peri.Save.data.seen.nebulae = false; __peri.Save.data.seen.pulsars = false; });
+      await load4(page, i); await page.waitForTimeout(500);
+      const w = await popInfo(page), kind = name === 'nebulae' ? 'nebula' : 'pulsar', bs = w.bodies.filter(b => b.kind === kind);
+      check(name + ' card opens on first load of ' + FX4[i].id + '; title "' + title + '", button "Understood"', w.card === name && w.on && w.title === title && JSON.stringify(w.btns) === '["Understood"]', JSON.stringify({ card: w.card, title: w.title, btns: w.btns }));
+      check(name + ' card text is the contract text verbatim', w.body === txt, w.body);
+      check(name + ' spotlight: every ' + kind + ' at its current position, r = ' + (name === 'nebulae' ? 'nebula.r + 10' : '60'), w.sp && w.sp.length === bs.length && bs.length >= 1 && w.sp.every((p, k) => p.x === bs[k].pos[0] && p.y === bs[k].pos[1] && p.r === ring(bs[k]) && p.body === bs[k].i), JSON.stringify(w.sp));
+      const rc = await rectOf(page, '#pcard'), cb = await coverVsBest(page);
+      check(name + ' card inside 390x844 and covers as few ringed centres as any position could', inside(rc, 390, 844, 6) && cb.covered <= cb.best, JSON.stringify({ rc, cb }));
+      await shot(page, 'feel-card-' + name + '.png');
+      const d = await touchDrag(page, 200, 90, 150, 200);
+      const ab = await page.evaluate(() => ({ active: __peri.state.aim.active, n: __peri.state.predict.n }));
+      await d.end(); await page.waitForTimeout(60);
+      const s1 = await page.evaluate(() => __peri.state.step); await page.waitForTimeout(300);
+      check(name + ' card blocks aiming and holds the clock', !ab.active && ab.n === 0 && await page.evaluate(s => __peri.state.step === s && __peri.state.launches === 0, s1));
+      await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(400);
+      const dz = await page.evaluate(n => ({ card: __peri.state.card, sp: __peri.state.spotlight, saved: JSON.parse(localStorage.getItem('perihelion.v1')).seen[n] }), name);
+      check('Understood dismisses the ' + name + ' card, clears the spotlight, persists', dz.card === null && dz.sp === null && dz.saved === true, JSON.stringify(dz));
+    }
+    // fp2: both cards point at their own bodies only; the pulsars card follows the nebulae card
+    await page.evaluate(() => { __peri.Save.data.seen.nebulae = false; __peri.Save.data.seen.pulsars = false; });
+    await load4(page, 3); await page.waitForTimeout(450);
+    const f2a = await popInfo(page); await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(450);
+    const f2b = await popInfo(page), rcb = await rectOf(page, '#pcard'), cbb = await coverVsBest(page);
+    await shot(page, 'feel-card-pulsars-fp2.png');
+    check('fp2: nebulae card rings the one nebula (r + 10), then pulsars card rings the one pulsar (r 60), inside the viewport, clear as possible', f2a.card === 'nebulae' && f2a.sp.length === 1 && f2a.sp[0].r === 120 && f2b.card === 'pulsars' && f2b.sp.length === 1 && f2b.sp[0].r === 60 && inside(rcb, 390, 844, 6) && cbb.covered <= cbb.best, JSON.stringify({ a: f2a.sp, b: f2b.sp, cbb }));
+    await page.evaluate(() => __peri.closeCard());
+    // fn2: a nebula on rails; the ring follows it
+    await page.evaluate(() => { __peri.Save.data.seen.nebulae = false; });
+    await load4(page, 1); await page.waitForTimeout(450);
+    const rr = await popInfo(page), mv = rr.bodies.find(b => b.kind === 'nebula' && b.orbit), spm = rr.sp && rr.sp.find(p => p.body === mv.i);
+    check('fn2: the drifting nebula is ringed at its current position, r = r + 10', rr.card === 'nebulae' && rr.sp.length === 2 && spm && spm.x === mv.pos[0] && spm.y === mv.pos[1] && spm.r === mv.r + 10, JSON.stringify({ sp: rr.sp, mv }));
+    await page.evaluate(() => { __peri.state.step += 90; }); await page.waitForTimeout(120);
+    const r2 = await popInfo(page), mv2 = r2.bodies.find(b => b.i === mv.i), sp2 = r2.sp.find(p => p.body === mv.i);
+    check('fn2: the ring refreshes each frame as the nebula drifts', Math.abs(sp2.x - mv2.pos[0]) < 1e-6 && Math.abs(sp2.y - mv2.pos[1]) < 1e-6 && Math.hypot(sp2.x - spm.x, sp2.y - spm.y) > 3, JSON.stringify({ sp2, want: mv2.pos, was: [spm.x, spm.y] }));
+    await page.evaluate(() => { __peri.state.step -= 90; __peri.closeCard(); }); await page.waitForTimeout(200);
+    await load4(page, 0); await page.waitForTimeout(200);        // menu items, starting on fn1 (one static nebula)
+    // menu items
+    const menuOf = async () => { await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
+      const o = await page.evaluate(() => [...document.querySelectorAll('#sheet .c-btns .btn, #sheet [data-sound]')].filter(b => b.offsetParent !== null).map(b => b.innerText.replace(/\s+/g, ' ').trim())); return o; };
+    const base = ['Resume', 'Consult the Astronomer', 'How to play', 'About comet fragments'], tail = ['Restart plate', 'Return to the Atlas', 'Sound: On'];
+    const m0 = await menuOf();
+    check('menu on a nebula plate (fn1): "About nebulae" after "About comet fragments", no wormholes / pulsars item', JSON.stringify(m0) === JSON.stringify([...base, 'About nebulae', ...tail]), JSON.stringify(m0));
+    const nh = await page.evaluate(() => Math.round(document.getElementById('sheet-neb').getBoundingClientRect().height));
+    await page.tap('#sheet [data-act="nebulae"]'); await page.waitForTimeout(450);
+    const ra = await popInfo(page);
+    check('"About nebulae" (>= 44 px) reopens the card from the sheet with its spotlight', nh >= 44 && ra.card === 'nebulae' && ra.body === NTEXT && ra.sp && ra.sp.length === 1 && await page.evaluate(() => __peri.state.paused), JSON.stringify({ nh, card: ra.card }));
+    await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(350);
+    check('dismiss returns to the paused sheet (nebulae)', await page.evaluate(() => __peri.state.card === null && __peri.state.paused && document.getElementById('sheet').classList.contains('on') && !document.getElementById('sheet').classList.contains('sub')));
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    await load4(page, 2); await page.waitForTimeout(250);
+    const m1 = await menuOf();
+    check('menu on a pulsar plate (fp1): "About pulsars" only', JSON.stringify(m1) === JSON.stringify([...base, 'About pulsars', ...tail]), JSON.stringify(m1));
+    await page.tap('#sheet [data-act="pulsars"]'); await page.waitForTimeout(450);
+    const rp = await popInfo(page);
+    check('"About pulsars" reopens the card from the sheet with its spotlight', rp.card === 'pulsars' && rp.body === PTEXT && rp.sp && rp.sp.length === 1 && rp.sp[0].r === 60);
+    await page.tap('#pcard [data-act="pop-ok"]'); await page.waitForTimeout(350);
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    await load4(page, 3); await page.waitForTimeout(250);
+    const m2 = await menuOf(), mp = await rectOf(page, '#sheet-panel');
+    check('menu on fp2: wormholes, nebulae and pulsars items in that order; sheet inside 390x844', JSON.stringify(m2) === JSON.stringify([...base, 'About wormholes', 'About nebulae', 'About pulsars', ...tail]) && inside(mp, 390, 844, 4), JSON.stringify({ m2, mp }));
+    await shot(page, 'feel-menu-v4.png');
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    await page.evaluate(() => __peri.loadLevel(0)); await page.waitForTimeout(300);
+    const m3 = await menuOf();
+    check('menu on plate I: no nebulae / pulsars items', !m3.some(t => /nebula|pulsar/i.test(t)), JSON.stringify(m3));
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    await page.evaluate(() => __peri.loadDaily()); await page.waitForTimeout(300);
+    const m4 = await menuOf();
+    check('menu on the Daily Plate: no nebulae / pulsars items', !m4.some(t => /nebula|pulsar/i.test(t)), JSON.stringify(m4));
+    await page.tap('#sheet [data-act="resume"]'); await page.waitForTimeout(200);
+    check('no console errors (v4 cards and menu)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (l) live flights through nebulae and pulsar beams: Render.fog / Render.beam / Sound.fog / Sound.beam / vibrate, events cleared;
+    //      hint, result replay, star rule, guards
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(SEEN_ALL);
+    const present = await page.evaluate(() => ({ rf: typeof __peri.Render.fog, rb: typeof __peri.Render.beam, sf: typeof __peri.Sound.fog, sb: typeof __peri.Sound.beam }));
+    console.log('  Render.fog/beam: ' + present.rf + '/' + present.rb + ', Sound.fog/beam: ' + present.sf + '/' + present.sb);
+    check('Sound.fog and Sound.beam exist', present.sf === 'function' && present.sb === 'function', JSON.stringify(present));
+    await page.evaluate(() => {
+      window.__v = { fog: [], beam: [], sf: 0, sb: 0, vib: [] };
+      const R = __peri.Render, S = __peri.Sound, rf = R.fog, rb = R.beam, sf = S.fog, sb = S.beam;
+      R.fog = function (x, y) { __v.fog.push([x, y]); if (rf) return rf.apply(this, arguments); };
+      R.beam = function (x, y) { __v.beam.push([x, y]); if (rb) return rb.apply(this, arguments); };
+      S.fog = function () { __v.sf++; if (sf) return sf.apply(this, arguments); };
+      S.beam = function () { __v.sb++; if (sb) return sb.apply(this, arguments); };
+      Object.defineProperty(navigator, 'vibrate', { configurable: true, value: v => { __v.vib.push(v); return true; } });
+    });
+    // reference: the same flight stepped by hand, noting each fog / beam event and the probe position after that step
+    const REF = () => { const s = __peri.state, lv = s.level, sol = lv.solution, P = __peri.Physics, sim = P.createSim(lv, sol.vx, sol.vy, sol.t0Step | 0), fog = [], beam = [];
+      let tot = 0, w = 0, lw = 0, got = 0, lf = 0, b = 0, lb = 0;
+      while (sim.status === 'flying' && sim.step < 1200) { P.stepSim(sim, lv); tot++;
+        for (const e of sim.events) { if (e.type === 'fog') fog.push([sim.x, sim.y]); else if (e.type === 'beam') beam.push([sim.x, sim.y]); } sim.events.length = 0;
+        if (sim.warps > w) { w = sim.warps; lw = tot; } if (sim.beams > b) { b = sim.beams; lb = tot; } const c = sim.collected.reduce((a, q) => a + q, 0); if (c > got) { got = c; lf = tot; } }
+      let n = Math.floor(0.55 * tot); if (got) n = Math.max(n, Math.min(lf + 24, Math.floor(0.92 * tot))); if (w) n = Math.max(n, Math.min(lw + 24, Math.floor(0.92 * tot))); if (b) n = Math.max(n, Math.min(lb + 24, Math.floor(0.92 * tot))); n = Math.min(1100, n);
+      return { fog, beam, status: sim.status, tot, hintN: n, fogSteps: sim.fog, beams: sim.beams, lb }; };
+    const same = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p[0] - b[i][0]) < 1e-9 && Math.abs(p[1] - b[i][1]) < 1e-9);
+    for (let i = 0; i < FX4.length; i++) {
+      await load4(page, i); await page.waitForTimeout(100);
+      const r = await page.evaluate(REF => { const ref = (new Function('return ' + REF))()(); __v.fog.length = 0; __v.beam.length = 0; __v.sf = 0; __v.sb = 0; __v.vib.length = 0;
+        __peri.solveCurrent(); __peri.fastForward(1500); const s = __peri.state, sim = s.sim, J = K.WARP_JUMP, pts = s.result && s.result.pts, n = s.result ? s.result.n : 0; let jumps = 0;
+        for (let k = 1; k < n; k++) if (Math.hypot(pts[2 * k] - pts[2 * k - 2], pts[2 * k + 1] - pts[2 * k - 1]) > J) jumps++;
+        return { ref, ok: s.result && s.result.success, st: s.result && s.result.stars, fog: __v.fog, beam: __v.beam, sf: __v.sf, sb: __v.sb, vib: __v.vib.slice(), ev: sim.events.length, simFog: sim.fog, simBeams: sim.beams, warps: sim.warps, n, jumps }; }, REF.toString());
+      const id = FX4[i].id, needFog = i !== 2, needBeam = i >= 2;
+      check('fixture ' + id + ' in the live loop: hit in one launch (3 stars)' + (needFog ? ', through a nebula' : '') + (needBeam ? ', pushed by a beam' : ''), r.ok && r.st === 3 && (!needFog || r.simFog > 0) && (!needBeam || r.simBeams > 0), JSON.stringify({ ok: r.ok, st: r.st, fog: r.simFog, beams: r.simBeams }));
+      check('fixture ' + id + ': one Render.fog + Sound.fog per nebula entry, one Render.beam + Sound.beam + vibrate([6, 40, 6]) per beam catch, at the probe, events cleared', same(r.fog, r.ref.fog) && same(r.beam, r.ref.beam) && r.sf === r.ref.fog.length && r.sb === r.ref.beam.length && r.vib.filter(v => Array.isArray(v) && v.join() === '6,40,6').length === r.ref.beam.length && r.ev === 0, JSON.stringify({ fog: r.fog.length, ref: r.ref.fog.length, beam: r.beam.length, refb: r.ref.beam.length, sf: r.sf, sb: r.sb, vib: r.vib }));
+      check('fixture ' + id + ': result path is the whole flight and has no jumps beyond the wormhole passages (nebulae and beams never jump)', r.n === r.ref.tot + 1 && r.jumps === r.warps, JSON.stringify({ n: r.n, tot: r.ref.tot, jumps: r.jumps, warps: r.warps }));
+      if (i === 0) await shot(page, 'feel-nebula-flight-result.png');
+      // the hint on the same fixture
+      await load4(page, i); await page.waitForTimeout(80);
+      const h = await page.evaluate(REF => { const ref = (new Function('return ' + REF))()(); const ok = __peri.useHint(), s = __peri.state; return { ok, n: s.hint.n, on: s.hint.on, frozen: s.frozen, expect: ref.hintN, lb: ref.lb, tot: ref.tot, beams: ref.beams }; }, REF.toString());
+      check('hint on ' + id + ': brass line as long as the rule says' + (needBeam ? ' (runs >= 24 steps past the last beam catch, < 92%)' : ''), h.ok && h.on && h.frozen && h.n === h.expect && (!h.beams || h.n >= Math.min(h.lb + 24, Math.floor(0.92 * h.tot))), JSON.stringify(h));
+      if (i === 2) await shot(page, 'feel-hint-pulsar.png');
+    }
+    // a real-time flight (rAF loop, no fastForward) through the pulsar's beam
+    await load4(page, 2); await page.waitForTimeout(150);
+    await page.evaluate(() => { __v.beam.length = 0; __v.sb = 0; const sol = __peri.state.level.solution; __peri.state.step = sol.t0Step | 0; __peri.launch(sol.vx, sol.vy); });   // beams turn: launch at the solution's step
+    await page.waitForTimeout(400);
+    await shot(page, 'feel-pulsar-flight.png');
+    await page.waitForFunction(() => __peri.state.phase === 'result', null, { timeout: 15000 }).catch(() => {});
+    const rt = await page.evaluate(() => ({ ok: __peri.state.result && __peri.state.result.success, beams: __peri.state.sim.beams, calls: __v.beam.length, snd: __v.sb, ev: __peri.state.sim.events.length }));
+    check('real-time flight on fp1: hit, beam events handled live (Render.beam / Sound.beam per catch), events cleared', rt.ok && rt.beams >= 1 && rt.calls === rt.beams && rt.snd === rt.beams && rt.ev === 0, JSON.stringify(rt));
+    await cardOn(page).catch(() => {});
+    const rc = await page.evaluate(() => ({ btns: [...document.querySelectorAll('#card .btn')].map(b => b.innerText.trim()), saved: JSON.parse(localStorage.getItem('perihelion.v1')).stars.slice(90, 150).concat(JSON.parse(localStorage.getItem('perihelion.v1')).stars.slice(0, 3)) }));
+    check('result card on a v4 custom plate: Replay/Atlas, nothing saved', JSON.stringify(rc.btns) === '["Replay","Atlas"]' && rc.saved.every(x => x === 0), JSON.stringify(rc));
+    // star rule with the hint
+    await load4(page, 0); await page.waitForTimeout(100);
+    const hs = await page.evaluate(() => { __peri.useHint(); __peri.solveCurrent(); __peri.fastForward(1500); const s = __peri.state; return { ok: s.result && s.result.success, st: s.result && s.result.stars }; });
+    check('star rule on a nebula plate: one launch + hint = 2 stars', hs.ok && hs.st === 2, JSON.stringify(hs));
+    // guards: no Render.fog / Render.beam / Sound.fog / Sound.beam / vibrate
+    await page.evaluate(() => { __peri.Render.fog = undefined; __peri.Render.beam = undefined; __peri.Sound.fog = undefined; __peri.Sound.beam = undefined; Object.defineProperty(navigator, 'vibrate', { configurable: true, value: undefined }); });
+    await load4(page, 3); await page.waitForTimeout(100);
+    const ng = await page.evaluate(() => { __peri.solveCurrent(); __peri.fastForward(1500); const s = __peri.state; return { ok: s.result && s.result.success, f: s.sim.fog, b: s.sim.beams, ev: s.sim.events.length }; });
+    check('guards: fp2 flies and seals without Render.fog/beam, Sound.fog/beam or vibrate', ng.ok && ng.ev === 0 && errors.length === 0, JSON.stringify(ng) + errors.join('|'));
+    // three misses on a pulsar plate
+    await load4(page, 2); await page.waitForTimeout(100);
+    const f3 = await page.evaluate(() => { const s = __peri.state; for (let k = 0; k < 3; k++) { __peri.launch(0, 640); while (s.sim && s.sim.status === 'flying') __peri.fastForward(1); __peri.fastForward(100); } return { ph: s.phase, r: s.result && s.result.success, l: s.launches }; });
+    check('three misses on a pulsar plate: fail result', f3.ph === 'result' && f3.r === false && f3.l === 3, JSON.stringify(f3));
+    check('no console errors (v4 flight run)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (m) Sound.fog / Sound.beam: safe before unlock (no context created) and while muted
+    const { ctx, page, errors } = await newPage(browser, IPHONE);
+    await page.goto(url); await page.waitForTimeout(400);
+    const pre = await page.evaluate(() => { let thrown = ''; try { __peri.Sound.fog(); __peri.Sound.beam(); } catch (e) { thrown = e.message; } return { thrown, state: __peri.Sound.state }; });
+    check('Sound.fog / Sound.beam before unlock: no throw, no AudioContext created', pre.thrown === '' && pre.state === 'none', JSON.stringify(pre));
+    await page.tap('[data-act="begin"]'); await page.waitForTimeout(300);           // a real gesture unlocks audio
+    const post = await page.evaluate(async () => { let thrown = ''; const S = __peri.Sound; try { S.setMuted(true, true); S.fog(); S.beam(); S.setMuted(false, true); S.fog(); S.beam(); S.fog(); S.beam(); } catch (e) { thrown = e.message; } await new Promise(r => setTimeout(r, 700)); return { thrown, state: S.state }; });
+    check('Sound.fog / Sound.beam after unlock, muted and unmuted, repeated: no throw', post.thrown === '' && post.state !== 'none', JSON.stringify(post));
+    check('no console errors (v4 sound)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+  {
+    // ---- (n) landscape: the nebulae card beside the plate; the menu with the extra items
+    const { ctx, page, errors } = await newPage(browser, LAND);
+    await page.goto(url); await page.waitForTimeout(500);
+    await page.evaluate(SEEN_OLD);
+    await load4(page, 0); await page.waitForTimeout(500);
+    const lf = await rectOf(page, '#pcard'), pl = await page.evaluate(() => { const p = __peri.Render.layout.plate; return { l: p.x, r: p.x + p.w }; });
+    check('landscape nebulae card inside 844x390, beside the plate', await page.evaluate(() => __peri.state.card === 'nebulae') && inside(lf, 844, 390, 4) && (lf.l >= pl.r - 1 || lf.r <= pl.l + 1), JSON.stringify({ lf, pl }));
+    await shot(page, 'feel-landscape-nebulae.png');
+    await page.evaluate(() => { __peri.closeCard(); __peri.Save.markSeen('pulsars'); }); await page.waitForTimeout(200);
+    await load4(page, 3); await page.waitForTimeout(300);
+    await page.tap('#zone-r .btn'); await page.waitForTimeout(400);
+    const sb = await page.evaluate(() => { const p = document.getElementById('sheet-panel'), w = document.getElementById('sheet-pul'); w.scrollIntoView({ block: 'nearest' }); const r = w.getBoundingClientRect(), q = p.getBoundingClientRect();
+      return { h: r.height, vis: r.top >= q.top - 1 && r.bottom <= q.bottom + 1 }; });
+    check('landscape menu with "About pulsars": >= 44px and reachable', sb.h >= 44 && sb.vis, JSON.stringify(sb));
+    await page.tap('#sheet [data-act="pulsars"]'); await page.waitForTimeout(400);
+    check('landscape: pulsars card reopened from the sheet inside viewport', inside(await rectOf(page, '#pcard'), 844, 390, 4));
+    check('no console errors (landscape v4)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+  }
+
   await browser.close();
   const bad = results.filter(r => !r.ok);
   console.log(`\n${results.length - bad.length}/${results.length} passed`);
   process.exit(bad.length ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(2); });
+
+// The installed Playwright may expect a newer browser build than the one preinstalled: fall back to any headless shell /
+// Chromium found under PLAYWRIGHT_BROWSERS_PATH (never runs `playwright install`).
+function launchOpts(chromium) {
+  const fs = require('fs');
+  try { if (fs.existsSync(chromium.executablePath())) return {}; } catch (e) {}
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH, cands = [];
+  try {
+    for (const d of fs.readdirSync(base).sort().reverse()) {
+      if (/^chromium_headless_shell-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'headless_shell'), path.join(base, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+      else if (/^chromium-/.test(d)) cands.push(path.join(base, d, 'chrome-linux', 'chrome'), path.join(base, d, 'chrome-linux64', 'chrome'));
+    }
+  } catch (e) {}
+  for (const c of cands) if (fs.existsSync(c)) return { executablePath: c };
+  return {};
+}
