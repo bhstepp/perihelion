@@ -84,7 +84,7 @@ else if (process.argv[2] === '--worker') {
   }
 } else {
   fs.mkdirSync(CACHE, { recursive: true });
-  const NT = loadFast().Levels.CAMPAIGN.length, N = 2, groups = Array.from({ length: N }, () => []); for (let i = 0; i < NT; i++) groups[i % N].push(i);
+  const NT = loadFast().Levels.CAMPAIGN.length, N = +(process.env.LEVELS_JOBS || 2), groups = Array.from({ length: N }, () => []); for (let i = 0; i < NT; i++) groups[i % N].push(i);
   let done = 0;
   groups.forEach(g => { const c = cp.spawn('node', [__filename, '--worker', g.join(',')], { stdio: 'inherit' });
     c.on('close', () => { if (++done < N) return;
