@@ -131,10 +131,10 @@ const TYB = [0,1,0,1,2,0, 1,0,2,1,0,2, 0,1,2,0,1,0, 2,0,1,2,1,0, 1,2,0,1,0,2,  0
 const XR = [[150, 300], [330, 570], [600, 750]], TYR = [[180, 330], [330, 520], [520, 700]];
 const diffOf = i => i < V5 ? rnd3(2.22 + 0.58 * (i - V4) / 29) : rnd3(2.82 + 0.58 * (i - V5) / 29);       // 2.22..2.80, 2.82..3.40
 const ratioTarget = i => { const q = (i < V5 ? i - V4 : i - V5) / 29; return 0.011 * Math.pow(0.4, q); };   // 1.1% -> 0.44% of the grid hits
-const BAND = 2.0;
+const BAND = 3.0;
 const USE_NEED = 6;            // ... and at least this many of a robust solution's 9 neighbours use the mechanic too
 const FOG_MIN = 12;            // a Volume IV solution spends at least 0.2 s inside a nebula (and so does each robust neighbour)
-const AVLIM = 6, AVPRE = 5;    // reject a plate with a hit that avoids the mechanic and has >= AVLIM of 9 hit neighbours
+const AVLIM = 7, AVPRE = 5;    // reject a plate with a hit that avoids the mechanic and has >= AVLIM of 9 hit neighbours
 // time-dependent plates: the mechanic must also be unavoidable at the solution's own launch time (t = 0 is always checked). Beams turn
 // and clouds drift, so waiting for a moment when the way round is open is a fair way to play such a plate.
 const AV_T0S = t0 => t0 ? [t0] : [];
