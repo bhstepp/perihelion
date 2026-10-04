@@ -92,9 +92,11 @@ who is not signed in to Game Center loses nothing; the game never waits on it.
    a second choice ready in case "Perihelion" is taken.
 2. Set up Game Center from `ios/game-center/SETUP.md` and add the leaderboards and achievements to version 1.0.
 3. In Xcode: **Product > Archive**, then **Distribute App > App Store Connect**.
-4. Fill in the listing. Screenshots: iPhone only (the app does not target iPad). Category: Games > Puzzle.
+4. Fill in the listing from [APP-STORE.md](APP-STORE.md), which has every text field ready to paste. Screenshots:
+   iPhone only (the app does not target iPad). Category: Games > Puzzle.
 5. App Privacy: the app itself collects nothing and contacts no server. Answer the questionnaire yourself; Game
-   Center is Apple's service.
+   Center is Apple's service. The privacy policy and support pages are `privacy.html` and `support.html` at the top
+   of this repository, served by GitHub Pages next to the game.
 6. Export compliance is already answered in `Info.plist` (`ITSAppUsesNonExemptEncryption` = NO).
 
 ### About guideline 4.2 ("more than a repackaged website")
