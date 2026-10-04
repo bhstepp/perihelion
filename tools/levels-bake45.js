@@ -742,7 +742,7 @@ function verify45(nWorkers) {
     const mv = rows.filter(r => r.timing !== 'static');
     if (mv.length) console.log('launch-time windows: ' + mv.length + ' time-dependent plates; worst open fraction ' + (100 * Math.min(...mv.map(r => r.open))).toFixed(0) + '%, longest closed gap ' + Math.max(...mv.map(r => r.gap)) + ' s');
     const okAll = rs.every(r => r.ok);
-    console.log(okAll ? 'verify45: all 60 Volume IV and V plates OK (solutions hit, use their nebula / pulsar beam with every robust neighbour, miss without it, robust 8/9, the mechanic cannot be avoided by a strong shot (all tested launch times), straight shots miss, clearances hold, 2-3 fragments with a full-clear course, time-dependent plates keep the launch-time window rule)' : 'verify45: FAILED');
+    console.log(okAll ? 'verify45: all 60 Volume IV and V plates OK (solutions hit and use their nebula / pulsar beam, as do >= ' + USE_NEED + ' of 9 neighbours; robust 8/9; Volume IV solutions miss without the drag; no strong shot (>= ' + AVLIM + '/9) avoids the mechanic at t = 0 or the launch time; straight shots miss (Volume V: at t = 0 and >= 85% of launch times); clearances hold; 2-3 fragments with a full-clear course; time-dependent plates keep the launch-time window rule)' : 'verify45: FAILED');
     return okAll;
   });
 }
