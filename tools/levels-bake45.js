@@ -75,7 +75,7 @@ const PLAN = [
   // CIX-CXIV: drifting clouds on rails
   { blk: 'P', tr: 30, neb: [{ mode: 'any', r: [90, 120], d: [0.7, 1.1], rails: 1 }], ex: ['P'], pf: [20, 50] },
   { blk: 'P', tr: 30, neb: [{ mode: 'any', r: [100, 130], d: [1.0, 1.4], rails: 1 }], ex: ['P'], pf: [20, 50] },
-  { blk: 'P', tr: 29, neb: [{ mode: 'any', r: [100, 130], d: [1.0, 1.4], rails: 1 }], ex: ['M'], pf: [24, 54] },
+  { blk: 'P', tr: 29, neb: [{ mode: 'any', r: [100, 130], d: [1.0, 1.4], rails: 1 }], ex: ['P'], pf: [24, 54] },
   { blk: 'P', tr: 29, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }, { mode: 'any', r: [70, 100], d: [0.6, 1.0] }], ex: ['P'], pf: [24, 54] },
   { blk: 'P', tr: 28, neb: [{ mode: 'any', r: [80, 110], d: [0.8, 1.2], rails: 1 }], ex: ['H', 'M'], pf: [24, 54] },
   { blk: 'P', tr: 28, neb: [{ mode: 'any', r: [80, 110], d: [0.9, 1.3], rails: 1 }], ex: ['P', 'M', 'R'], pf: [26, 58] },
